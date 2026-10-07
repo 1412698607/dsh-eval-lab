@@ -1,0 +1,24 @@
+{
+  "name": "dsh-eval-lab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness agent regression lab: live session trace recorder",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": ["src", "cordis.patch.yml", "README.md"],
+  "engines": { "node": ">=22.8" },
+  "peerDependencies": { "@deepseek-ai/dsh-session": "0.2.0-rc.2" },
+  "peerDependenciesMeta": { "@deepseek-ai/dsh-session": { "optional": true } },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "scripts": {
+    "check": "node --check src/index.js && node --check src/recorder.js",
+    "test": "node --test --test-isolation=none",
+    "demo": "node scripts/demo.js",
+    "smoke:host": "node scripts/smoke-host.js"
+  }
+}

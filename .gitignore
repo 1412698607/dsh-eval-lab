@@ -1,0 +1,10 @@
+node_modules/
+.npm-cache/
+runs/
+dist/
+*.tgz
+.idea/
+__pycache__/
+.env
+.env.*
+!.env.example
