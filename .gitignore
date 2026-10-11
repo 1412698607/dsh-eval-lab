@@ -1,10 +1,42 @@
+# Dependencies and package-manager caches
 node_modules/
 .npm-cache/
+.pnpm-store/
+.cache/
+
+# Raw session traces and generated outputs
 runs/
 dist/
+coverage/
+.nyc_output/
 *.tgz
+*.log
+
+# Private preparation and local conversation handoff
+/private-notes/
+# Protect the previous locations if a tool recreates them.
+/docs/interview.md
+/docs/handoff.md
+
+# Local editor and operating-system files
 .idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python caches
 __pycache__/
+*.py[cod]
+
+# Local secrets; only a sanitized environment example is shareable
 .env
 .env.*
 !.env.example
+/.npmrc
+/secrets/
+/credentials*.json
+*.pem
+*.key
+*.p12
+*.pfx
