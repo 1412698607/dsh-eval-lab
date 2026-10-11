@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { createRecorder, traceFilename } from "../src/recorder.js";
 import { apply } from "../src/index.js";
+import { pluginVersion } from "../src/metadata.js";
 
 function cleanup(t, outputDir) {
   const target = resolve(outputDir);
@@ -52,6 +53,7 @@ test("each launch has a distinct manifest and output directory", async (t) => {
   assert.notEqual(first.runId, second.runId);
   const manifest = JSON.parse(await readFile(join(first.runDir, "run.json"), "utf8"));
   assert.equal(manifest.captureScope, "live-events-only");
+  assert.equal(manifest.pluginVersion, pluginVersion);
   assert.equal(manifest.runId, first.runId);
   await first.close();
   await second.close();

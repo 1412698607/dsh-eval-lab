@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
+import { pluginVersion } from "./metadata.js";
 
 export function traceFilename(sessionId) {
   return `${createHash("sha256").update(sessionId).digest("hex")}.jsonl`;
@@ -18,7 +19,7 @@ export function createRecorder({ outputDir, onError = () => {} } = {}) {
   writeFileSync(join(runDir, "run.json"), JSON.stringify({
     formatVersion: 1,
     plugin: "dsh-eval-lab",
-    pluginVersion: "0.1.0",
+    pluginVersion,
     runId,
     startedAt: new Date().toISOString(),
     captureScope: "live-events-only",
