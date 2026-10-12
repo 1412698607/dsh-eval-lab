@@ -5,6 +5,8 @@ import { join } from "node:path";
 import * as plugin from "../../src/index.js";
 import { pluginVersion } from "../../src/metadata.js";
 import { traceFilename } from "../../src/recorder.js";
+import { statusFilename } from "../../src/session-status.js";
+import { inspectRun } from "../../src/inspect.js";
 import { HOST_FIBER_ACTIVE, loadHost } from "./host.js";
 
 // outputDir must be unique to this check; never select a previous run's trace.
@@ -51,6 +53,13 @@ export async function runHostSmoke({ modulesDir, outputDir, failWrite = false })
       const rows = (await readFile(tracePath, "utf8")).trim().split("\n").map(JSON.parse);
       assert.deepEqual(rows.map((row) => row.event), expected);
     }
+    assert.equal(JSON.parse(await readFile(join(runDir, statusFilename(traceFilename(session.id))), "utf8")).state,
+      failWrite ? "failed" : "recording");
+    // Cordis may swallow disposer errors. Validate persisted evidence after unloading.
+    await fiber.dispose();
+    fiber = undefined;
+    const inspection = await inspectRun(runDir);
+    assert.equal(inspection.exitCode, failWrite ? 1 : 0);
     return { tracePath, eventCount: expected.length, versions };
   } finally {
     try {

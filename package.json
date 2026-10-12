@@ -1,6 +1,6 @@
 {
   "name": "dsh-eval-lab",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "DeepSeek Harness agent regression lab: live session trace recorder",
   "type": "module",
@@ -20,6 +20,7 @@
     "test": "node --test --test-isolation=none",
     "demo": "node scripts/demo.js",
     "smoke:host": "node scripts/smoke-host.js",
-    "check:output": "node scripts/check-output.js"
+    "check:output": "node scripts/check-output.js",
+    "inspect": "node scripts/inspect.js"
   }
 }

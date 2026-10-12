@@ -91,11 +91,15 @@ test("plugin event, checkpoint, and disposal hooks persist a trace", async (t) =
   const outputDir = await mkdtemp(join(tmpdir(), "dsh-eval-lab-hooks-"));
   cleanup(t, outputDir);
   const hooks = new Map();
-  apply({ on: (type, listener) => hooks.set(type, listener) }, { outputDir });
+  let dispose;
+  apply({
+    on: (type, listener) => hooks.set(type, listener),
+    effect: (setup) => { dispose = setup(); },
+  }, { outputDir });
   const session = { id: "hook-session" };
   hooks.get("session/event")(session, { seq: 0, type: "turn/start", data: { turn: 1 } });
   await hooks.get("session/flush")(session);
-  await hooks.get("dispose")();
+  await dispose();
   const { readdir } = await import("node:fs/promises");
   const [runId] = await readdir(outputDir);
   const rows = await readTrace({ runDir: join(outputDir, runId) }, session.id);
