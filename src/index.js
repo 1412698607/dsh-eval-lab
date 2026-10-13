@@ -14,7 +14,8 @@ export function apply(ctx, config = {}) {
 
   ctx.on("session/event", (session, event) => recorder.record(session.id, event));
   ctx.on("session/flush", (session) => recorder.flush(session.id));
-  ctx.on("dispose", () => recorder.close());
+  // Function plugins may be constructed; register cleanup explicitly on the owning fiber.
+  ctx.effect(() => () => recorder.close());
   // stdout may carry SDK JSON-RPC or headless JSON frames.
   console.error(`[eval-lab] 日志目录：${recorder.runDir}`);
 }

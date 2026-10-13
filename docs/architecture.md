@@ -1,122 +1,104 @@
 # dsh-eval-lab 架构与技术取舍
 
-当前架构实现 Harness 事件到本地日志的记录链路。插件入口适配宿主，独立记录器处理文件与状态，演示和测试分别验证数据输出及宿主接入。
+当前版本 `0.1.2` 实现新增事件录制及离线一致性检查。插件适配宿主，记录器负责队列和封存，检查器读取磁盘证据；任务是否通过仍属于后续评测层。
 
-## 执行流程
+## 执行流程与模块
 
 ```text
-package.json 声明插件入口和 bundle patch
-  → cordis.patch.yml 插入插件空配置
-  → Harness 调用 apply(ctx, config)
-  → config.outputDir / 环境变量 / 用户主目录，按优先级解析绝对目录
-  → 创建记录器与运行目录
-  → session/event 将事件交给 record(sessionId, event)
-  → 立即序列化，接入会话独立的 Promise 队列
-  → 异步追加至会话 JSONL 文件
-
-session/flush → 等待指定会话检查点 → 检查错误
-dispose       → 拒绝新事件 → 等待所有会话写入
+apply(ctx, config)
+  → 路径优先级解析、maxPendingBytes 校验
+  → 创建 UUID 运行目录和 run.json
+session/event
+  → 接收时序列化、序号和容量校验
+  → 会话独立 Promise 队列：recording 状态 → JSONL 追加
+session/flush
+  → 在选定会话队尾插入检查点状态更新 → 等待并报告错误
+ctx.effect 清理
+  → close 停止接收 → 排空所有队列 → 各正常会话 sealed
+inspect --run <目录>
+  → 元信息与状态校验 → 流式解析、原始字节摘要及前缀/最终比较
 ```
 
-## 模块职责
-
-| 文件 | 职责 |
+| 模块 | 职责 |
 | --- | --- |
-| `package.json` | ES Module 入口、包导出、版本兼容元信息及运行命令 |
-| `cordis.patch.yml` | 插入插件空配置，不绑定开发机目录 |
-| `src/index.js` | 声明 `sessions` 依赖，连接事件、检查点和卸载钩子 |
-| `src/config.js` | 路径优先级与选中值校验 |
-| `src/metadata.js` | 从 package.json 读取插件版本与会话组件基线 |
-| `src/recorder.js` | 运行目录、会话文件名、队列、错误与关闭状态 |
-| `scripts/demo.js` | 人工构造 8 条事件，演示日志输出 |
-| `scripts/smoke-host.js` | 使用真实 Cordis 与 SessionStore 提交并核对事件 |
-| `scripts/lib/host.js` | 自动查找或显式选择宿主，加载前校验组件版本 |
-| `scripts/lib/host-smoke.js` | 复用真实组件检查，隔离输出目录及释放资源 |
-| `scripts/check-output.js` | 启动真实子进程，分别断言 stdout 与 stderr |
-| `scripts/fixtures/output-child.js` | 无摘要输出的真实插件挂载入口，包含磁盘失败场景 |
-| `scripts/check-syntax.js` | 遍历源代码、脚本与测试，逐文件执行语法检查 |
-| `test/recorder.test.js` | 顺序、内容、会话隔离、异常和关闭行为验证 |
-| `test/config.test.js`、`test/host.test.js` | 配置优先级、无效值和宿主版本边界测试 |
+| `src/index.js` | Cordis 插件依赖、事件与检查点监听、`ctx.effect()` 异步关闭清理；诊断走 stderr |
+| `src/config.js` | 显式目录 > 环境变量 > 主目录；选中值无效报错；容量正安全整数校验 |
+| `src/metadata.js` | 从 package.json 读取版本及支持的会话组件基线 |
+| `src/recorder.js` | 运行目录、会话队列、接收与写入统计、字节容量、检查点、错误和封存 |
+| `src/session-status.js` | 状态文件命名及同目录临时文件、rename 替换与临时文件清理 |
+| `src/inspect.js` | 只读磁盘检查，区分 complete / invalid / unverified |
+| `scripts/inspect.js` | 显式 --run 参数、JSON 报告及退出码 |
+| `scripts/demo.js` | 8 条模拟事件 |
+| `scripts/lib/host.js` | 固定组件版本检查和加载 |
+| `scripts/lib/host-smoke.js` | 真实组件事件比较、检查点状态、卸载后封存与 inspect |
+| `scripts/check-output.js` | 三个真实子进程场景，检查输出和持久化证据 |
+| `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
-## 目录与输出通道
-
-插件入口按显式 `config.outputDir`、`DSH_EVAL_OUTPUT_DIR`、`homedir()/.dsh-eval-lab/runs` 依次选择。`undefined` 表示未配置，空字符串或 null 等无效覆盖直接报错。默认位置不受宿主工作目录影响。独立记录器仍要求调用者传入绝对目录，演示和测试不依赖用户目录。
-
-启动信息及写入错误均使用 `console.error()` 写入 stderr，JSONL 写到文件。入口不输出协议 stdout；子进程检查直接挂载真实组件，在正常与磁盘错误两个场景验证该边界。检查命令自身的成功摘要可使用 stdout。此检查不等于已完成 SDK、ACP 或 headless 整体协议验证。
-
-组件检查固定校验 dsh-session `0.2.0-rc.2` 与 Cordis `4.0.4`。显式路径不匹配时不自动换安装；自动缓存查找跳过不匹配候选。Cordis 的 `FiberState` 是编译后擦除的 const enum，JavaScript 无法导入；检查脚本使用有来源注释的本地 `HOST_FIBER_ACTIVE`，并将其限定在已校验的版本中。插件运行时仍使用可选 peer 声明，不重复加载宿主检查其版本；其他版本尚未验证。
-
-## 语言选择
-
-原生接入层通过 Cordis 的 JavaScript 模块接口导出 `name`、`inject` 和 `apply`。第一版使用纯 JavaScript ES Module，使源码能够直接运行，减少构建配置，先验证插件接入。TypeScript 是后续复杂数据模型的候选，可为事件、用例和断言增加类型检查；尚未迁移。
-
-Python 可以作为离线日志分析或评测程序，通过文件或进程接口连接原生插件。当前没有实现 Python 评测，已有 `main.py` 保持不变。
-
-## 数据组织
+## 输出与数据格式
 
 ```text
-runs/<runId>/run.json
-runs/<runId>/<sha256(sessionId)>.jsonl
+<outputDir>/<runId>/
+  run.json
+  <sha256(sessionId)>.jsonl
+  <sha256(sessionId)>.status.json
 ```
 
-`run.json` 包含 `formatVersion`、插件名称与版本、`runId`、UTC 启动时间、`captureScope` 和文件命名规则。`captureScope` 固定为 `live-events-only`，用于限定日志范围。
+run.json 和 JSONL 的 `formatVersion: 1` 保持不变。run.json 新增 `statusFormatVersion: 1` 和 `maxPendingBytes`，保留插件版本、运行 ID、启动时间、捕获范围与命名规则。`captureScope` 始终为 `live-events-only`。
 
-每条 JSONL 记录包装为：
+每条 JSONL 为 `{ formatVersion: 1, runId, sessionId, event }`，event 保留序列化的原始内容。记录器要求序列化后的 `event.seq` 是严格递增非负安全整数；不排序、不去重、不解析工具参数，不校验业务事件 schema。未知事件类型仍可记录和检查，非零起点及序号缺口不代表自动补齐历史。
 
-```json
-{
-  "formatVersion": 1,
-  "runId": "example-run",
-  "sessionId": "example-session",
-  "event": {
-    "seq": 3,
-    "time": 1791374400000,
-    "type": "tool/call",
-    "data": {
-      "turn": 1,
-      "step": 1,
-      "callId": "example-call",
-      "name": "read_file",
-      "arguments": "{\"path\":\"README.md\"}"
-    }
-  }
-}
-```
+独立会话状态包含：
 
-上例是结构示意，工具名和调用参数是示例。记录器保留原始事件，不解析工具参数，不校验业务事件 schema，也不去重或按序号重排。
+| 字段 | 含义 |
+| --- | --- |
+| `statusFormatVersion` | 当前为 1，独立于 JSONL 版本 |
+| `runId`、`sessionId`、`traceFile`、`captureScope` | 运行和会话身份，检查器同时核对哈希文件名 |
+| `state` | recording / sealed / failed |
+| `receivedCount` | 尚未失败期间的接收尝试数，含触发序列化、序号或容量失败的那次；失败后拒绝的调用不再累计 |
+| `acceptedCount` | 成功进入写入队列的条数 |
+| `writtenCount`、`writtenBytes` | 追加成功的条数及 UTF-8 字节数，含每条末尾换行 |
+| `firstSeq`、`lastSeq` | 成功写入的首尾序号，空前缀为 null |
+| `sha256` | 成功写入的原始 JSONL 字节摘要；空前缀为空字节摘要 |
+| `updatedAt`、`error` | 更新时间及第一次错误的 message / code；正常状态 error 为 null |
 
-## 写入顺序与检查点
+recording 的统计只保证状态保存时的检查点前缀，可能落后于 JSONL。sealed 必须 received = accepted = written > 0，并在离线重新核对后才可接受。failed 即使留下部分可解析内容，也不能被接受为完整。
 
-每个会话在 `Map` 中保存 `{ pending, error }`。首条事件以 `Promise.resolve()` 为队列起点，后续写入通过 `.then()` 接在旧队尾后。每次 `appendFile()` 完成后，该会话才开始下一次写入。不同会话的队列互相独立。
+## 队列、检查点与容量
 
-事件在入队前转成字符串，避免调用方随后修改原对象导致日志变化。JSON 序列化仍然同步消耗 CPU；目录和元信息初始化也是同步操作。运行期文件追加使用异步 I/O，因此不应将整条链路描述为完全无阻塞。
+各会话在 Map 中保存队尾 Promise、错误、计数、序号及增量哈希。首次观察建立状态任务，首条 JSONL 追加前必须完成 recording 状态写入。记录在入队前转成 UTF-8 Buffer，以固定观察时内容并按真实字节记账；同步序列化仍消耗 CPU 与临时内存。
 
-`record()` 返回 `true` 表示已排队。`flush(sessionId)` 等待调用时选中队尾所代表的写入，再检查保存的错误。后续新增写入不包含在该次等待范围内。错误状态是会话级持续状态，不是独立的检查点版本。
+每次追加成功后更新写入统计和哈希。失败保存首次错误，后续该会话停止接收，已排队但尚未开始的写入被跳过；其他会话继续。队列捕获错误并尽力保存 failed 状态，检查点和关闭通过 AggregateError 报告。报告回调抛错不会替换原错误。
 
-## 错误与关闭
+`maxPendingBytes` 是录制器级上限，默认 16 MiB。包括所有会话排队及正在追加的 Buffer；追加完成或跳过时在 finally 释放。超限的那条不入队，受影响会话失败。没有阻塞宿主等待容量的背压接口，没有进程内存总量保证。
 
-首次序列化或写入错误保存在会话状态中并报告。后续该会话的录制停止，其他会话仍可写入。队列捕获异步写入异常，检查点通过 `AggregateError` 报告失败；错误不是写入文件的持久化状态。
+flush 在调用时选定会话队尾插入状态写入任务，并捕获该检查点的 received / accepted 计数。状态任务在此前追加之后、此后追加之前执行，所以统计及哈希都属于同一个前缀。后续事件不属于此次等待范围；错误仍是会话级持续状态，检查点不是独立错误版本。flush 不封存，也不执行 fsync。
 
-`close()` 先设置关闭标志，再等待全部会话的队列。新事件被拒绝，之前已经排队的有效任务可以继续执行。当前没有跨进程恢复、重试或失败日志修复。
+close 先禁止接收，然后为每个会话排队 sealed 更新；一个失败会话不妨碍其他会话封存，但整体关闭仍拒绝。重复 close 共享同一 Promise；关闭期间或之后的 flush 等待该关闭，不会把 sealed 状态重新写成 recording。
 
-独立记录器的 `close()` 会拒绝写入失败；插件 dispose 回调返回该 Promise，但 Cordis 4.0.4 的卸载流程捕获并记录清理错误，`fiber.dispose()` 完成不代表日志有效。真实组件失败检查通过 `ctx.sessions.flush(session)` 的拒绝验证错误传播。M2.2 需要持久化状态使离线检查不依赖宿主退出或卸载结果。
+## 状态替换与宿主生命周期
 
-## 技术取舍
+状态更新先写同目录 UUID 临时文件，再 rename 到固定状态路径，最后清理临时文件。Windows 本地测试覆盖多次替换与目录占用导致的真实失败。此流程没有 fsync，也不承诺所有文件系统的原子持久性。写入 failed 本身可能失败；残留 recording、缺失或损坏状态都不能被视为完整。
 
-| 选择 | 原因 | 代价与边界 |
-| --- | --- | --- |
-| JSONL | 逐条追加、可逐行读取，减少第一版存储依赖 | 查询和完整性管理需要后续实现，当前没有索引 |
-| 会话独立 Promise 队列 | 保持观察顺序，隔离会话写入状态 | 没有容量上限、背压或状态淘汰 |
-| 入队前序列化 | 固定接收时的数据内容 | 序列化会同步消耗时间和内存 |
-| UUID 运行目录 | 区分插件启动批次，降低覆盖风险 | 一个批次可包含多个任务，尚未建模评测运行 |
-| SHA-256 文件名 | 会话 ID 不直接参与路径解释 | 不提供内容加密，原始 ID 仍存于日志中 |
-| 失败后停止该会话录制 | 在当前进程中显式暴露不完整记录 | 没有持久化标记，离线消费者仍需额外完整性协议 |
-| 可选版本 peer | 标注目标组件版本，独立测试不必安装宿主 | 最终宿主版本仍需实际兼容检查 |
+2026 年 10 月 12 日真实卸载检查发现旧 `ctx.on("dispose")` 在 Cordis 4.0.4 没有执行关闭，旧测试只证明 flush 后内容一致。本批改用 `ctx.effect(() => () => recorder.close())` 显式注册所属 fiber 的清理，并验证卸载后 sealed 和 inspect 通过。普通函数 apply 还可能被该版本按构造函数执行，因此不能只依赖它返回的函数作为清理。
 
-## 验证边界
+Cordis 卸载仍会捕获清理错误，fiber.dispose 完成不等于日志有效。宿主应先停止 Agent 事件，再卸载插件；实际 Web、headless、SDK 或桌面完整退出顺序留待 M2.3。历史判断修正见 [修改记录 006](changes/2026-10-12-006-m2-2-recording-integrity.md)。
 
-模拟演示验证记录器输出。单元测试验证记录器和简化上下文。真实组件检查通过 `ctx.plugin()` 挂载服务和插件，人工提交事件并比较文件内容；该检查不等于 Web 或桌面真实模型任务的端到端验证。
+## 离线检查
 
-当前验证基线和后续计划见 [开发进度](progress.md)。未来事件 schema、错误状态或存储格式变化时，需要同步更新本说明。
+检查器只读显式指定的目录，发现 JSONL 与 status 文件的并集，不读取“最新运行”。流式读取日志，按换行分隔 Buffer，对原始字节计算 SHA-256，再严格解码 UTF-8、解析包装身份和序号。只保留当前行、摘要、计数及最多 100 项缺口详情；完整缺口数量仍报告。单行很大时仍需保留该行，未实现单行大小限制。
 
-M2.1 已统一 stderr，并通过真实组件子进程输出检查。SDK 完整生命周期尚未联调，持久化状态文件与离线检查工具仍属于 [M2 方案](plans/m2-reliable-recording.md) 的后续批次。
+sealed 比较整个文件的计数、字节、首尾序号和摘要。recording / failed 校验已持久化的前缀检查点，后续完整追加不会被当成摘要错误；开放状态仍不接受为完整。空日志、残缺末行、非法 JSON / UTF-8、非法序号、身份或摘要不一致给出损坏原因。旧日志缺状态、不支持状态版本、无片段或访问错误保持未验证。
+
+| 退出码 | 含义 |
+| --- | --- |
+| 0 | 找到的片段全部 sealed，结构和摘要一致，运行元信息支持当前状态版本 |
+| 1 | 任一片段 failed 或明确损坏 |
+| 2 | 仍开放、缺状态、未知版本、没有片段或无法确认；参数错误也返回 2 |
+
+检查对象应停止写入或使用稳定副本；不提供与在线写入并发的一致快照。SHA-256 不是签名，无法检测日志和摘要一起重写；缺少运行级清单，整对会话文件被删除也无法检测。complete 不是任务 passed，也不代表整个会话历史完整。
+
+## 选择与验证边界
+
+使用 JavaScript ES Module 直接接入 Cordis，无新增运行时依赖。JSONL 和独立 status 避免把内部状态混入 Harness 事件；保留旧数据可读性，但旧日志不自动获得封存资格。Promise 队列保留原顺序，容量限制减少待写文本无限增长风险，尚无轮转、会话淘汰、数据库或跨进程修复。原有 main.py 保持不变。
+
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。36 项测试及真实组件、子进程检查的范围见 [进度](progress.md)，没有真实模型成功率或性能改善数据。
