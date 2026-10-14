@@ -135,6 +135,8 @@ npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<run-id>'
 
 M2.1 与 M2.2 已完成；接下来按 [M2 方案](docs/plans/m2-reliable-recording.md) 进行 M2.3 的真实模型任务联调。后续 M3 评测方向：
 
+后续语言分工：JavaScript 继续负责 Harness 插件、实时录制、宿主适配和现有 inspect；新增用例管理、任务断言、状态化工具环境核心、批次调度，以及统计分析和报告优先 Python。两侧通过版本化 JSON/JSONL 或明确进程接口连接。当前 Python 评测尚未实现，具体边界见 [架构说明](docs/architecture.md) 与 [修改记录 007](docs/changes/2026-10-14-007-python-evaluation-plan.md)。
+
 1. 定义测试用例格式：任务、初始文件、工具行为、断言和预算。
 2. 实现状态化虚拟文件系统，覆盖“README 路径过时”和“工具失败后恢复”两个场景。
 3. 接入 Harness 原有 Agent 循环，对结果断言，区分通过、失败和运行错误。
