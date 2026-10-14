@@ -1,6 +1,8 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 14 日（Asia/Shanghai），插件版本 `0.1.2`，已完成实时会话轨迹记录、M2.1 输出与配置、M2.2 录制状态与离线检查，M2.2 已提交为 `f459945`。最近功能验证仍为 2026 年 10 月 12 日：36 项测试、18 个 JavaScript 文件语法检查、8 条模拟事件、6 条真实组件事件及三个真实子进程场景通过。本次只确定后续 Python 分工；M2.3 真实模型联调和 M3 自动评测尚未实现。
+截至 2026 年 10 月 15 日（Asia/Shanghai），插件版本 `0.1.2`。M2.3 的独立 profile 安装、Web / headless 真实模型任务、程序化取消和专用进程强制停止已验证。新增 Python 固定 fixture 证据检查；通用 M3 自动评测尚未实现。本批改动尚未提交。
+
+同日维护后续路线：下一批先做 M3.1 用例格式与离线断言，再推进单用例运行、状态化工具桥接和顺序批次。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。本次计划维护只改文档，以下功能验证仍来自 M2.3 批次。
 
 ## 项目目标
 
@@ -10,14 +12,14 @@
 
 | 项目 | 当前状态 |
 | --- | --- |
-| 插件版本 | `0.1.2`，M2.2 已提交，本次规划文档尚未提交 |
-| 当前开发分支 | `20261012/feat/m2-reliable-recording` |
-| 已核实基线提交 | `f459945`，M2.2；M2.1 为 `f92733b`，第一版为 `8c1b53a` |
-| 开发语言 | 已实现部分为 JavaScript ES Module；新增评测与分析优先 Python，尚未实现 |
-| 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、Windows |
+| 插件版本 | `0.1.2`；本批不改变录制器及日志协议 |
+| 当前开发分支 | `20261014/feat/m2.3-real-model-integration` |
+| 已核实基线提交 | `f459945` 为 M2.2，`4c8982f` 为语言规划；M2.1 为 `f92733b`，第一版为 `8c1b53a` |
+| 开发语言 | 宿主与生命周期继续 JavaScript；M2.3 固定任务证据检查已使用 Python |
+| 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 10 月 12 日，Asia/Shanghai |
-| 最新规划更新 | 2026 年 10 月 14 日，确认 JavaScript / Python 分工 |
+| 最新复核日期 | 2026 年 10 月 15 日，Asia/Shanghai |
+| 真实模型基线 | CLI `0.2.0-rc.2`；`deepseek-official / deepseek-flash`；独立 Web / headless profile |
 
 ## 功能状态
 
@@ -36,10 +38,35 @@
 | 模拟演示 | 8 条模拟事件正常封存并通过 inspect，无模型调用 | `scripts/demo.js` |
 | 真实组件接入 | 6 条人工事件原样导出，检查点仍开放，卸载后 sealed 并通过 inspect | `scripts/lib/host-smoke.js` |
 | 未关闭直接退出 | 独立录制器子进程 flush 后 `process.exit(0)`，inspect 返回 2 | `scripts/fixtures/output-child.js` |
-| 真实模型、Web / desktop / headless / SDK 联调 | 尚未完成 | M2.3 |
-| 任务断言、状态化工具环境、重复试验和指标比较 | 尚未实现 | M3 及后续 |
+| Web / headless 真实模型联调 | 实际安装、文件读取及字段答案、工具失败后响应、取消、强停已验证 | `scripts/prepare-live.js`、`scripts/run-live.js` |
+| 固定 fixture 证据检查 | Python 先重新 inspect，再核对工具结果、答案及结束事实；6 项测试通过 | `scripts/verify_live.py` |
+| desktop / SDK、Web 页面手动取消及普通进程信号关闭 | 尚未验证 | 后续按渠道需求验证 |
+| 通用任务断言、状态化工具环境、重复试验和指标比较 | 尚未实现 | M3 及后续 |
 
 ## 最新验证
+
+2026 年 10 月 15 日在项目根目录执行：
+
+| 命令或操作 | 结果 | 验证边界 |
+| --- | --- | --- |
+| `npm.cmd run check` | 21 个 JavaScript 文件通过 | 包含三个联调脚本 |
+| `npm.cmd test` | 36 项通过 | 录制器等既有功能回归 |
+| `python -m unittest discover -s test -p 'test_*.py'` | 6 项通过 | 错误字段、无真实读取结果、错误 callId、失败读取、结果顺序及取消原因等检查 |
+| `npm.cmd run demo` 与对本次目录执行 inspect | 8 条模拟事件，inspect 0 | 没有模型调用 |
+| `npm.cmd run smoke:host` | 6 条人工组件事件，卸载后检查通过 | 真实组件，不是模型任务 |
+| `npm.cmd run check:output` | normal / write-error / abrupt-exit 通过 | 获准环境执行真实子进程，既有 0 / 1 / 2 边界 |
+| `npm.cmd run live:prepare` | CLI 实际安装独立 headless / web profile | 本地 link、离线安装；现有 profile 未修改 |
+| `npm.cmd run live:run -- <check-dir> read` | 实际 read 返回字段；25 条、43312 字节、sealed、inspect 0 | 最终版的单次受控真实任务 |
+| 同入口 `missing` | 工具 isError 后模型报告缺失；25 条、42651 字节、sealed、inspect 0 | 工具失败不等于任务失败 |
+| 同入口 `cancel` | Harness 退出 1，aborted/user；19 条、36230 字节、sealed、inspect 0 | 首个真实流 chunk 后程序化取消，不是页面手动点击 |
+| 同入口 `kill` | 专用子进程 SIGKILL；16 条、35430 字节、recording、inspect 2 | 操作系统强停本次进程，没有断电实验 |
+| 同入口 `web`，页面提交读取任务，终端输入 `stop` | 页面返回正确字段；25 条、49741 字节、sealed、inspect 0 | 控制插件先停止 Agent，再请求官方启动器关闭 |
+| 对五个明确启动目录分别执行 `python scripts/verify_live.py <launch-dir>` | 均返回 verified true | 重新 inspect 后检查固定场景证据，不是模型通过率 |
+| 截断已通过 read 日志的副本，保留旧成功报告后复验 | Python 拒绝 | 原始日志未改；旧报告不能掩盖磁盘损坏 |
+
+首次 Node fork 在沙箱报 EPERM，获准环境执行后才取得真实证据。首次取消 / 强停触发器误用了事件参数形式，未命中；修正为 `{ agent, frame }` 后重新验证，不将之前的正常结束当作取消或强停通过。详见 [修改记录 008](changes/2026-10-15-008-m2-3-live-integration.md)。
+
+## 历史验证（2026 年 10 月 12 日）
 
 2026 年 10 月 12 日在项目根目录执行：
 
@@ -65,7 +92,9 @@
 - 检查器不提供在线一致快照，应检查停止写入后的目录或稳定副本；开放检查点之后的完整追加允许存在，但残缺末行仍会报告损坏。
 - 队列上限只计算待写文本字节，不涵盖序列化临时对象、会话状态或系统缓存。没有日志轮转、会话淘汰或性能基准。
 - 状态替换验证限定当前 Windows 本地文件系统；没有验证所有网络盘、占用行为或操作系统强杀、断电场景。
-- 固定宿主组件检查不等于实际 profile 安装、真实模型任务或各渠道的完整生命周期验证。
+- 固定组件检查、真实 headless 和 Web 验证分别记录；本批只证明上述独立 profile 与固定任务。原有自定义模型配置没有导入测试 profile。
+- Web 使用测试专用 IPC 正常关闭，尚未验证页面手动取消、普通 Web 进程信号关闭、desktop 或 SDK。
+- Python 验证器只接受 M2.3 的单会话固定 fixture 和版本 1 报告，不是通用任务评测引擎；尚无实时跨语言工具桥接。
 
 ## 后续里程碑
 
@@ -74,13 +103,18 @@
 | M1 | 已完成当前组件范围的实时轨迹记录 | 原有 6 项功能测试及组件检查 |
 | M2.1 | 已完成输出与配置，`0.1.1` | 历史 18 项测试及两种真实子进程输出检查 |
 | M2.2 | 已完成状态、容量和 inspect，`0.1.2` | 36 项测试、真实组件封存及三种子进程场景 |
-| M2.3 | 待开发：受控真实模型任务与实际 profile / Web / headless 联调 | 关联输入、工具调用、结果及结束；正常退出后 inspect；取消和强制停止行为分别记录 |
-| M3 | 优先 Python 实现用例管理、状态化工具环境核心、断言和批次调度；宿主适配继续 JavaScript | README 路径过时、工具失败后恢复；验证跨语言工具接口，区分任务失败、运行错误和录制错误 |
+| M2.3 | 已完成 Web / headless 受控联调基线 | 实际安装、字段读取与缺失文件响应、真实流取消、专用进程强停；Node inspect + Python 固定证据检查 |
+| M3.1 | 下一批，未实现：Python 用例格式、caseRunId、离线证据断言和结果分类 | 合成轨迹正反例；先复用 inspect，损坏 / 开放日志不能判任务通过 |
+| M3.2 | 未实现：Python 驱动单用例受控 headless 运行 | 正常真实任务闭环；启动错误、超时 / 取消正确分类与清理 |
+| M3.3 | 未实现：Python 状态化工具环境核心与 JavaScript 实时桥接 | 状态单测、真实宿主桥接及路径过时 / 工具失败后恢复两个真实模型用例分别验证 |
+| M3.4 | 未实现：Python 顺序批次回归、环境隔离与结果清单 | 新会话和 caseRunId 独立，初始状态重置，逐项关联配置与录制证据 |
 | M4 | 优先 Python 实现多次重复配置比较、指标汇总与报告 | 报告样本数、配置和原始结果；缺失指标保持缺失 |
 | M5 | 可视化与持续集成 | 浏览用例与结果，自动执行检查 |
 
 ## 文档导航
 
+- [M3 与后续计划](plans/m3-regression-evaluation.md)：下一批入口、分批验收、结果分类，以及 M4/M5 和渠道 / 录制加固待办；均未实现。
+- [M2.3 真实任务联调](changes/2026-10-15-008-m2-3-live-integration.md)：本批安装、真实模型和生命周期证据，以及固定 Python 检查范围。
 - [Python 评测分工决策](changes/2026-10-14-007-python-evaluation-plan.md)：已明确规划，未新增 Python 功能；现有 inspect 和运行方式保持不变。
 - [M2 方案](plans/m2-reliable-recording.md)
 - [架构与技术取舍](architecture.md)

@@ -9,6 +9,7 @@
 - 使用异步写入队列保持同一会话的观察顺序，通过 `session/flush` 和插件卸载等待已排队写入完成。
 - 写入失败时记录错误，后续 checkpoint 报错；失败会话停止继续录制，其他会话仍可写入。
 - `0.1.2` 完成 M2.2：独立会话状态文件、计数和 SHA-256、待写入容量保护，以及离线 `inspect`；保留 M2.1 的 stderr 诊断和可移植配置。
+- M2.3 已完成独立 Web / headless profile 的真实模型联调，新增固定 fixture 的 Python 证据检查；插件版本保持 `0.1.2`。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -73,7 +74,51 @@ npx.cmd @deepseek-ai/dsh@0.2.0-rc.2 web
 
 插件加载后，服务端终端的 stderr 会显示 `[eval-lab] 日志目录：...`。在 Harness 中创建新会话，提交一个需要读取文件的任务；完成后在该目录检查 JSONL 文件中的 `tool/call` 和 `tool/result`。模型凭据使用你已有的 Harness 配置。
 
-如果你运行的是 Harness 桌面版，应使用它实际使用的版本和 **desktop profile**。这里尚未执行桌面版安装，也尚未验证 Web 页面里的真实模型任务；`smoke:host` 验证的是会话组件和插件事件接入。
+如果你运行的是 Harness 桌面版，应使用它实际使用的版本和 **desktop profile**。这里尚未执行桌面版安装；M2.3 验证的是 CLI 的独立 Web / headless profile，`smoke:host` 仍只验证会话组件和插件事件接入。
+
+## M2.3 真实任务联调
+
+需要已安装的 DSH `0.2.0-rc.2`、可用的 pnpm、Node.js 和 Python（本次为 `3.12.0`）。准备命令通过实际 CLI 插件管理入口，离线安装两个独立 profile，不修改原有 profile，不升级宿主：
+
+```powershell
+npm.cmd run live:prepare
+# 若无法自动找到匹配缓存：
+# npm.cmd run live:prepare -- 'D:\your-harness\node_modules'
+```
+
+命令复制 [README fixture](fixtures/live-read/README.md) 到 `runs/live/<check-id>/workspace`，并打印联调目录。独立 home 的凭据配置只引用启动时原 `DSH_HOME`（未设置时为用户 `.dsh`）中的 `.credentials.yaml`，不复制密钥。测试使用宿主默认的 `deepseek-official / deepseek-flash`，不导入原 profile 的自定义模型配置；使用只读文件策略，关闭额外的模型标题请求与遥测。环境变量凭据仍按宿主规则生效。
+
+把输出目录填入以下命令；真实任务会调用模型：
+
+```powershell
+$liveCheck = 'D:\your-project\runs\live\<check-id>'
+npm.cmd run live:run -- $liveCheck read
+npm.cmd run live:run -- $liveCheck missing
+npm.cmd run live:run -- $liveCheck cancel
+npm.cmd run live:run -- $liveCheck kill
+npm.cmd run live:run -- $liveCheck web
+```
+
+`read` 要求实际文件工具读取 README 并返回 `projectName`；`missing` 要求读取不存在的文件并报告。`cancel` 收到首个模型流 chunk 后调用实际 Agent 取消接口；`kill` 在同一时点强制停止本次专用子进程。chunk 可以是块边界，不保证已生成正文或执行文件工具。headless 最长运行 120 秒，超时强停算检查失败。
+
+`web` 打印本地认证 URL，在该页面的测试 workspace 提交以下任务。看到完成后，在启动命令的终端输入 `stop` 并回车。控制插件先取消活动 Agent、等待 idle 和 flush，再请求官方启动器关闭；15 秒未退出会强停并报告失败。本次没有验证普通 Web 进程直接信号关闭或页面手动点击停止。
+
+```text
+Read README.md using the actual filesystem tool. Return only the value of projectName. Do not modify any files or delegate.
+```
+
+每次启动都打印明确的 `<check-id>/<mode>/<launch-id>` 输出目录，保存 stdout、stderr、`result.json` 和 `traces/<run-id>/`。headless stdout 按 JSON 帧检查；Web stdout 为普通日志，可能包含本地认证 URL。原始输出均留在被忽略的 `runs/`，不作为公开样例。
+
+`live:run` 退出 0 表示生命周期达到预期：正常任务退出 0 且录制可检查；取消任务退出 1、保留 `aborted/user` 且正常封存；强停收到 `SIGKILL` 且 inspect 非 0。它还不等于任务内容正确。对本次明确的启动目录检查任务证据：
+
+```powershell
+python scripts/verify_live.py 'D:\your-project\runs\live\<check-id>\read\<launch-id>'
+npm.cmd run test:python
+```
+
+Python 检查器也支持其他四种模式：先重新调用 Node inspect，再核对用户输入、实际工具参数、callId 关联的结果、助手答案及结束原因；工具名不硬编码。它只处理 M2.3 的单会话固定 fixture，输出 `verified: true` 表示该场景证据通过。通用用例管理、状态化工具环境和批次评测仍留在 M3。
+
+沙箱若以 EPERM 阻止真实子进程，应在获准环境或外部终端执行同一命令，不能将失败计为通过。实际结果见 [修改记录 008](docs/changes/2026-10-15-008-m2-3-live-integration.md)。
 
 ## 输出结构
 
@@ -129,28 +174,32 @@ npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<run-id>'
 - 只录制插件观察到的新增事件；不会补齐加载前、恢复会话或 fork 继承的历史。`run.json` 明确标注 `live-events-only`，这些日志不能直接作为完整会话恢复文件。
 - 已完成异步写入和封存不代表断电时绝对可靠；没有 fsync、跨进程恢复或日志轮转。状态替换使用同目录临时文件与 rename，当前 Windows 本地文件系统检查通过。
 - SHA-256 用于一致性校验，不是签名；同时篡改日志与摘要、删除整对会话文件都不在检测保证内。没有运行级会话清单，不能由磁盘上剩余片段推断所有会话都曾被保存。
-- 当前不执行评测，不生成通过率；也尚未实现状态化工具 mock、测试断言、A/B 重跑和界面。
+- 当前仅验证 M2.3 的固定 fixture，不执行通用评测或生成通过率；尚未实现状态化工具 mock、通用任务断言、A/B 重跑和评测界面。
 
 ## 下一阶段
 
-M2.1 与 M2.2 已完成；接下来按 [M2 方案](docs/plans/m2-reliable-recording.md) 进行 M2.3 的真实模型任务联调。后续 M3 评测方向：
+M2.1、M2.2 和 M2.3 的 Web / headless 受控联调基线已完成。下一步为 M3：
 
-后续语言分工：JavaScript 继续负责 Harness 插件、实时录制、宿主适配和现有 inspect；新增用例管理、任务断言、状态化工具环境核心、批次调度，以及统计分析和报告优先 Python。两侧通过版本化 JSON/JSONL 或明确进程接口连接。当前 Python 评测尚未实现，具体边界见 [架构说明](docs/architecture.md) 与 [修改记录 007](docs/changes/2026-10-14-007-python-evaluation-plan.md)。
+后续语言分工：JavaScript 继续负责 Harness 插件、实时录制、宿主适配和现有 inspect；用例管理、任务断言、状态化工具环境核心、批次调度，以及统计分析和报告优先 Python。M2.3 已实现固定 fixture 的 Python 证据检查，通用评测和实时跨语言工具桥接仍未实现，具体边界见 [架构说明](docs/architecture.md) 与 [修改记录 007](docs/changes/2026-10-14-007-python-evaluation-plan.md)。
 
-1. 定义测试用例格式：任务、初始文件、工具行为、断言和预算。
-2. 实现状态化虚拟文件系统，覆盖“README 路径过时”和“工具失败后恢复”两个场景。
-3. 接入 Harness 原有 Agent 循环，对结果断言，区分通过、失败和运行错误。
-4. 多次重复比较两组配置，汇总成功率、调用次数、token 和耗时，再添加结果展示页面。
+1. M3.1：定义版本化用例、caseRunId 与结果分类，先实现 Python 离线证据断言。
+2. M3.2：驱动一个受控真实 headless 用例，验证正常完成、运行错误和超时 / 取消。
+3. M3.3：实现 Python 状态化工具环境与 JavaScript 实时桥接，覆盖路径过时、工具失败后恢复。
+4. M3.4：实现顺序批次回归、环境重置和逐项结果清单。
+5. M4/M5：在上述闭环完成后做重复配置比较、统计报告、结果浏览和持续集成。
+
+这些均为待开发，具体交付、验收及渠道补充事项见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。下一批入口是 M3.1；当前没有新增通用评测命令。
 
 ## 开发文档
 
-- [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 已完成，M2.3 待验证。
+- [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
+- [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 12 日。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 15 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

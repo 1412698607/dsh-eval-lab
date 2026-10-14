@@ -18,9 +18,12 @@
   "scripts": {
     "check": "node scripts/check-syntax.js",
     "test": "node --test --test-isolation=none",
+    "test:python": "python -m unittest discover -s test -p \"test_*.py\"",
     "demo": "node scripts/demo.js",
     "smoke:host": "node scripts/smoke-host.js",
     "check:output": "node scripts/check-output.js",
-    "inspect": "node scripts/inspect.js"
+    "inspect": "node scripts/inspect.js",
+    "live:prepare": "node scripts/prepare-live.js",
+    "live:run": "node scripts/run-live.js"
   }
 }
