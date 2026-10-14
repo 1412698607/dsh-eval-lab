@@ -30,6 +30,7 @@
 - `src/index.js`：Cordis 插件入口；`src/recorder.js`：独立日志记录器。
 - `scripts/demo.js`：模拟演示；`scripts/smoke-host.js`：真实 Cordis 与 SessionStore 接入检查。
 - `test/recorder.test.js`：Node.js 测试。Windows 下使用 `npm.cmd`，当前测试命令在同一进程运行。
+- 后续语言分工：Harness/Cordis 插件接入、实时录制、宿主生命周期及既有 inspect 保持 JavaScript；新增用例管理、任务断言、离线分析、重复试验、统计和报告优先 Python。状态化工具环境的核心逻辑优先 Python，宿主内工具注册与必要适配仍按 Harness 接口实现。两侧通过版本化 JSON/JSONL 或明确进程接口连接，Python 功能实现前只能标为计划。
 - 常用命令：`npm.cmd run check`、`npm.cmd test`、`npm.cmd run demo`、`npm.cmd run smoke:host`、`npm.cmd run check:output`。最后一项需要真实子进程，沙箱出现 EPERM 时报告验证限制，在获准环境或外部终端执行，不能使用 mock 代替。
 - 保留用户已有代码，尤其不要因插件使用 JavaScript 就删除 `main.py`。
 - `runs/` 包含原始会话与工具内容且已被 Git 忽略；项目说明使用模拟数据，避免将真实运行日志加入版本管理。
