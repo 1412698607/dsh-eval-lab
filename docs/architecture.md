@@ -1,6 +1,6 @@
 # dsh-eval-lab 架构与技术取舍
 
-当前版本 `0.1.2` 实现新增事件录制及离线一致性检查。插件适配宿主，记录器负责队列和封存，检查器读取磁盘证据；任务是否通过仍属于后续评测层。
+当前版本 `0.1.2` 实现新增事件录制及离线一致性检查。插件适配宿主，记录器负责队列和封存，检查器读取磁盘证据；M2.3 已有固定 fixture 任务检查，通用任务评测仍属于 M3。
 
 ## 执行流程与模块
 
@@ -32,6 +32,9 @@ inspect --run <目录>
 | `scripts/lib/host.js` | 固定组件版本检查和加载 |
 | `scripts/lib/host-smoke.js` | 真实组件事件比较、检查点状态、卸载后封存与 inspect |
 | `scripts/check-output.js` | 三个真实子进程场景，检查输出和持久化证据 |
+| `scripts/prepare-live.js` | 通过实际 CLI 离线安装两个独立 profile，复制受控 fixture，只引用已有凭据文件 |
+| `scripts/run-live.js`、`scripts/fixtures/live-control.js` | 专用 CLI 子进程、真实流取消 / 强停、Web 停止 Agent 后退出及 inspect |
+| `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
 ## 输出与数据格式
@@ -81,7 +84,17 @@ close 先禁止接收，然后为每个会话排队 sealed 更新；一个失败
 
 2026 年 10 月 12 日真实卸载检查发现旧 `ctx.on("dispose")` 在 Cordis 4.0.4 没有执行关闭，旧测试只证明 flush 后内容一致。本批改用 `ctx.effect(() => () => recorder.close())` 显式注册所属 fiber 的清理，并验证卸载后 sealed 和 inspect 通过。普通函数 apply 还可能被该版本按构造函数执行，因此不能只依赖它返回的函数作为清理。
 
-Cordis 卸载仍会捕获清理错误，fiber.dispose 完成不等于日志有效。宿主应先停止 Agent 事件，再卸载插件；实际 Web、headless、SDK 或桌面完整退出顺序留待 M2.3。历史判断修正见 [修改记录 006](changes/2026-10-12-006-m2-2-recording-integrity.md)。
+Cordis 卸载仍会捕获清理错误，fiber.dispose 完成不等于日志有效。宿主应先停止 Agent 事件，再卸载插件。2026 年 10 月 15 日已验证 headless 等待任务 idle / flush 后的启动器关闭；Web 由测试控制插件先 cancel、等待 idle / flush，再调用 appExit 走官方关闭。普通 Web 进程信号关闭、SDK 和桌面仍未验证。历史判断修正见 [修改记录 006](changes/2026-10-12-006-m2-2-recording-integrity.md)。
+
+## M2.3 联调边界
+
+准备目录为 `runs/live/<check-id>/`，`home` 包含独立 headless / web profile，`workspace` 是 README fixture 副本，`setup.json` 使用 `setupFormatVersion: 1`。安装通过匹配版本的实际 CLI `plugin add link:<项目目录> --offline --ignore-scripts`，使用独立 pnpm store。凭据配置只引用原 home 的凭据文件路径，不复制密钥，不导入原 profile 的模型配置。宿主默认路由为 `deepseek-official / deepseek-flash`。
+
+每次启动保存 `<mode>/<launch-id>/result.json`，使用 `resultFormatVersion: 1`，包含 profile、CLI 版本、固定输入、子进程退出码与信号、干预事实、headless 协议检查和 inspect 结果。原有 run / JSONL / status 协议没有改变。stdout / stderr 与真实轨迹保存在同一启动目录下；Web stdout 可能含本地认证 URL，均不公开。
+
+控制插件仅由专用 IPC 子进程加载，不加入分发 bundle。它按实际 `{ agent, frame }` 接口，在首个模型流 chunk 后通知父进程；取消调用 `agent.cancel({ kind: 'user' })`，强停由父进程终止自己创建的进程。Windows 的 child.kill 不作为正常 SIGINT 关闭使用；Web 的 `stop` 通过 IPC 请求停止 Agent 后 appExit。headless 有 120 秒超时，Web 正常关闭有 15 秒超时，超时强停不计为成功。
+
+Python 固定检查器读取版本化联调报告定位明确目录，并重新调用 Node inspect，避免旧快照掩盖磁盘损坏。录制通过后核对用户输入、文件参数、callId 关联的实际工具结果、结果在答案之前、字段值和 turn/end；工具名来自事件。缺失文件要求真实 isError 和后续响应；取消检查 aborted/user；强停检查 SIGKILL 与非完整录制。它限定单会话与固定 fixture，不承担通用用例格式、批次调度或统计。
 
 ## 离线检查
 
@@ -107,11 +120,13 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 | --- | --- |
 | Harness/Cordis 插件、会话监听、写入队列、状态封存、宿主清理 | 已实现，继续使用 JavaScript |
 | M2.2 inspect 及宿主组件检查 | 已实现，继续使用 JavaScript；后续 Python 可调用现有 Node 检查入口 |
-| 用例管理、任务断言、状态化工具环境核心逻辑、批次调度 | 计划在 M3 优先使用 Python；宿主内工具注册与必要适配按实际 Harness 接口实现 |
+| 用例管理、通用任务断言、状态化工具环境核心逻辑、批次调度 | 计划在 M3 优先使用 Python；M2.3 固定 fixture 检查已实现，宿主内工具注册与必要适配按实际接口实现 |
 | 重复试验、轨迹分析、指标聚合、配置比较与报告 | 计划优先使用 Python；缺失指标保持缺失 |
 
 跨语言边界先复用现有版本化 run.json、JSONL、status 和 inspect 的 JSON 报告及退出码。Python 评测应先调用现有 Node 检查入口，仅在录制检查通过后执行任务断言；录制失败或无法确认与任务断言失败分别报告。调用 Node 脚本时直接消费其 JSON 输出，具体进程控制和错误映射在 M3 实现并验证。
 
-状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；当前未实现该桥接，也未指定具体传输方式。已有 main.py 是示例文件，尚无 Python 评测模块。本批只明确分工，不改变运行方式或日志格式。决策依据见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)。
+状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；当前未实现该桥接，也未指定具体传输方式。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日新增 Python 功能仅为上述 M2.3 固定证据检查，通用评测仍为计划。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。36 项测试及真实组件、子进程检查的范围见 [进度](progress.md)，没有真实模型成功率或性能改善数据。
+后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。计划先区分执行状态、录制有效性和断言结论，建立 caseRunId 与 sessionId / runId 的关联；再验证单用例、实时工具桥接和批次隔离。此处只记录待实现的职责边界，没有新增 schema、工具协议或运行接口。
+
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。36 项 Node 测试、6 项 Python 测试及真实组件、模型和子进程检查的范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
