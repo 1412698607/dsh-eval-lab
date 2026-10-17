@@ -10,6 +10,7 @@
 - 写入失败时记录错误，后续 checkpoint 报错；失败会话停止继续录制，其他会话仍可写入。
 - `0.1.2` 完成 M2.2：独立会话状态文件、计数和 SHA-256、待写入容量保护，以及离线 `inspect`；保留 M2.1 的 stderr 诊断和可移植配置。
 - M2.3 已完成独立 Web / headless profile 的真实模型联调，新增固定 fixture 的 Python 证据检查；插件版本保持 `0.1.2`。
+- M3.1 已实现 Python 版本化用例加载、离线证据断言及执行 / 录制 / 断言三维结果；两个公开合成用例通过，插件版本仍为 `0.1.2`。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -169,26 +170,40 @@ npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<run-id>'
 
 日志包含原始会话及工具内容。`runs/` 已加入 `.gitignore`；作品集展示可使用 `demo` 的模拟数据。
 
+## 通用用例离线评测（M3.1）
+
+在仓库根目录运行，使用 Python 标准库及现有 Node inspect：
+
+```powershell
+npm.cmd run test:python
+npm.cmd run demo:eval
+python -m dsh_eval --case 'fixtures/evaluation/read-project.case.json' --evidence 'runs/eval-demo/<demo-id>/<runId>/evidence.json' --output 'runs/eval-demo/<demo-id>/<runId>/evaluation.json'
+```
+
+`demo:eval` 输出读取项目名称、报告缺失文件两组 casePath / evidencePath，分别代入评测命令。它用原有记录器生成合成日志，不调用模型，也不执行用例环境。评测先重新运行 Node inspect，再核对输入、工具参数、callId 结果关联、答案和结束顺序。结果文件必须不存在，复验请省略 `--output` 或使用新文件名。
+
+退出码 `0` / `1` / `2` 分别对应任务 passed / failed / unevaluable（输入或输出错误也为 `2`）。仅执行正常且录制有效才判断任务通过或失败；缺工具证据、取消、超时、运行错误和录制损坏分别保留原因。完整字段、预算声明和单任务限制见 [评测格式](docs/evaluation-format.md) 与 [合成样例](fixtures/evaluation/README.md)。
+
 ## 当前边界
 
 - 只录制插件观察到的新增事件；不会补齐加载前、恢复会话或 fork 继承的历史。`run.json` 明确标注 `live-events-only`，这些日志不能直接作为完整会话恢复文件。
 - 已完成异步写入和封存不代表断电时绝对可靠；没有 fsync、跨进程恢复或日志轮转。状态替换使用同目录临时文件与 rename，当前 Windows 本地文件系统检查通过。
 - SHA-256 用于一致性校验，不是签名；同时篡改日志与摘要、删除整对会话文件都不在检测保证内。没有运行级会话清单，不能由磁盘上剩余片段推断所有会话都曾被保存。
-- 当前仅验证 M2.3 的固定 fixture，不执行通用评测或生成通过率；尚未实现状态化工具 mock、通用任务断言、A/B 重跑和评测界面。
+- 已验证 M2.3 固定 fixture 的真实模型基线及 M3.1 通用离线断言的合成正反例；未实现通用单用例真实驱动、状态化工具环境、批次 / A/B 重跑和评测界面，不生成模型通过率。
 
 ## 下一阶段
 
-M2.1、M2.2 和 M2.3 的 Web / headless 受控联调基线已完成。下一步为 M3：
+M2.1、M2.2、M2.3 的 Web / headless 受控联调基线，以及 M3.1 离线用例断言已完成。下一批为 M3.2：
 
-后续语言分工：JavaScript 继续负责 Harness 插件、实时录制、宿主适配和现有 inspect；用例管理、任务断言、状态化工具环境核心、批次调度，以及统计分析和报告优先 Python。M2.3 已实现固定 fixture 的 Python 证据检查，通用评测和实时跨语言工具桥接仍未实现，具体边界见 [架构说明](docs/architecture.md) 与 [修改记录 007](docs/changes/2026-10-14-007-python-evaluation-plan.md)。
+后续语言分工：JavaScript 继续负责 Harness 插件、实时录制、宿主适配和现有 inspect；Python 已实现用例加载与离线断言，后续继续负责状态化环境核心、批次调度及统计报告。实时跨语言工具桥接仍未实现，具体边界见 [架构说明](docs/architecture.md) 与 [修改记录 007](docs/changes/2026-10-14-007-python-evaluation-plan.md)。
 
-1. M3.1：定义版本化用例、caseRunId 与结果分类，先实现 Python 离线证据断言。
+1. M3.1 已完成：版本化用例、caseRunId、三维结果与 Python 离线证据断言；验证为合成轨迹。
 2. M3.2：驱动一个受控真实 headless 用例，验证正常完成、运行错误和超时 / 取消。
 3. M3.3：实现 Python 状态化工具环境与 JavaScript 实时桥接，覆盖路径过时、工具失败后恢复。
 4. M3.4：实现顺序批次回归、环境重置和逐项结果清单。
 5. M4/M5：在上述闭环完成后做重复配置比较、统计报告、结果浏览和持续集成。
 
-这些均为待开发，具体交付、验收及渠道补充事项见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。下一批入口是 M3.1；当前没有新增通用评测命令。
+M3.2 及以后仍待开发，具体交付、验收及渠道补充事项见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。当前离线入口为 `python -m dsh_eval`。
 
 ## 开发文档
 
@@ -196,10 +211,11 @@ M2.1、M2.2 和 M2.3 的 Web / headless 受控联调基线已完成。下一步�
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
+- [评测格式](docs/evaluation-format.md)：版本 1 用例、证据清单、结果与离线命令。
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 15 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 16 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

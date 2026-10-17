@@ -1,24 +1,24 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 15 日（Asia/Shanghai），插件版本 `0.1.2`。M2.3 的独立 profile 安装、Web / headless 真实模型任务、程序化取消和专用进程强制停止已验证。新增 Python 固定 fixture 证据检查；通用 M3 自动评测尚未实现。本批改动尚未提交。
+截至 2026 年 10 月 16 日（Asia/Shanghai），插件版本 `0.1.2`。M3.1 已实现 Python 用例加载、版本化证据清单、离线通用断言和三维结果；两个公开合成用例及反例验证通过。本批改动尚未提交。M2.3 的真实模型基线保留，本批未调用模型。
 
-同日维护后续路线：下一批先做 M3.1 用例格式与离线断言，再推进单用例运行、状态化工具桥接和顺序批次。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。本次计划维护只改文档，以下功能验证仍来自 M2.3 批次。
+下一批为 M3.2 单用例真实运行，再推进状态化工具桥接和顺序批次。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。2026 年 10 月 15 日的路线维护仅修改文档，历史功能验证另列保留。
 
 ## 项目目标
 
-围绕 DeepSeek Harness 构建 Agent 行为回归测试工具：对固定任务与环境运行 Agent，检查工具行为和最终结果，比较配置。当前成果是录制与一致性检查层，不能据此报告模型任务通过率、成本或性能提升。
+围绕 DeepSeek Harness 构建 Agent 行为回归测试工具：对固定任务与环境运行 Agent，检查工具行为和最终结果，比较配置。当前成果包含录制与一致性检查、固定真实任务基线及合成轨迹离线断言，不能据此报告模型任务通过率、成本或性能提升。
 
 ## 当前基线
 
 | 项目 | 当前状态 |
 | --- | --- |
 | 插件版本 | `0.1.2`；本批不改变录制器及日志协议 |
-| 当前开发分支 | `20261014/feat/m2.3-real-model-integration` |
-| 已核实基线提交 | `f459945` 为 M2.2，`4c8982f` 为语言规划；M2.1 为 `f92733b`，第一版为 `8c1b53a` |
-| 开发语言 | 宿主与生命周期继续 JavaScript；M2.3 固定任务证据检查已使用 Python |
+| 当前开发分支 | `20261015/feat/eval-workflow` |
+| 已核实基线提交 | `4f54ddf` 为 M2.3 与后续路线，已由 `de86bd2` 合并；`f459945` 为 M2.2，`4c8982f` 为语言规划 |
+| 开发语言 | 宿主与生命周期继续 JavaScript；Python 已实现固定任务检查及 M3.1 通用离线断言 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 10 月 15 日，Asia/Shanghai |
+| 最新复核日期 | 2026 年 10 月 16 日，Asia/Shanghai |
 | 真实模型基线 | CLI `0.2.0-rc.2`；`deepseek-official / deepseek-flash`；独立 Web / headless profile |
 
 ## 功能状态
@@ -41,9 +41,25 @@
 | Web / headless 真实模型联调 | 实际安装、文件读取及字段答案、工具失败后响应、取消、强停已验证 | `scripts/prepare-live.js`、`scripts/run-live.js` |
 | 固定 fixture 证据检查 | Python 先重新 inspect，再核对工具结果、答案及结束事实；6 项测试通过 | `scripts/verify_live.py` |
 | desktop / SDK、Web 页面手动取消及普通进程信号关闭 | 尚未验证 | 后续按渠道需求验证 |
-| 通用任务断言、状态化工具环境、重复试验和指标比较 | 尚未实现 | M3 及后续 |
+| 用例加载与通用离线任务断言 | 版本 1 格式、caseRunId 关联、文本 / 工具证据 / 结束断言及三维结果；合成正反例通过 | `dsh_eval/`、`docs/evaluation-format.md` |
+| 单用例真实驱动、状态化工具环境、批次与重复试验 / 指标比较 | 尚未实现 | M3.2 及后续 |
 
 ## 最新验证
+
+2026 年 10 月 16 日在项目根目录执行：
+
+| 命令或操作 | 结果 | 验证边界 |
+| --- | --- | --- |
+| `npm.cmd run check` | 22 个 JavaScript 文件通过 | 新增合成证据生成脚本；未修改 src |
+| `npm.cmd test` | 36 项通过，0 失败 / 跳过 | 原有 Node 回归 |
+| `npm.cmd run test:python` | 30 项通过 | 原有 6 项 + 新增 24 项；格式、断言、真实 Node inspect / 记录器与 CLI 边界 |
+| `npm.cmd run demo:eval`，分别执行 `python -m dsh_eval --case <casePath> --evidence <evidencePath> --output <新结果文件>` | read-project / missing-file 均 passed，执行 completed，录制 complete，断言 passed | 两个公开合成轨迹，不是模型执行或状态化环境验收 |
+| `npm.cmd run smoke:host` | 6 条人工组件事件，封存检查通过 | 真实 Cordis / SessionStore，无模型调用 |
+| `npm.cmd run check:output` | 首次沙箱 spawn EPERM；获准环境复验 normal / write-error / abrupt-exit 均通过 | 真实子进程，未用 mock 替代 |
+
+负例包括无工具结果、错误 callId、重复 / 倒序结果、答案不符、错参数 / 工具名、输入和配置不匹配、取消 / 超时 / 运行错误分类、关联错误 / 额外会话、缺结束、已知事件结构错误、任务内序号缺口、开放 / 缺失日志和旧成功后截断。进程不可用 / inspect 超时错误路径另用模拟异常验证；正反录制检查直接调用真实 Node。详见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md)。
+
+## M2.3 历史验证（2026 年 10 月 15 日）
 
 2026 年 10 月 15 日在项目根目录执行：
 
@@ -86,7 +102,7 @@
 ## 已知限制
 
 - 仅记录新增事件，不补齐加载前、恢复会话或 fork 历史；不是完整会话备份或确定性重放系统。
-- `runId` 是一次记录器启动批次，尚不是一次评测编号。inspect 的 complete 表示找到的片段通过一致性检查，不表示任务成功。
+- `runId` 是一次记录器启动批次；M3.1 用独立 caseRunId 表示一次用例执行并显式关联会话。inspect 的 complete 表示找到的片段通过一致性检查，不表示任务成功。
 - record 返回 true 只表示入队；flush 和 sealed 都没有 fsync 或断电可靠保证。写入失败也可能导致 failed 状态无法保存，此时保留 recording、缺失或损坏状态均不接受为完整。
 - 没有运行级会话清单，删除整对会话文件无法检测；SHA-256 不是签名，不能抵御日志与摘要同时被改写。
 - 检查器不提供在线一致快照，应检查停止写入后的目录或稳定副本；开放检查点之后的完整追加允许存在，但残缺末行仍会报告损坏。
@@ -94,7 +110,8 @@
 - 状态替换验证限定当前 Windows 本地文件系统；没有验证所有网络盘、占用行为或操作系统强杀、断电场景。
 - 固定组件检查、真实 headless 和 Web 验证分别记录；本批只证明上述独立 profile 与固定任务。原有自定义模型配置没有导入测试 profile。
 - Web 使用测试专用 IPC 正常关闭，尚未验证页面手动取消、普通 Web 进程信号关闭、desktop 或 SDK。
-- Python 验证器只接受 M2.3 的单会话固定 fixture 和版本 1 报告，不是通用任务评测引擎；尚无实时跨语言工具桥接。
+- `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。新增 `dsh_eval` 接受版本 1 用例与证据清单，只支持单会话单任务离线断言；环境与预算仅声明，未实现真实用例驱动、实时跨语言工具桥接和批次调度。
+- 实际 provider / model / profile、执行干预和预算实施由证据生产者声明；当前离线模块只检查一致性和日志内证据，不能因 source=live 就认定真实运行已验证。版本格式与保守分类见 [评测格式](evaluation-format.md)。
 
 ## 后续里程碑
 
@@ -104,8 +121,8 @@
 | M2.1 | 已完成输出与配置，`0.1.1` | 历史 18 项测试及两种真实子进程输出检查 |
 | M2.2 | 已完成状态、容量和 inspect，`0.1.2` | 36 项测试、真实组件封存及三种子进程场景 |
 | M2.3 | 已完成 Web / headless 受控联调基线 | 实际安装、字段读取与缺失文件响应、真实流取消、专用进程强停；Node inspect + Python 固定证据检查 |
-| M3.1 | 下一批，未实现：Python 用例格式、caseRunId、离线证据断言和结果分类 | 合成轨迹正反例；先复用 inspect，损坏 / 开放日志不能判任务通过 |
-| M3.2 | 未实现：Python 驱动单用例受控 headless 运行 | 正常真实任务闭环；启动错误、超时 / 取消正确分类与清理 |
+| M3.1 | 已完成：Python 版本化用例与结果、caseRunId、离线证据断言和三维分类 | 两个合成用例、正反例及真实 Node inspect；损坏 / 开放日志不能判任务通过 |
+| M3.2 | 下一批，未实现：Python 驱动单用例受控 headless 运行 | 正常真实任务闭环；启动错误、超时 / 取消正确分类与清理 |
 | M3.3 | 未实现：Python 状态化工具环境核心与 JavaScript 实时桥接 | 状态单测、真实宿主桥接及路径过时 / 工具失败后恢复两个真实模型用例分别验证 |
 | M3.4 | 未实现：Python 顺序批次回归、环境隔离与结果清单 | 新会话和 caseRunId 独立，初始状态重置，逐项关联配置与录制证据 |
 | M4 | 优先 Python 实现多次重复配置比较、指标汇总与报告 | 报告样本数、配置和原始结果；缺失指标保持缺失 |
@@ -113,7 +130,8 @@
 
 ## 文档导航
 
-- [M3 与后续计划](plans/m3-regression-evaluation.md)：下一批入口、分批验收、结果分类，以及 M4/M5 和渠道 / 录制加固待办；均未实现。
+- [M3 与后续计划](plans/m3-regression-evaluation.md)：M3.1 已完成范围，M3.2 下一批入口及后续待办。
+- [M3.1 评测格式](evaluation-format.md) 与 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md)：当前离线入口与验证依据。
 - [M2.3 真实任务联调](changes/2026-10-15-008-m2-3-live-integration.md)：本批安装、真实模型和生命周期证据，以及固定 Python 检查范围。
 - [Python 评测分工决策](changes/2026-10-14-007-python-evaluation-plan.md)：已明确规划，未新增 Python 功能；现有 inspect 和运行方式保持不变。
 - [M2 方案](plans/m2-reliable-recording.md)
