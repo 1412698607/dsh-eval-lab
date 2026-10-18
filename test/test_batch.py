@@ -3,6 +3,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -138,6 +139,72 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(report["outcome"], "unevaluable")
         self.assertEqual([row["executionStatus"] for row in report["entries"]], ["runtime_error"] * 2)
         self.assertTrue(all(row["runId"] is None for row in report["entries"]))
+
+    def test_adapter_launch_failure_follows_policy_and_preserves_missing_facts(self):
+        popen = subprocess.Popen
+        for policy in ("continue", "stop"):
+            with self.subTest(policy=policy):
+                self.manifest["failurePolicy"] = policy
+                failed = False
+                def fail_first_launch(*args, **kwargs):
+                    nonlocal failed
+                    if not failed:
+                        failed = True
+                        raise OSError("Adapter process was not created")
+                    return popen(*args, **kwargs)
+                with patch("dsh_eval.runner.subprocess.Popen", side_effect=fail_first_launch):
+                    report = self.run_batch()
+                self.assertEqual(report["status"], "completed" if policy == "continue" else "stopped")
+                self.assertEqual(report["stopReason"], None if policy == "continue" else "failure_policy")
+                self.assertEqual(report["outcome"], "unevaluable")
+                base = Path(report["batchDirectory"])
+                first, following = report["entries"]
+                self.assertEqual(first["executionStatus"], "runtime_error")
+                self.assertEqual(first["assertionOutcome"], "not_run")
+                for key in ("runId", "sessionId", "configuration"):
+                    self.assertIsNone(first[key])
+                runtime = load_json(base / first["runtimeReport"])
+                self.assertIs(runtime["adapterProcessStarted"], False)
+                self.assertEqual((runtime["stage"], runtime["host"], runtime["supervisor"]), ("run", {}, {}))
+                self.assertEqual(runtime["error"]["type"], "OSError")
+                self.assertEqual(evaluate(base / first["caseDirectory"] / "case.json", base / first["evidencePath"])["outcome"], "unevaluable")
+                if policy == "continue":
+                    self.assertEqual(following["outcome"], "passed")
+                    self.assertIs(load_json(base / following["runtimeReport"])["adapterProcessStarted"], True)
+                else:
+                    self.assertEqual(following["status"], "skipped")
+                    self.assertIsNone(following["caseRunId"])
+
+    def test_unknown_adapter_launch_cannot_confirm_empty_supervision(self):
+        for missing in (True, False):
+            with self.subTest(missing=missing):
+                def forget_launch(*args, **kwargs):
+                    result = run_case(*args, **kwargs)
+                    runtime_path = Path(result["association"]["runtimeReport"])
+                    runtime = load_json(runtime_path)
+                    if missing:
+                        runtime.pop("adapterProcessStarted", None)
+                    else:
+                        runtime["adapterProcessStarted"] = None
+                    runtime_path.write_text(json.dumps(runtime), encoding="utf-8")
+                    return result
+                with patch("dsh_eval.runner.subprocess.Popen", side_effect=OSError("No adapter created")), \
+                        patch("dsh_eval.batch.run_case", side_effect=forget_launch):
+                    report = self.run_batch()
+                self.assertEqual((report["status"], report["stopReason"]), ("error", "cleanup_unconfirmed"))
+                self.assertEqual(report["entries"][0]["executionStatus"], "runtime_error")
+                self.assertEqual(report["entries"][1]["status"], "skipped")
+
+    def test_interrupt_during_adapter_launch_stops_batch_with_unknown_start(self):
+        with patch("dsh_eval.runner.subprocess.Popen", side_effect=KeyboardInterrupt) as launch:
+            report = self.run_batch()
+        self.assertEqual(launch.call_count, 1)
+        self.assertEqual((report["status"], report["stopReason"]), ("interrupted", "user_interrupt"))
+        runtime = load_json(Path(report["batchDirectory"]) / report["entries"][0]["runtimeReport"])
+        self.assertIsNone(runtime["adapterProcessStarted"])
+        self.assertTrue(runtime["userInterrupted"])
+        self.assertEqual(report["entries"][1]["status"], "skipped")
+        self.assertIsNone(report["entries"][1]["caseRunId"])
 
     def test_timeout_follows_policy_without_becoming_task_failure(self):
         timed = copy.deepcopy(self.case)

@@ -1,6 +1,6 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 18 日（Asia/Shanghai），插件版本 `0.1.2`。M3.4 已实现 Python 顺序批次、全部输入快照、逐次独立会话 / 环境、进度与结果清单、继续 / 停止策略。真实三项恢复批次 passed，重复读取故障重置和实际异常策略分别验证；详情见 [记录 015](changes/2026-10-18-015-m3-4-sequential-batches.md)。已核实 M3.3 审查修复提交 `3ce645d`，本批尚未提交。
+截至 2026 年 10 月 19 日（Asia/Shanghai），插件版本 `0.1.2`。M3.4 主体已提交为 `bbe1b4a`，包含顺序隔离批次、输入快照、状态重置和逐项结果；其真实模型验证见 [记录 015](changes/2026-10-18-015-m3-4-sequential-batches.md)。本批修复适配器未创建时误停 continue 策略的问题，启动未知及清理未确认仍停止，详见 [修复记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)；本批尚未提交。
 
 下一批为 M4.1 重复试验与指标口径；剩 M4、M5 两个主要阶段，按 M4.1 / M4.2 / M5 拆为三批。渠道补充和录制加固另按需求安排。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。
 
@@ -14,11 +14,11 @@
 | --- | --- |
 | 插件版本 | `0.1.2`；本批不改变录制器及日志协议 |
 | 当前开发分支 | `20261015/feat/eval-workflow` |
-| 已核实基线提交 | `3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
+| 已核实基线提交 | `bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
 | 开发语言 | JavaScript 宿主接入和生命周期；Python 已实现离线断言、状态化环境及真实单用例 / 顺序批次调度 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 10 月 18 日，Asia/Shanghai |
+| 最新复核日期 | 2026 年 10 月 19 日，Asia/Shanghai |
 | 真实模型基线 | CLI `0.2.0-rc.2`；`deepseek-official / deepseek-flash`；独立 Web / headless profile |
 
 ## 功能状态
@@ -44,10 +44,18 @@
 | 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；三种断言和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消、清理与新建结果；受控真实任务及异常通过 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
-| 顺序批次、重置和结果清单 | 已实现版本 1 批次 / 结果，输入冻结及独立执行，实际恢复批次和异常策略通过 | `dsh_eval/batch.py`、[批次运行](batch-runner.md) |
+| 顺序批次、重置和结果清单 | 版本 1 批次 / 结果与历史真实恢复批次已验证；本批补齐未创建适配器时的 continue / stop 策略 | `dsh_eval/batch.py`、[批次运行](batch-runner.md)、修复记录 016 |
 | 重复试验统计 / 指标比较 | 尚未实现 | M4 及后续 |
 
-## 最新验证：M3.4（2026 年 10 月 18 日）
+## 最新验证：M3.4 启动失败修复（2026 年 10 月 19 日）
+
+- `python -m unittest discover -s test -p test_batch.py`：18 项通过；修复前新增回归复现 continue / stop 均被误归清理未知，修复后符合策略。新增三项覆盖启动失败、启动事实缺失 / null 与启动期 KeyboardInterrupt，原已启动进程清理未知的停止检查继续通过。
+- `npm.cmd run test:python`：获准环境 76 项通过（原 73 + 新 3）；`npm.cmd test`：42 项通过；`npm.cmd run check`：29 个 JS 文件通过；`python -m compileall -q dsh_eval test` 通过。
+- `python -m scripts.smoke_bridge`：获准环境真实工具注册 / IPC 四次请求通过，未调用模型。启动失败与中断通过注入异常验证，后续成功项使用真实 Node 子进程和合成适配器，不代表实际模型任务或手工按键验收。
+
+本批未新增模型运行、未复验历史模型轨迹，未重复 smoke:host / check:output；下列历史验证及其边界保留。详见 [修复记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。
+
+## M3.4 主体历史验证（2026 年 10 月 18 日）
 
 - `npm.cmd run test:python`：获准环境 73 项通过（原 58 + 新 15）；格式和预检、冻结输入、重复状态重置、配置隔离、结果关联、失败 / 取消 / 超时策略、人工中断注入、清理未知和进度写入错误均覆盖。合成适配器使用真实 Node 进程与原录制器，未调用模型。
 - `npm.cmd test` / `npm.cmd run check`：42 项 / 29 个 JS 文件通过；Python compileall 通过。`python -m scripts.smoke_bridge` 无模型实际 Cordis / Tools / IPC 四次请求通过。

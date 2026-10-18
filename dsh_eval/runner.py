@@ -258,6 +258,7 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
     host, supervisor = {}, {}
     error_info = None
     preparation = {"processStarted": False, "processExited": True}
+    adapter_started = False
     user_interrupted = False
     stage = "workspace"
     execution = None
@@ -268,9 +269,15 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
         stage = "run"
         with (directory / "adapter.stderr.log").open("x", encoding="utf-8") as stderr, \
                 (directory / "adapter.stdout.jsonl").open("x", encoding="utf-8") as event_log:
-            process = subprocess.Popen(["node", str(ADAPTER), "run", str(directory)], cwd=ROOT,
-                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
-                                       text=True, encoding="utf-8", **_process_options())
+            adapter_started = None  # Interrupted creation may leave the start unknown.
+            try:
+                process = subprocess.Popen(["node", str(ADAPTER), "run", str(directory)], cwd=ROOT,
+                                           stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
+                                           text=True, encoding="utf-8", **_process_options())
+            except OSError:
+                adapter_started = False
+                raise
+            adapter_started = True
             environment = StatefulEnvironment(case["environment"], case_run_id) if "stateful" in case["environment"] else None
             supervise(process, case["budget"]["timeoutSeconds"], cancel_after_stream, event_log, supervisor, environment)
         host = load_json(directory / "host-result.json")
@@ -307,7 +314,7 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
         evidence["batchId"] = batch_id
     save_json(directory / "runtime.json", {"runtimeFormatVersion": 1, "caseRunId": case_run_id, "stage": stage,
                                           "host": host, "supervisor": supervisor, "error": error_info,
-                                          "preparation": preparation,
+                                          "preparation": preparation, "adapterProcessStarted": adapter_started,
                                           "userInterrupted": user_interrupted or supervisor.get("userInterrupted", False)})
     save_json(directory / "evidence.json", evidence)
     result = evaluate(case_snapshot, directory / "evidence.json")

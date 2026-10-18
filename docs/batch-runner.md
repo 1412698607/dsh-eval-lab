@@ -1,6 +1,6 @@
 # M3.4 顺序批次回归
 
-更新：2026 年 10 月 18 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
+更新：2026 年 10 月 19 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
 
 ## 运行
 
@@ -91,11 +91,15 @@ python -m dsh_eval --case 'runs/batches/<batchId>/cases/<caseRunId>/case.json' -
 | runner 意外异常、结果丢失或关联错误 | status=error、stopReason=runner_error，当前项 error，其余 skipped |
 | 快照 / 进度落盘失败 | 抛出错误并停止启动；保留已有单项结果及最后可用的进度，不补造终态 |
 
-准备阶段记录专用准备进程是否启动 / 退出。执行阶段核对适配进程退出码、stdinWriterStopped，以及宿主 childClosed、未创建 child 的事实或成功返回的自有进程树强停路径。当前受控 Windows 宿主范围内确认后才进入下一项，不推定任意外部工具进程树或其他平台可靠。
+准备阶段记录专用准备进程是否启动 / 退出。执行阶段由 runtime.adapterProcessStarted 区分启动事实：尚未尝试创建或 Popen 以 OSError 启动失败时为 false，成功取得适配进程时为 true，创建过程被中断等未确认情况为 null。明确 false 时没有执行适配进程待清理，运行错误按 continue / stop 处理；runId / sessionId / 实际配置保持 null，不补造身份或退出码。
+
+已启动或启动事实缺失 / 未知时，仍核对适配进程退出码、stdinWriterStopped，以及宿主 childClosed、未创建 child 的事实或成功返回的自有进程树强停路径；不能从空 supervisor 推断未启动。人工中断始终先停止整批。当前受控 Windows 宿主范围内确认后才进入下一项，不推定任意外部工具进程树或其他平台可靠。
 
 batch status=completed 仅说明排定项都执行完，不代表任务全部通过。outcome 规则：基础设施错误、人工中断或任一单项 unevaluable 优先得到 unevaluable；否则有明确任务 failed 则为 failed（即使 stop 跳过后项）；只有全部项完成且都 passed 才为 passed。没有采集通过率、重复试验统计、token、成本或配置比较指标。
 
 ## 验证范围
+
+2026 年 10 月 19 日修复适配器未创建时误报 cleanup_unconfirmed 的审查问题：18 项批次检查、完整 76 项 Python、42 项 Node、29 文件语法与无模型真实桥接通过。启动失败 / 中断为异常注入，未新增实际模型任务；缺失启动事实不放行后项。详见 [修复记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。以下保留主体历史验证。
 
 2026 年 10 月 18 日，73 项 Python（原 58 + 新 15）、42 项 Node、29 文件 JavaScript 语法和无模型真实注册 / 桥接检查通过。确定性批次测试使用真实 Node 子进程、Python 状态与原录制器 / fresh inspect，但宿主适配器为合成测试程序，不算模型任务。人工中断以注入 KeyboardInterrupt 检查，未进行手工按键验收。
 

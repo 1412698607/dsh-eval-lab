@@ -107,3 +107,5 @@ M3.2 已完成受控单用例真实驱动与异常 / 预算分类；下一批 M3
 ## M3.4 批次扩展
 
 新增独立 batchFormatVersion=1 输入、batchResultFormatVersion=1 清单，命令为 `python -m dsh_eval --batch ... --run`。既有 evidence / evaluation 的可选 batchId 现由真实 runner 填写，单用例格式和版本保持；同 caseId 多次执行用不同 entryId / caseRunId 关联。runtimeReport 增加 preparation.processStarted / processExited、userInterrupted 等观察，不把计划身份当成实际会话。批次预检、冻结输入、状态、策略和相对路径口径见 [批次运行](batch-runner.md)。
+
+2026 年 10 月 19 日为 runtimeFormatVersion=1 添加可选 adapterProcessStarted：false 表示尚未尝试或 Popen 以 OSError 未能创建适配进程，true 表示成功创建，null 表示创建情况尚未确认。旧文件缺字段按未知处理，不能据此认为已清理；本字段不改变 execution、录制与断言三维结果，也不新增实际会话身份。证据、单项结果和批次格式版本不变。修复依据见 [记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。

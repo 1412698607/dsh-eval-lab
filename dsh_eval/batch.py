@@ -20,6 +20,8 @@ def _checkpoint(directory, report):
 def _cleanup_confirmed(runtime):
     if runtime["stage"] in ("workspace", "prepare"):
         return runtime["preparation"]["processExited"] is True
+    if runtime.get("adapterProcessStarted") is False:
+        return True
     supervisor, host = runtime["supervisor"], runtime["host"]
     return (supervisor.get("adapterExitCode") is not None and supervisor.get("stdinWriterStopped") is True
             and (host.get("childClosed") is True or "childPid" in host and host["childPid"] is None

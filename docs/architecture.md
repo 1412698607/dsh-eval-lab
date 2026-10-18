@@ -185,7 +185,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，下一批做 M4.1 重复试验与指标口径。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、73 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、76 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
 
 ## M3.3 实时状态化工具边界
 
@@ -201,6 +201,8 @@ Python `supervise` 使用专用写线程串行输出工具响应和控制帧，�
 
 ## M3.4 批次边界
 
-batch.py 在调用模型前校验并保存全部输入，逐项分配 caseRunId，调用原 run_case 后核对保存结果、batchId / caseId / caseRunId，记录配置和证据路径。runner 只补批次身份透传、准备进程是否退出和人工中断事实，原录制协议不变。每项完成进程与写线程清理后才进入下一项；不能确认时停止，即使 failurePolicy=continue。
+batch.py 在调用模型前校验并保存全部输入，逐项分配 caseRunId，调用原 run_case 后核对保存结果、batchId / caseId / caseRunId，记录配置和证据路径。runner 补批次身份透传、准备进程是否退出、执行适配器启动和人工中断事实，原录制协议不变。每项完成进程与写线程清理后才进入下一项；不能确认时停止，即使 failurePolicy=continue。
+
+2026 年 10 月 19 日修复未创建适配器时的误停：runtime.adapterProcessStarted 明确为 false 时，运行错误按批次策略处理；Popen 成功后为 true，创建过程尚未确认时为 null。缺失或未知值继续走原清理事实检查，不把空 supervisor 当成未启动。人工中断优先停止整批，既有实际身份缺失仍保持 null；格式兼容与回归依据见 [修复记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。
 
 batch-result.json 是本批唯一活动进度快照，以同目录临时 JSON + replace 更新；已有单项结果不覆写。每个新批次使用新 UUID 目录，冻结后的 batch.json 可重新执行新任务，不是重放或恢复。普通失败 / 无法评测、调度中断 / 异常和 skipped 分开；其精确定义、字段和退出码见 [批次运行](batch-runner.md)。没有并发批次调度、崩溃续跑或性能 / 成本统计。
