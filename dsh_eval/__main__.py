@@ -7,16 +7,20 @@ from .evaluate import evaluate
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Evaluate offline evidence or run one isolated Harness case")
-    parser.add_argument("--case", required=True, help="Version 1 or 2 case JSON")
+    parser = argparse.ArgumentParser(description="Evaluate offline evidence or run isolated Harness cases")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--case", help="Version 1 or 2 case JSON")
+    selection.add_argument("--batch", help="Version 1 sequential batch manifest")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")
-    parser.add_argument("--run", action="store_true", help="Execute one real headless task; may call the configured model")
-    parser.add_argument("--runs-root", help="Parent directory for new isolated case runs")
+    parser.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
+    parser.add_argument("--runs-root", help="Parent directory for new isolated case or batch runs")
     parser.add_argument("--host-modules", help="Explicit installed Harness node_modules directory")
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
-    if args.run == bool(args.evidence):
+    if args.batch and (not args.run or args.evidence or args.output):
+        parser.error("--batch requires --run and cannot use --evidence or --output")
+    if not args.batch and args.run == bool(args.evidence):
         parser.error("Choose --run or --evidence")
     if args.run and args.output:
         parser.error("--run saves evaluation.json in its new run directory; omit --output")
@@ -25,7 +29,10 @@ def main(argv=None):
     try:
         if args.output and Path(args.output).resolve() in (Path(args.case).resolve(), Path(args.evidence).resolve()):
             raise ValueError("Output must differ from input paths")
-        if args.run:
+        if args.batch:
+            from .batch import run_batch
+            result = run_batch(args.batch, args.runs_root, args.host_modules, args.cancel_after_stream)
+        elif args.run:
             from .runner import run_case
             result = run_case(args.case, args.runs_root, args.host_modules, args.cancel_after_stream)
         else:
@@ -37,7 +44,8 @@ def main(argv=None):
         print(text, end="")
         return {"passed": 0, "failed": 1, "unevaluable": 2}[result["outcome"]]
     except (OSError, ValueError, KeyError, TypeError) as error:
-        print(json.dumps({"evaluationFormatVersion": 1, "outcome": "unevaluable", "error": str(error)}, ensure_ascii=False))
+        version_key = "batchResultFormatVersion" if args.batch else "evaluationFormatVersion"
+        print(json.dumps({version_key: 1, "outcome": "unevaluable", "error": str(error)}, ensure_ascii=False))
         return 2
 
 

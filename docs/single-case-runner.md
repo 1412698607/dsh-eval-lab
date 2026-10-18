@@ -81,3 +81,7 @@ M3.2 验证了一条受控真实文件任务及上述异常路径。M3.2 当时�
 ## M3.3 状态化扩展（2026 年 10 月 18 日）
 
 单用例入口现支持版本 2 状态化用例。Python 在监督循环内即时处理工具请求，Node 转发专用 IPC；状态化环境的文件不写入 workspace。路径、错误、取消和复现命令见 [状态化工具与桥接](stateful-tools.md)。原有 M3.2 历史验证范围保留。
+
+## M3.4 顺序调度复用
+
+批次入口逐项调用同一 runner，使用 `runs/batches/<batchId>/cases/<caseRunId>/`，每项仍保存自己的 case / evidence / evaluation。批次身份传入原有可选 batchId；准备进程退出和人工 KeyboardInterrupt 额外记入 runtime，便于确认清理并停止整批。单用例 CLI 用法不变；批次清单、继续 / 停止和进度文件见 [批次运行](batch-runner.md)。

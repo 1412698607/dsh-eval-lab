@@ -51,6 +51,24 @@ def configuration(value):
     require(all(nonempty(item) for item in value.values()), "Configuration values must be nonempty strings")
 
 
+def validate_batch(batch):
+    fields(batch, ("batchFormatVersion", "batchName", "failurePolicy", "cases"))
+    require(type(batch["batchFormatVersion"]) is int and batch["batchFormatVersion"] == 1, "Unsupported batch format")
+    require(nonempty(batch["batchName"]), "batchName must be nonempty")
+    require(batch["failurePolicy"] in ("continue", "stop"), "failurePolicy must be continue or stop")
+    require(isinstance(batch["cases"], list) and batch["cases"], "Batch must contain cases")
+    identifiers = set()
+    for entry in batch["cases"]:
+        fields(entry, ("entryId", "casePath"))
+        require(nonempty(entry["entryId"]) and entry["entryId"] not in identifiers, "Batch entryId must be nonempty and unique")
+        identifiers.add(entry["entryId"])
+        path = entry["casePath"]
+        require(nonempty(path) and "\\" not in path and ":" not in path and not path.startswith("/")
+                and all(part not in ("", ".") for part in path.split("/")),
+                "casePath must be a relative POSIX path, resolved beside the batch manifest")
+    return batch
+
+
 def validate_case(case):
     fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"))
     require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] in (1, 2), "Unsupported case format")

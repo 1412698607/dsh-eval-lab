@@ -1,7 +1,7 @@
 {
   "caseFormatVersion": 2,
   "caseId": "stale-path",
-  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Read README.md and follow its reference to find projectName. If a reference is stale, discover the current file with eval_list. Use relative POSIX paths exactly. Return only the projectName value. Do not use native file tools, shell commands, or delegation.",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Read README.md and attempt to read its referenced file with eval_read before choosing an alternative. If that read fails, discover the current file with eval_list and read it to find projectName. Use relative POSIX paths exactly. Return only the projectName value. Do not use native file tools, shell commands, or delegation.",
   "environment": {
     "files": {
       "README.md": "See docs/old.md for projectName.\n",

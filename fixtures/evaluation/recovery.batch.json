@@ -1,0 +1,10 @@
+{
+  "batchFormatVersion": 1,
+  "batchName": "stateful-recovery",
+  "failurePolicy": "continue",
+  "cases": [
+    { "entryId": "stale-path", "casePath": "stale-path.case.json" },
+    { "entryId": "retry-first", "casePath": "retry-read.case.json" },
+    { "entryId": "retry-reset", "casePath": "retry-read.case.json" }
+  ]
+}

@@ -1,8 +1,8 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 18 日（Asia/Shanghai），插件版本 `0.1.2`。M3.3 已实现 Python 状态化工具环境及 JavaScript 实时桥接，两个历史真实模型样例通过；同日 [审查记录 013](changes/2026-10-18-013-m3-3-review.md) 发现的监督阻塞和目录断言过窄已在本批修复，详见 [修复记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。用例版本 2 兼容 1，证据 / 结果保持版本 2。已核实 M3.3 提交 `302855f`，审查及本批修复尚未提交；历史验证保留。
+截至 2026 年 10 月 18 日（Asia/Shanghai），插件版本 `0.1.2`。M3.4 已实现 Python 顺序批次、全部输入快照、逐次独立会话 / 环境、进度与结果清单、继续 / 停止策略。真实三项恢复批次 passed，重复读取故障重置和实际异常策略分别验证；详情见 [记录 015](changes/2026-10-18-015-m3-4-sequential-batches.md)。已核实 M3.3 审查修复提交 `3ce645d`，本批尚未提交。
 
-下一批为 M3.4 顺序批次回归；剩 M3.4、M4、M5 三个主要阶段（M4 拆两批，按实施批次共四批）。渠道补充和录制加固另按需求安排。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。
+下一批为 M4.1 重复试验与指标口径；剩 M4、M5 两个主要阶段，按 M4.1 / M4.2 / M5 拆为三批。渠道补充和录制加固另按需求安排。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。
 
 ## 项目目标
 
@@ -14,8 +14,8 @@
 | --- | --- |
 | 插件版本 | `0.1.2`；本批不改变录制器及日志协议 |
 | 当前开发分支 | `20261015/feat/eval-workflow` |
-| 已核实基线提交 | `302855f` 为 M3.3；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
-| 开发语言 | JavaScript 宿主接入和生命周期；Python 已实现离线断言及真实单用例调度 |
+| 已核实基线提交 | `3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
+| 开发语言 | JavaScript 宿主接入和生命周期；Python 已实现离线断言、状态化环境及真实单用例 / 顺序批次调度 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
 | 最新复核日期 | 2026 年 10 月 18 日，Asia/Shanghai |
@@ -44,9 +44,20 @@
 | 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；三种断言和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消、清理与新建结果；受控真实任务及异常通过 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
-| 批次与重复试验 / 指标比较 | 尚未实现 | M3.4 及后续 |
+| 顺序批次、重置和结果清单 | 已实现版本 1 批次 / 结果，输入冻结及独立执行，实际恢复批次和异常策略通过 | `dsh_eval/batch.py`、[批次运行](batch-runner.md) |
+| 重复试验统计 / 指标比较 | 尚未实现 | M4 及后续 |
 
-## 最新修复验证：M3.3（2026 年 10 月 18 日）
+## 最新验证：M3.4（2026 年 10 月 18 日）
+
+- `npm.cmd run test:python`：获准环境 73 项通过（原 58 + 新 15）；格式和预检、冻结输入、重复状态重置、配置隔离、结果关联、失败 / 取消 / 超时策略、人工中断注入、清理未知和进度写入错误均覆盖。合成适配器使用真实 Node 进程与原录制器，未调用模型。
+- `npm.cmd test` / `npm.cmd run check`：42 项 / 29 个 JS 文件通过；Python compileall 通过。`python -m scripts.smoke_bridge` 无模型实际 Cordis / Tools / IPC 四次请求通过。
+- `python -m dsh_eval --batch fixtures/evaluation/recovery.batch.json --run`：新快照批次 completed / passed，stale-path / retry-first / retry-reset 均 passed；41 / 37 / 37 条、55889 / 50166 / 50783 字节。后两项 project.md 的读取结果各为一次失败后一次成功，状态不串用。
+- 实际未注册路由 + 正常用例：continue 保存 runtime_error 后继续得到 passed；stop 跳过后项。实际首流取消 + stop：cancelled 后跳过后项；跳过项身份和任务结论为 null。
+- 五个验证批次的十个实际启动项均使用保存的 case / evidence 离线复验，保持原结论；宿主 childClosed=true、forceStopped=false、写线程已退出，十个专用 PID 查询均不再存在。
+
+首次旧提示批次的路径过时用例先列目录，未实际读取旧路径，答案正确但必要证据不足，保留为 unevaluable。任务说明明确“先尝试引用路径再选择替代文件”后，新批次通过，旧日志和快照未改。实际模型结果、合成回归和人工中断注入分别记录，不据此报告成功率或成本变化。详见 [批次运行](batch-runner.md) 与 [记录 015](changes/2026-10-18-015-m3-4-sequential-batches.md)。
+
+## M3.3 历史修复验证（2026 年 10 月 18 日）
 
 - `npm.cmd run test:python`：获准环境 58 项通过（原 51 + 新 7）；阻塞响应下超时 / 首流取消可触发清理并收回进程与写线程，完整 Unicode 返回、写入错误分别验证。
 - `npm.cmd test` / `npm.cmd run check`：42 项 / 28 个 JS 文件通过；Python compileall 通过。
@@ -158,7 +169,7 @@
 - 状态替换验证限定当前 Windows 本地文件系统；没有验证所有网络盘、占用行为或操作系统强杀、断电场景。
 - 固定组件检查、真实 headless 和 Web 验证分别记录；本批只证明上述独立 profile 与固定任务。原有自定义模型配置没有导入测试 profile。
 - Web 使用测试专用 IPC 正常关闭，尚未验证页面手动取消、普通 Web 进程信号关闭、desktop 或 SDK。
-- `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。`dsh_eval` 的 --run 已实现受控单会话单任务 headless；离线入口仍不执行环境 / 预算。实时 Python 工具桥接已在 M3.3 实现，批次调度未实现。
+- `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。`dsh_eval` 的 --run 已实现受控单会话单任务 headless；离线入口仍不执行环境 / 预算。实时 Python 工具桥接已在 M3.3 实现，M3.4 已补顺序批次；并发、崩溃续跑和重复统计尚未实现。
 - 版本 2 由真实适配器采集请求路由 / 退出 / 干预，离线再核对日志请求头；来源字段本身不是签名。准备和清理另有期限，不把任务 timeoutSeconds 说成总退出硬上限，不支持 token / 步骤预算；本批只验证 Windows 与当前组件。
 
 ## 后续里程碑
@@ -172,13 +183,13 @@
 | M3.1 | 已完成：Python 版本化用例与结果、caseRunId、离线证据断言和三维分类 | 两个合成用例、正反例及真实 Node inspect；损坏 / 开放日志不能判任务通过 |
 | M3.2 | 已完成：Python 单用例受控 headless、初始文件、实际配置与预算事实、版本 2 证据 | 真实读取 passed；启动 / 路由错误、超时 / 取消、专用子进程退出分别验证 |
 | M3.3 | 已完成当前范围；复查两项问题已修复 | 原有状态 / 宿主 / 模型样例有效；新增管道与发现方式回归、58 项 Python 及无模型真实桥接通过，见记录 014 |
-| M3.4 | 下一批，未实现：Python 顺序批次回归、环境隔离与结果清单 | 新会话和 caseRunId 独立，初始状态重置，逐项关联配置与录制证据 |
+| M3.4 | 已完成当前范围：Python 顺序批次、输入冻结与环境隔离、结果清单 | 真实恢复批次与故障重置通过，实际路由错误继续 / 停止及取消停止通过，73 项 Python 回归 |
 | M4 | 优先 Python 实现多次重复配置比较、指标汇总与报告 | 报告样本数、配置和原始结果；缺失指标保持缺失 |
 | M5 | 可视化与持续集成 | 浏览用例与结果，自动执行检查 |
 
 ## 文档导航
 
-- [M3 与后续计划](plans/m3-regression-evaluation.md)：M3.1 / M3.2 已完成范围，M3.4 下一批入口及后续待办。
+- [M3 与后续计划](plans/m3-regression-evaluation.md)：M3.1 / M3.2 已完成范围，M3.4 已完成范围、M4.1 下一批入口及后续待办。
 - [单用例运行](single-case-runner.md) 与 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)：当前真实执行入口与验证依据。
 - [M3.1 评测格式](evaluation-format.md) 与 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md)：当前离线入口与验证依据。
 - [M2.3 真实任务联调](changes/2026-10-15-008-m2-3-live-integration.md)：本批安装、真实模型和生命周期证据，以及固定 Python 检查范围。

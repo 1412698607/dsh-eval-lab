@@ -6,7 +6,7 @@ import signal
 import subprocess
 import threading
 import time
-from uuid import uuid4
+from uuid import UUID, uuid4
 import json
 
 from .evaluate import ROOT, evaluate
@@ -67,18 +67,24 @@ def stop_process_tree(process):
     process.wait(timeout=10)
 
 
-def _prepare(directory, modules_dir):
+def _prepare(directory, modules_dir, report=None):
     command = ["node", str(ADAPTER), "prepare", str(directory)]
     if modules_dir is not None:
         command.append(str(Path(modules_dir).resolve()))
     with (directory / "prepare.stdout.log").open("x", encoding="utf-8") as stdout, \
             (directory / "prepare.stderr.log").open("x", encoding="utf-8") as stderr:
         process = subprocess.Popen(command, cwd=ROOT, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, **_process_options())
+        if report is not None:
+            report.update(processStarted=True, processExited=False)
         try:
             code = process.wait(timeout=PREPARE_TIMEOUT)
             require(code == 0, f"Harness preparation exited {code}; see prepare.stderr.log")
         finally:
-            stop_process_tree(process)
+            try:
+                stop_process_tree(process)
+            finally:
+                if report is not None:
+                    report["processExited"] = process.poll() is not None
 
 
 def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=None, report=None, environment=None):
@@ -92,6 +98,7 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
     protocol_error = None
     input_error = None
     forced = False
+    user_interrupted = False
 
     def read_events():
         try:
@@ -188,12 +195,13 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                 if event.get("type") == "streaming" and cancel_after_stream:
                     stop("cancel")
             except KeyboardInterrupt:
+                user_interrupted = True
                 stop("cancel")
         process.wait(timeout=5)
     finally:
         # Preserve an already-issued timeout/cancel even if the OS refuses cleanup.
         report.update(intervention=intervention, forceStopAttempted=forced,
-                      protocolError=protocol_error, adapterExitCode=process.poll())
+                      protocolError=protocol_error, adapterExitCode=process.poll(), userInterrupted=user_interrupted)
         writer_stopping.set()
         outgoing.put(None)
         stop_process_tree(process)
@@ -231,23 +239,32 @@ def classify_execution(host, supervisor):
     return execution
 
 
-def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=False):
-    case = validate_case(load_json(case_path))
+def validate_live_case(case):
+    validate_case(case)
     require(case["configRef"]["profile"] == "headless", "Only the headless profile is supported")
     require(case["configRef"]["pluginVersion"] == load_json(ROOT / "package.json")["version"], "Case requires a different recorder version")
-    case_run_id = str(uuid4())
+    return case
+
+
+def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None, case_run_id=None):
+    case = validate_live_case(load_json(case_path))
+    case_run_id = str(UUID(case_run_id)) if case_run_id is not None else str(uuid4())
+    if batch_id is not None:
+        require(isinstance(batch_id, str) and bool(batch_id.strip()), "batchId must be nonempty")
     directory = Path(runs_root or ROOT / "runs" / "evaluation").resolve() / case_run_id
     directory.mkdir(parents=True, exist_ok=False)
     case_snapshot = directory / "case.json"
     save_json(case_snapshot, case)
     host, supervisor = {}, {}
     error_info = None
+    preparation = {"processStarted": False, "processExited": True}
+    user_interrupted = False
     stage = "workspace"
     execution = None
     try:
         prepare_workspace(directory, case)
         stage = "prepare"
-        _prepare(directory, modules_dir)
+        _prepare(directory, modules_dir, preparation)
         stage = "run"
         with (directory / "adapter.stderr.log").open("x", encoding="utf-8") as stderr, \
                 (directory / "adapter.stdout.jsonl").open("x", encoding="utf-8") as event_log:
@@ -260,6 +277,7 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
         execution = classify_execution(host, supervisor)
     except (OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         error_info = {"type": type(error).__name__, "message": str(error)}
+        user_interrupted = isinstance(error, KeyboardInterrupt)
         status = ("timed_out" if supervisor.get("intervention") == "timeout" else
                   "unknown" if supervisor.get("intervention") == "cancel" else
                   "cancelled" if isinstance(error, KeyboardInterrupt) else "runtime_error")
@@ -285,8 +303,12 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
                 "runDir": str(run_dir.relative_to(directory)) if run_dir else None, "source": "live",
                 "configuration": configuration, "budgetEnforcement": {"timeoutSeconds": stage == "run" and bool(supervisor)},
                 "execution": execution, "runtimeReport": "runtime.json"}
+    if batch_id is not None:
+        evidence["batchId"] = batch_id
     save_json(directory / "runtime.json", {"runtimeFormatVersion": 1, "caseRunId": case_run_id, "stage": stage,
-                                          "host": host, "supervisor": supervisor, "error": error_info})
+                                          "host": host, "supervisor": supervisor, "error": error_info,
+                                          "preparation": preparation,
+                                          "userInterrupted": user_interrupted or supervisor.get("userInterrupted", False)})
     save_json(directory / "evidence.json", evidence)
     result = evaluate(case_snapshot, directory / "evidence.json")
     save_json(directory / "evaluation.json", result)

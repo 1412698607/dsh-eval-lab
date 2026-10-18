@@ -103,3 +103,7 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。缺少运行级会话清单、日志与摘要同时重写等限制沿用 [架构](architecture.md)。
 
 M3.2 已完成受控单用例真实驱动与异常 / 预算分类；下一批 M3.3 实现状态化工具和实时桥接，再做 M3.4 顺序隔离批次。现有样例不代替路径过时 / 故障恢复的真实桥接验收。验证依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
+
+## M3.4 批次扩展
+
+新增独立 batchFormatVersion=1 输入、batchResultFormatVersion=1 清单，命令为 `python -m dsh_eval --batch ... --run`。既有 evidence / evaluation 的可选 batchId 现由真实 runner 填写，单用例格式和版本保持；同 caseId 多次执行用不同 entryId / caseRunId 关联。runtimeReport 增加 preparation.processStarted / processExited、userInterrupted 等观察，不把计划身份当成实际会话。批次预检、冻结输入、状态、策略和相对路径口径见 [批次运行](batch-runner.md)。

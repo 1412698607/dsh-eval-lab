@@ -59,4 +59,4 @@ NOT_FOUND / TEMPORARY_READ_FAILURE / INVALID_PATH 是普通工具失败；JavaSc
 
 2026 年 10 月 18 日：51 项 Python、42 项 Node 测试通过；28 个 JS 文件语法通过。不调用模型的真实注册 / IPC 检查四次请求通过；stale-path、retry-read 两个真实模型任务各一次 passed / completed / complete；retry-read 首流后取消得到 cancelled / complete / unevaluable。真实宿主组件与输出子进程回归通过。测试分别覆盖状态隔离、重复请求、错误关联、响应期限、断线、取消和释放监听器；不是每种异常均跑真实模型。
 
-tool_result 断言沿用原有“至少一组关联证据”语义，没有增加跨断言顺序或调用次数规则。受控失败计数保证该环境首次读取目标路径失败；工具结果仍通过实际 callId / toolCallId 验证。版本和证据格式见 [评测格式](evaluation-format.md)，完整本批记录见 [修改记录 012](changes/2026-10-18-012-m3-3-stateful-tools.md)。后续是 M3.4 顺序批次与环境重置，尚无批次统计或模型通过率。
+tool_result 断言沿用原有“至少一组关联证据”语义，没有增加跨断言顺序或调用次数规则。受控失败计数保证该环境首次读取目标路径失败；工具结果仍通过实际 callId / toolCallId 验证。版本和证据格式见 [评测格式](evaluation-format.md)，完整本批记录见 [修改记录 012](changes/2026-10-18-012-m3-3-stateful-tools.md)。M3.4 已补 [顺序批次与环境重置](batch-runner.md)，重复统计或模型通过率仍未提供。
