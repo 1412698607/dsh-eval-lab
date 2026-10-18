@@ -1,0 +1,13 @@
+{
+  "caseFormatVersion": 1,
+  "caseId": "read-project",
+  "input": "Read README.md and return only projectName.",
+  "environment": { "files": { "README.md": "projectName: synthetic-project\n" } },
+  "configRef": { "provider": "synthetic", "model": "none", "profile": "offline-demo", "pluginVersion": "0.1.2" },
+  "budget": { "timeoutSeconds": 120 },
+  "assertions": [
+    { "id": "answer", "type": "final_text", "equals": "synthetic-project" },
+    { "id": "read-evidence", "type": "tool_result", "tool": "read", "arguments": { "path": "README.md" }, "result": { "isError": false, "textContains": "projectName: synthetic-project" } },
+    { "id": "completed", "type": "turn_end", "reason": { "kind": "completed" } }
+  ]
+}

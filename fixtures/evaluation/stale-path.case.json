@@ -1,0 +1,85 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "stale-path",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Read README.md and follow its reference to find projectName. If a reference is stale, discover the current file with eval_list. Use relative POSIX paths exactly. Return only the projectName value. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "README.md": "See docs/old.md for projectName.\n",
+      "docs/current.md": "projectName: dsh-stateful-path\n"
+    },
+    "stateful": {
+      "transientReadFailures": {}
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "id": "tool-0",
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "README.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "docs/old.md"
+      }
+    },
+    {
+      "id": "tool-1",
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "docs/old.md"
+      },
+      "result": {
+        "isError": true,
+        "textContains": "NOT_FOUND"
+      }
+    },
+    {
+      "id": "tool-2",
+      "type": "tool_result",
+      "tool": "eval_list",
+      "arguments": {
+        "path": "docs"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "docs/current.md"
+      }
+    },
+    {
+      "id": "tool-3",
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "docs/current.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "dsh-stateful-path"
+      }
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "dsh-stateful-path"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}
