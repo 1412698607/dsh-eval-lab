@@ -1,6 +1,6 @@
 # 用例、证据与评测结果格式
 
-更新：2026 年 10 月 17 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。用例仍为版本 1，插件仍为 `0.1.2`，既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
+更新：2026 年 10 月 18 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例，插件仍为 `0.1.2`，既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
 
 ## 运行入口
 
@@ -38,6 +38,10 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；本版本没有跨断言顺序、调用次数或负向行为断言。
 
 匹配调用及实际结果存在但值不符为 failed；无匹配参数、缺结果、结果晚于答案等不能证明所需事实时为 insufficient_evidence。最终文本不符为 failed。任一必需断言证据不足时总体无法评测，即使另一条已经失败，也保留各条结果。
+
+## 用例扩展：caseFormatVersion 2
+
+版本 2 保留版本 1 的必需字段和断言，允许 environment 增加 stateful 对象，其唯一必需字段 transientReadFailures 为“已有文件路径 → 非负整数次数”的映射，拒绝布尔值。没有 stateful 时仍使用实际文件环境；声明 stateful 后 files 只保存在 Python 内存，workspace 不写入这些文件。版本 1 不接受 stateful。证据和结果仍为版本 2，录制格式不变。示例见 [路径过时](../fixtures/evaluation/stale-path.case.json)、[失败恢复](../fixtures/evaluation/retry-read.case.json)；协议和取消语义见 [状态化工具](stateful-tools.md)。
 
 ## 证据清单：evidenceFormatVersion 1
 

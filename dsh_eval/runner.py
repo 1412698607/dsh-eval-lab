@@ -11,6 +11,7 @@ import json
 
 from .evaluate import ROOT, evaluate
 from .formats import load_json, parse_json, require, validate_case
+from .environment import StatefulEnvironment
 
 ADAPTER = ROOT / "scripts" / "case-host.js"
 PREPARE_TIMEOUT = 150
@@ -37,6 +38,8 @@ def prepare_workspace(directory, case):
                     (str(path).replace("\\", "/") for path in Path(name).parents) if parent != "."),
             "Case-insensitive file/directory collision")
     workspace.mkdir()
+    if "stateful" in case["environment"]:
+        return workspace  # Virtual files must only be accessible through the live bridge.
     for name, content in case["environment"]["files"].items():
         path = workspace / name
         require(path.resolve().is_relative_to(workspace.resolve()), "Fixture escaped workspace")
@@ -78,7 +81,7 @@ def _prepare(directory, modules_dir):
             stop_process_tree(process)
 
 
-def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=None, report=None):
+def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=None, report=None, environment=None):
     """Drain stdout concurrently, apply a deadline, and always reap our adapter tree."""
     events = queue.Queue()
     report = {} if report is None else report
@@ -141,7 +144,16 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                 try:
                     event = parse_json(line)
                     require(isinstance(event, dict) and event.get("type") in
-                            ("launched", "selection", "request-route", "streaming", "closed"), "Invalid adapter event")
+                            ("launched", "selection", "request-route", "streaming", "closed", "tool-request", "bridge-error"), "Invalid adapter event")
+                    if event["type"] == "bridge-error":
+                        raise ValueError("Tool bridge infrastructure failed")
+                    if environment is not None and event["type"] == "selection":
+                        environment.bind(event.get("sessionId"))
+                    if event["type"] == "tool-request":
+                        require(environment is not None and intervention is None, "Tool request outside active environment")
+                        response = environment.handle(event)
+                        process.stdin.write(json.dumps(response, ensure_ascii=False) + "\n")
+                        process.stdin.flush()
                 except ValueError as error:
                     protocol_error = str(error)
                     stop("shutdown")
@@ -207,7 +219,8 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
             process = subprocess.Popen(["node", str(ADAPTER), "run", str(directory)], cwd=ROOT,
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
                                        text=True, encoding="utf-8", **_process_options())
-            supervise(process, case["budget"]["timeoutSeconds"], cancel_after_stream, event_log, supervisor)
+            environment = StatefulEnvironment(case["environment"], case_run_id) if "stateful" in case["environment"] else None
+            supervise(process, case["budget"]["timeoutSeconds"], cancel_after_stream, event_log, supervisor, environment)
         host = load_json(directory / "host-result.json")
         execution = classify_execution(host, supervisor)
     except (OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as error:

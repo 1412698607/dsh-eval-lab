@@ -8,7 +8,7 @@ from .evaluate import evaluate
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Evaluate offline evidence or run one isolated Harness case")
-    parser.add_argument("--case", required=True, help="Version 1 case JSON")
+    parser.add_argument("--case", required=True, help="Version 1 or 2 case JSON")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")
     parser.add_argument("--run", action="store_true", help="Execute one real headless task; may call the configured model")
     parser.add_argument("--runs-root", help="Parent directory for new isolated case runs")

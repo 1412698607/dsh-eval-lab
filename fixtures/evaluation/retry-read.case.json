@@ -1,0 +1,62 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "retry-read",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Read project.md to find projectName. If a temporary failure occurs, retry the read. Use relative POSIX paths exactly. Return only the projectName value. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "project.md": "projectName: dsh-stateful-retry\n"
+    },
+    "stateful": {
+      "transientReadFailures": {
+        "project.md": 1
+      }
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "id": "tool-0",
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "project.md"
+      },
+      "result": {
+        "isError": true,
+        "textContains": "TEMPORARY_READ_FAILURE"
+      }
+    },
+    {
+      "id": "tool-1",
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "project.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "dsh-stateful-retry"
+      }
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "dsh-stateful-retry"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

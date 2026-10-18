@@ -53,9 +53,9 @@ def configuration(value):
 
 def validate_case(case):
     fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"))
-    require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] == 1, "Unsupported case format")
+    require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] in (1, 2), "Unsupported case format")
     require(nonempty(case["caseId"]) and nonempty(case["input"]), "caseId and input must be nonempty strings")
-    fields(case["environment"], ("files",))
+    fields(case["environment"], ("files",), ("stateful",) if case["caseFormatVersion"] == 2 else ())
     files = case["environment"]["files"]
     require(isinstance(files, dict), "environment.files must be an object")
     for path, content in files.items():
@@ -65,6 +65,13 @@ def validate_case(case):
         require(isinstance(content, str), "Fixture content must be text")
     require(not any(str(parent) in files for path in files for parent in PurePosixPath(path).parents),
             "Fixture file/directory collision")
+    if "stateful" in case["environment"]:
+        stateful = case["environment"]["stateful"]
+        fields(stateful, ("transientReadFailures",))
+        failures = stateful["transientReadFailures"]
+        require(isinstance(failures, dict), "transientReadFailures must be an object")
+        require(all(path in files and type(count) is int and count >= 0 for path, count in failures.items()),
+                "Transient failures require an existing file and a nonnegative integer")
     configuration(case["configRef"])
     fields(case["budget"], ("timeoutSeconds",))
     require(type(case["budget"]["timeoutSeconds"]) is int and case["budget"]["timeoutSeconds"] > 0,

@@ -18,8 +18,8 @@ Python 生成新 caseRunId，保存用例快照、在独立 workspace 写入初�
 
 ```text
 <caseRunId>/
-  case.json                  完整版本 1 用例快照
-  workspace/                 实际初始文件
+  case.json                  完整版本 1 / 2 用例快照
+  workspace/                 实际初始文件；状态化环境下为空
   home/                      独立 headless profile / session 存储
   pnpm-store/                独立离线安装 store
   setup.json                 本次 CLI / 组件与路径
@@ -75,4 +75,8 @@ python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run --canc
 
 ## 下一批与限制
 
-M3.2 验证了一条受控真实文件任务及上述异常路径。没有状态化工具环境、实时 Python 工具桥接、批次调度或重复试验报告；公开合成演示仍是 M3.1 离线输入。工具环境和真实桥接在 M3.3 实现，顺序隔离批次在 M3.4 实现，再做 M4 重复比较和 M5 浏览 / CI。详见 [路线](plans/m3-regression-evaluation.md)、[格式](evaluation-format.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
+M3.2 验证了一条受控真实文件任务及上述异常路径。M3.2 当时没有状态化工具环境或实时 Python 工具桥接；M3.3 已补齐，批次调度和重复试验仍未实现；公开合成演示仍是 M3.1 离线输入。工具环境和真实桥接见下方 M3.3 扩展，下一批 M3.4 实现顺序隔离批次，再做 M4 重复比较和 M5 浏览 / CI。详见 [路线](plans/m3-regression-evaluation.md)、[格式](evaluation-format.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
+
+## M3.3 状态化扩展（2026 年 10 月 18 日）
+
+单用例入口现支持版本 2 状态化用例。Python 在监督循环内即时处理工具请求，Node 转发专用 IPC；状态化环境的文件不写入 workspace。路径、错误、取消和复现命令见 [状态化工具与桥接](stateful-tools.md)。原有 M3.2 历史验证范围保留。

@@ -32,7 +32,7 @@ class FormatTests(unittest.TestCase):
             self.assertEqual(validate_case(fixture(name))["caseId"], name)
 
     def test_unknown_versions_fields_assertions_and_duplicate_ids_rejected(self):
-        mutations = [lambda case: case.update(caseFormatVersion=2),
+        mutations = [lambda case: case.update(caseFormatVersion=3),
                      lambda case: case.update(caseFormatVersion=True),
                      lambda case: case.update(typo="unsupported"),
                      lambda case: case.update(assertions=[]),

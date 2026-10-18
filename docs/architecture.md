@@ -176,13 +176,17 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 | M2.2 inspect 及宿主组件检查 | 已实现，继续使用 JavaScript；后续 Python 可调用现有 Node 检查入口 |
 | 用例加载、通用离线任务断言 | M3.1 已使用 Python 实现，合成正反例验证通过；M2.3 固定检查仍保留 |
 | 单用例真实驱动与预算 / 退出事实 | M3.2 已使用 Python 调度和 JavaScript 宿主适配；受控文件任务与异常分别通过 |
-| 状态化工具环境核心逻辑、批次调度 | M3.3 / M3.4 计划使用 Python；宿主内工具注册与必要适配按实际接口实现 |
+| 状态化工具环境核心逻辑、批次调度 | M3.3 Python 核心及 JavaScript 实时注册桥接已实现；M3.4 批次待开发 |
 | 重复试验、轨迹分析、指标聚合、配置比较与报告 | 计划优先使用 Python；缺失指标保持缺失 |
 
 跨语言离线边界复用现有版本化 run.json、JSONL、status 和 inspect 的 JSON 报告及退出码。M3.1 Python 先调用现有 Node 检查入口，仅在录制检查通过后执行任务断言；录制失败或无法确认与任务断言失败分别报告。Node 进程不可用、检查超时和协议不一致映射为录制 unverified。
 
-状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；当前未实现该桥接，也未指定具体传输方式。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
+状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；下一批 M3.3 实现状态化环境与实时工具桥接，再做 M3.4 批次隔离。
+后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，下一批做 M3.4 批次隔离。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 39 项 Node、44 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、51 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
+
+## M3.3 实时状态化工具边界
+
+`environment.py` 保存虚拟文本与每路径暂时失败计数；`runner.supervise` 在进程运行期间处理请求。`case-control.js` 用真实 Tools 服务注册 `eval_read` / `eval_list`，共享 `tool-bridge.js` 实现请求等待、取消、5 秒响应期限与卸载清理。`case-host.js` 只转发桥接数据，基础设施错误触发专用宿主关闭。协议身份、重复请求和提交后取消语义见 [状态化工具与桥接](stateful-tools.md)。环境测试、真实注册及跨进程检查、真实模型轨迹三层分别验收，不修改 src 或录制协议。

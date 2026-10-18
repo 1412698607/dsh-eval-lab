@@ -2,7 +2,7 @@ import { execFileSync, fork } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -84,6 +84,10 @@ export async function runCase(directory) {
   commands.on("line", (line) => {
     try {
       const command = JSON.parse(line);
+      if (command.type === "tool-response" && child?.connected && report.intervention === null) {
+        child.send(command);
+        return;
+      }
       if (["cancel", "timeout", "shutdown"].includes(command.type)) stop(command.type);
     } catch { stop("invalid-control"); }
   });
@@ -93,7 +97,9 @@ export async function runCase(directory) {
   try {
     child = fork(setup.cli, ["--profile", "headless", "--patch", setup.controlPatch, "--json", "--", caseData.input], {
       cwd: setup.workspace, windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"],
-      env: { ...process.env, DSH_HOME: setup.home, DSH_EVAL_OUTPUT_DIR: traces, DSH_TELEMETRY_DISABLED: "1" },
+      env: { ...process.env, DSH_HOME: setup.home, DSH_EVAL_OUTPUT_DIR: traces, DSH_TELEMETRY_DISABLED: "1",
+        DSH_EVAL_STATEFUL: caseData.environment.stateful ? "1" : "0", DSH_EVAL_CASE_RUN_ID: basename(directory),
+        DSH_EVAL_HOST_MODULES: setup.modulesDir },
     });
     report.childPid = child.pid ?? null;
     child.stdout.pipe(stdout);
@@ -106,6 +112,15 @@ export async function runCase(directory) {
         report.requests.push({ sessionId: message.sessionId, provider: message.provider, model: message.model });
       } else if (message?.type === "streaming") {
         report.streamed = true;
+      } else if (message?.type === "tool-request") {
+        if (message.sessionId !== report.sessionId || message.caseRunId !== basename(directory)) {
+          report.error = "Tool request identity mismatch";
+          stop("invalid-bridge");
+          return;
+        }
+      } else if (message?.type === "bridge-error") {
+        report.error = message.message;
+        stop("bridge-error");
       } else return;
       emit(message);
     });
