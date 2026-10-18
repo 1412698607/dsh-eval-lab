@@ -11,6 +11,7 @@ from unittest.mock import patch
 from dsh_eval.__main__ import main
 from dsh_eval.evaluate import check_assertion, evaluate, inspect_recording, task_view
 from dsh_eval.formats import load_json, parse_json, validate_case, validate_evidence
+from dsh_eval.environment import StatefulEnvironment
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "evaluation"
@@ -27,6 +28,14 @@ def resequence(events):
 
 
 class FormatTests(unittest.TestCase):
+    def test_only_version_two_allows_tool_result_without_argument_constraints(self):
+        case = fixture()
+        case["assertions"][1]["arguments"] = {}
+        with self.assertRaises(ValueError):
+            validate_case(case)
+        case["caseFormatVersion"] = 2
+        self.assertEqual(validate_case(case)["assertions"][1]["arguments"], {})
+
     def test_both_public_cases_load(self):
         for name in ("read-project", "missing-file"):
             self.assertEqual(validate_case(fixture(name))["caseId"], name)
@@ -62,6 +71,22 @@ class FormatTests(unittest.TestCase):
 
 
 class AssertionTests(unittest.TestCase):
+    def test_result_based_discovery_still_requires_tool_and_linked_success_content(self):
+        assertion = next(item for item in fixture("stale-path")["assertions"] if item["id"] == "tool-2")
+        events = fixture(kind="events")
+        events[2]["data"].update(name="eval_list", arguments='{"path":"."}')
+        events[3]["data"]["message"]["content"][0]["text"] = "README.md\ndocs/current.md"
+        view = task_view(events, fixture()["input"])
+        self.assertEqual(check_assertion(assertion, view)["outcome"], "passed")
+        for mutation, expected in (
+                (lambda rows: rows[2]["data"].update(name="other_tool"), "insufficient_evidence"),
+                (lambda rows: rows[3]["data"]["message"].update(content=[{"type": "text", "text": "unrelated.md"}]), "failed"),
+                (lambda rows: rows[3]["data"]["message"].update(isError=True), "failed"),
+                (lambda rows: rows.pop(3), "insufficient_evidence")):
+            variant = copy.deepcopy(events)
+            mutation(variant)
+            self.assertEqual(check_assertion(assertion, task_view(resequence(variant), fixture()["input"]))["outcome"], expected)
+
     def test_valid_evidence_includes_sequence_and_call_identity(self):
         view = task_view(fixture(kind="events"), fixture()["input"])
         result = check_assertion(fixture()["assertions"][1], view)
@@ -149,8 +174,8 @@ class OfflineIntegrationTests(unittest.TestCase):
         self.case_path = self.directory / "case.json"
         self.case_path.write_text(json.dumps(fixture()), encoding="utf-8")
 
-    def record(self, events=None, seal=True, name="read-project"):
-        self.case_path.write_text(json.dumps(fixture(name)), encoding="utf-8")
+    def record(self, events=None, seal=True, name="read-project", case=None):
+        self.case_path.write_text(json.dumps(fixture(name) if case is None else case), encoding="utf-8")
         code = """
 import { recordExample } from './scripts/demo-eval.js';
 let input = '';
@@ -169,6 +194,35 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         evidence = load_json(self.evidence_path)
         evidence.update(updates)
         self.evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    def test_stale_path_recovery_accepts_root_and_docs_discovery(self):
+        case = fixture("stale-path")
+        for directory in (".", "docs"):
+            with self.subTest(directory=directory):
+                environment = StatefulEnvironment(case["environment"], "synthetic-case")
+                environment.bind("synthetic-session")
+                events = [{"type": "turn/start", "data": {}},
+                          {"type": "user/message", "data": {"source": {"kind": "user"},
+                           "content": [{"type": "text", "text": case["input"]}]}}]
+                for index, (operation, path) in enumerate((("read", "README.md"), ("read", "docs/old.md"),
+                                                           ("list", directory), ("read", "docs/current.md"))):
+                    call_id = f"recovery-{index}"
+                    response = environment.handle({"type": "tool-request", "bridgeVersion": 1, "requestId": call_id,
+                        "caseRunId": "synthetic-case", "sessionId": "synthetic-session", "operation": operation,
+                        "arguments": {"path": path}})
+                    events.extend([
+                        {"type": "tool/call", "data": {"callId": call_id, "name": f"eval_{operation}",
+                         "arguments": json.dumps({"path": path})}},
+                        {"type": "tool/result", "data": {"message": {"toolCallId": call_id, "isError": response["isError"],
+                         "content": [{"type": "text", "text": response["text"]}]}}}])
+                events.extend([
+                    {"type": "assistant/message", "data": {"message": {"content": [{"type": "text", "text": "dsh-stateful-path"}]}}},
+                    {"type": "turn/end", "data": {"reason": {"kind": "completed"}}}])
+                self.record(resequence(events), case=case)
+                result = evaluate(self.case_path, self.evidence_path)
+                self.assertEqual(result["recording"]["outcome"], "complete")
+                self.assertEqual(result["assertions"]["outcome"], "passed")
+                self.assertEqual(result["outcome"], "passed")
 
     def test_two_synthetic_cases_pass_with_independent_associations(self):
         ids = []

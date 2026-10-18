@@ -11,3 +11,5 @@ read-project / missing-file 的 case 与 events 文件是人工合成数据，�
 再对输出中每一组 casePath / evidencePath 执行 `python -m dsh_eval --case <casePath> --evidence <evidencePath>`。完整格式、结果与边界见 [评测格式](../../docs/evaluation-format.md)。
 
 M3.3 新增 `stale-path.case.json` / `retry-read.case.json`：版本 2 的虚拟文件环境，分别验证旧路径失败后发现新文件、同路径暂时失败后重试。使用 `--run` 会调用真实模型；JSON 用例本身不是执行证据，也不参与合成 demo。工具及协议见 [状态化工具](../../docs/stateful-tools.md)。
+
+2026 年 10 月 18 日审查修复：stale-path 的发现断言使用版本 2 空 `arguments`，仅要求正确的 eval_list 成功结果包含目标路径，因此允许 `.` 和 `docs` 两种查找；其余旧路径失败、实际读取与答案断言保持。说明与合成回归见 [修复记录 014](../../docs/changes/2026-10-18-014-m3-3-review-fixes.md)。

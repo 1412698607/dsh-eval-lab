@@ -185,8 +185,16 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，下一批做 M3.4 批次隔离。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、51 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、58 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
 
 ## M3.3 实时状态化工具边界
 
 `environment.py` 保存虚拟文本与每路径暂时失败计数；`runner.supervise` 在进程运行期间处理请求。`case-control.js` 用真实 Tools 服务注册 `eval_read` / `eval_list`，共享 `tool-bridge.js` 实现请求等待、取消、5 秒响应期限与卸载清理。`case-host.js` 只转发桥接数据，基础设施错误触发专用宿主关闭。协议身份、重复请求和提交后取消语义见 [状态化工具与桥接](stateful-tools.md)。环境测试、真实注册及跨进程检查、真实模型轨迹三层分别验收，不修改 src 或录制协议。
+
+## M3.3 审查修复：管道写入与超时监督
+
+Python `supervise` 使用专用写线程串行输出工具响应和控制帧，监督主循环只入队，继续观察退出、取消和任务期限；stdin 的关闭也由写线程负责，避免主循环被同一 TextIO 锁阻塞。写入错误经内部事件回传并归为运行错误；已经触发的 timeout / cancel 不被后续管道错误覆盖。干预后尚未开始写入的工具响应会跳过，已经提交的环境状态仍不回滚。
+
+若整条响应正在写入时管道堵塞，控制命令不能插入半条 JSONL，可能无法正常送达；监督器仍会在原清理期限后尝试终止自有进程树，随后等待 I/O 线程退出，报告 stdinWriterStopped。未结束的线程会记录清理错误；没有把任务预算改成总退出硬上限，权限拒绝仍按实际失败记录。
+
+版本 2 用例允许空 arguments 匹配任意参数，结合工具名和结果内容检查发现行为；版本 1 保持非空约束。根目录 / docs 两条合成恢复路径均经过原有记录器及 fresh inspect，真实宿主桥接也已复验；本批未新增模型调用。详见 [修复记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。

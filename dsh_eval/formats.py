@@ -88,7 +88,9 @@ def validate_case(case):
         elif kind == "tool_result":
             fields(assertion, ("id", "type", "tool", "arguments", "result"))
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
-            require(isinstance(assertion["arguments"], dict) and assertion["arguments"], "Expected tool arguments are required")
+            require(isinstance(assertion["arguments"], dict)
+                    and (case["caseFormatVersion"] == 2 or assertion["arguments"]),
+                    "Expected tool arguments must be an object (nonempty in case version 1)")
             fields(assertion["result"], ("isError",), ("textContains",))
             require(type(assertion["result"]["isError"]) is bool, "isError must be boolean")
             if "textContains" in assertion["result"]:

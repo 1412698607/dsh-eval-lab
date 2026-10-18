@@ -82,9 +82,16 @@ def _prepare(directory, modules_dir):
 
 
 def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=None, report=None, environment=None):
-    """Drain stdout concurrently, apply a deadline, and always reap our adapter tree."""
+    """Keep pipe I/O off the deadline loop, and always reap our adapter tree."""
     events = queue.Queue()
+    outgoing = queue.Queue()
+    writer_stopping = threading.Event()
     report = {} if report is None else report
+    intervention = None
+    intervention_time = None
+    protocol_error = None
+    input_error = None
+    forced = False
 
     def read_events():
         try:
@@ -98,24 +105,41 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
         finally:
             events.put(None)
 
+    def write_messages():
+        nonlocal input_error
+        try:
+            while not writer_stopping.is_set():
+                message = outgoing.get()
+                if message is None or writer_stopping.is_set():
+                    break
+                if message["type"] == "tool-response" and intervention is not None:
+                    continue
+                process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
+                process.stdin.flush()
+        except (OSError, UnicodeError) as error:
+            input_error = f"Cannot write adapter input: {type(error).__name__}"
+            events.put(("input-error", input_error))
+        finally:
+            # Only this thread owns stdin, including close: closing it on the
+            # supervisor thread could block on the same TextIO lock as write().
+            try:
+                process.stdin.close()
+            except (OSError, UnicodeError) as error:
+                if input_error is None:
+                    input_error = f"Cannot close adapter input: {type(error).__name__}"
+
     reader = threading.Thread(target=read_events, daemon=True)
+    writer = threading.Thread(target=write_messages, daemon=True)
     reader.start()
+    writer.start()
     started = time.monotonic()
-    intervention = None
-    intervention_time = None
-    protocol_error = None
-    forced = False
 
     def stop(kind):
         nonlocal intervention, intervention_time
         if intervention is not None or process.poll() is not None:
             return
         intervention, intervention_time = kind, time.monotonic()
-        try:
-            process.stdin.write(json.dumps({"type": kind}) + "\n")
-            process.stdin.flush()
-        except (BrokenPipeError, OSError):
-            pass
+        outgoing.put({"type": kind})
 
     try:
         while process.poll() is None or reader.is_alive() or not events.empty():
@@ -141,6 +165,10 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                     protocol_error = f"Cannot decode adapter event stream: {type(line).__name__}"
                     stop("shutdown")
                     continue
+                if isinstance(line, tuple):
+                    protocol_error = line[1]
+                    stop("shutdown")
+                    continue
                 try:
                     event = parse_json(line)
                     require(isinstance(event, dict) and event.get("type") in
@@ -152,8 +180,7 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                     if event["type"] == "tool-request":
                         require(environment is not None and intervention is None, "Tool request outside active environment")
                         response = environment.handle(event)
-                        process.stdin.write(json.dumps(response, ensure_ascii=False) + "\n")
-                        process.stdin.flush()
+                        outgoing.put(response)
                 except ValueError as error:
                     protocol_error = str(error)
                     stop("shutdown")
@@ -167,10 +194,18 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
         # Preserve an already-issued timeout/cancel even if the OS refuses cleanup.
         report.update(intervention=intervention, forceStopAttempted=forced,
                       protocolError=protocol_error, adapterExitCode=process.poll())
+        writer_stopping.set()
+        outgoing.put(None)
         stop_process_tree(process)
-        process.stdin.close()
+        writer.join(timeout=5)
         reader.join(timeout=5)
-        process.stdout.close()
+        if not reader.is_alive():
+            process.stdout.close()
+        if input_error is not None and intervention is None:
+            protocol_error = input_error
+        if writer.is_alive() or reader.is_alive():
+            protocol_error = "Adapter pipe workers did not stop after process cleanup"
+        report.update(protocolError=protocol_error, stdinWriterStopped=not writer.is_alive())
     report["adapterExitCode"] = process.returncode
     return report
 

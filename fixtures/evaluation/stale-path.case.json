@@ -49,9 +49,7 @@
       "id": "tool-2",
       "type": "tool_result",
       "tool": "eval_list",
-      "arguments": {
-        "path": "docs"
-      },
+      "arguments": {},
       "result": {
         "isError": false,
         "textContains": "docs/current.md"
