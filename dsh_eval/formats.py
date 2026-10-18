@@ -98,17 +98,23 @@ def validate_case(case):
 
 def validate_evidence(evidence, case):
     fields(evidence, ("evidenceFormatVersion", "caseRunId", "caseId", "runId", "sessionId", "runDir",
-                      "source", "configuration", "budgetEnforcement", "execution"), ("batchId",))
-    require(type(evidence["evidenceFormatVersion"]) is int and evidence["evidenceFormatVersion"] == 1, "Unsupported evidence format")
+                      "source", "configuration", "budgetEnforcement", "execution"), ("batchId", "runtimeReport"))
+    version = evidence["evidenceFormatVersion"]
+    require(type(version) is int and version in (1, 2), "Unsupported evidence format")
+    require(version == 2 or "runtimeReport" not in evidence, "runtimeReport requires evidence version 2")
     require(nonempty(evidence["caseRunId"]), "caseRunId must be a UUID")
     UUID(evidence["caseRunId"])
     require(evidence["caseId"] == case["caseId"], "Case/evidence caseId mismatch")
-    require(all(nonempty(evidence[key]) for key in ("runId", "sessionId", "runDir")), "Recording identity and path are required")
+    require(all(nonempty(evidence[key]) or version == 2 and evidence[key] is None
+                for key in ("runId", "sessionId", "runDir")), "Recording identity and path are required (or null in version 2)")
     require(evidence["caseRunId"] != evidence["runId"], "caseRunId must be distinct from recorder runId")
     require(evidence["source"] in ("synthetic", "live"), "source must be synthetic or live")
     if "batchId" in evidence:
         require(nonempty(evidence["batchId"]), "batchId must be nonempty")
-    configuration(evidence["configuration"])
+    if evidence["configuration"] is not None or version == 1:
+        configuration(evidence["configuration"])
+    if "runtimeReport" in evidence:
+        require(nonempty(evidence["runtimeReport"]), "runtimeReport must be a path")
     fields(evidence["budgetEnforcement"], ("timeoutSeconds",))
     require(type(evidence["budgetEnforcement"]["timeoutSeconds"]) is bool, "Budget enforcement must be boolean")
     execution = evidence["execution"]

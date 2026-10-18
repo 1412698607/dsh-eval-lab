@@ -11,6 +11,7 @@
 - `0.1.2` 完成 M2.2：独立会话状态文件、计数和 SHA-256、待写入容量保护，以及离线 `inspect`；保留 M2.1 的 stderr 诊断和可移植配置。
 - M2.3 已完成独立 Web / headless profile 的真实模型联调，新增固定 fixture 的 Python 证据检查；插件版本保持 `0.1.2`。
 - M3.1 已实现 Python 版本化用例加载、离线证据断言及执行 / 录制 / 断言三维结果；两个公开合成用例通过，插件版本仍为 `0.1.2`。
+- M3.2 已实现 Python 驱动单用例真实 headless 运行、独立文件环境和会话、实际路由采集、墙钟超时 / 取消及退出清理；证据 / 结果版本 2 兼容原版本 1。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -184,26 +185,37 @@ python -m dsh_eval --case 'fixtures/evaluation/read-project.case.json' --evidenc
 
 退出码 `0` / `1` / `2` 分别对应任务 passed / failed / unevaluable（输入或输出错误也为 `2`）。仅执行正常且录制有效才判断任务通过或失败；缺工具证据、取消、超时、运行错误和录制损坏分别保留原因。完整字段、预算声明和单任务限制见 [评测格式](docs/evaluation-format.md) 与 [合成样例](fixtures/evaluation/README.md)。
 
+## 单用例真实运行（M3.2）
+
+以下命令会调用用例指定的真实模型，使用本机匹配版本宿主和已有凭据引用：
+
+```powershell
+python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run
+python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run --cancel-after-stream
+```
+
+每次生成 `runs/evaluation/<caseRunId>/`，独立 home / workspace / 新会话，保存 case.json、evidence.json、evaluation.json 与私有运行证据。第二条是首个请求流 chunk 后程序化取消验收。任务预算包含宿主启动与任务执行，安装准备和清理另计；正常、启动 / 路由错误、两秒超时和取消已实际验证。预算、可空事实、参数和平台范围见 [单用例运行](docs/single-case-runner.md)。
+
 ## 当前边界
 
 - 只录制插件观察到的新增事件；不会补齐加载前、恢复会话或 fork 继承的历史。`run.json` 明确标注 `live-events-only`，这些日志不能直接作为完整会话恢复文件。
 - 已完成异步写入和封存不代表断电时绝对可靠；没有 fsync、跨进程恢复或日志轮转。状态替换使用同目录临时文件与 rename，当前 Windows 本地文件系统检查通过。
 - SHA-256 用于一致性校验，不是签名；同时篡改日志与摘要、删除整对会话文件都不在检测保证内。没有运行级会话清单，不能由磁盘上剩余片段推断所有会话都曾被保存。
-- 已验证 M2.3 固定 fixture 的真实模型基线及 M3.1 通用离线断言的合成正反例；未实现通用单用例真实驱动、状态化工具环境、批次 / A/B 重跑和评测界面，不生成模型通过率。
+- 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；未实现状态化工具环境、批次 / A/B 重跑和评测界面，不生成模型通过率。
 
 ## 下一阶段
 
-M2.1、M2.2、M2.3 的 Web / headless 受控联调基线，以及 M3.1 离线用例断言已完成。下一批为 M3.2：
+M2 基线、M3.1 离线用例断言和 M3.2 单用例真实运行已完成。下一批为 M3.3：
 
 后续语言分工：JavaScript 继续负责 Harness 插件、实时录制、宿主适配和现有 inspect；Python 已实现用例加载与离线断言，后续继续负责状态化环境核心、批次调度及统计报告。实时跨语言工具桥接仍未实现，具体边界见 [架构说明](docs/architecture.md) 与 [修改记录 007](docs/changes/2026-10-14-007-python-evaluation-plan.md)。
 
 1. M3.1 已完成：版本化用例、caseRunId、三维结果与 Python 离线证据断言；验证为合成轨迹。
-2. M3.2：驱动一个受控真实 headless 用例，验证正常完成、运行错误和超时 / 取消。
+2. M3.2 已完成：Python 驱动受控真实 headless 用例，验证正常完成、启动 / 路由错误、超时 / 取消及专用进程退出。
 3. M3.3：实现 Python 状态化工具环境与 JavaScript 实时桥接，覆盖路径过时、工具失败后恢复。
 4. M3.4：实现顺序批次回归、环境重置和逐项结果清单。
 5. M4/M5：在上述闭环完成后做重复配置比较、统计报告、结果浏览和持续集成。
 
-M3.2 及以后仍待开发，具体交付、验收及渠道补充事项见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。当前离线入口为 `python -m dsh_eval`。
+M3.3 及以后仍待开发，共四个主要阶段（M3.3、M3.4、M4、M5）；M4 内再拆重复试验和配置报告两批，按实施批次计为五批。渠道补充和录制加固按需求另计。具体交付与验收见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
@@ -211,11 +223,12 @@ M3.2 及以后仍待开发，具体交付、验收及渠道补充事项见 [M3 �
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
-- [评测格式](docs/evaluation-format.md)：版本 1 用例、证据清单、结果与离线命令。
+- [评测格式](docs/evaluation-format.md)：版本 1 用例、版本 1 / 2 证据与结果、离线命令。
+- [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 16 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 17 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

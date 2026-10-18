@@ -114,20 +114,23 @@ def evaluate(case_path, evidence_path):
     case_path, evidence_path = Path(case_path).resolve(), Path(evidence_path).resolve()
     case = validate_case(load_json(case_path))
     evidence = validate_evidence(load_json(evidence_path), case)
-    run_dir = (evidence_path.parent / evidence["runDir"]).resolve()
-    recording = inspect_recording(run_dir)
+    run_dir = (evidence_path.parent / evidence["runDir"]).resolve() if evidence["runDir"] is not None else None
+    recording = (inspect_recording(run_dir) if run_dir else
+                 {"outcome": "unverified", "reasons": ["No recorder run was observed"]})
     execution = {**evidence["execution"], "reportedStatus": evidence["execution"]["status"]}
     rows = [{"id": item["id"], "type": item["type"], "outcome": "not_run"} for item in case["assertions"]]
     assertions = {"outcome": "not_run", "results": rows}
-    result = {"evaluationFormatVersion": 1, "evaluatedAt": datetime.now(timezone.utc).isoformat(),
+    result = {"evaluationFormatVersion": evidence["evidenceFormatVersion"], "evaluatedAt": datetime.now(timezone.utc).isoformat(),
               "caseRunId": evidence["caseRunId"], "caseId": case["caseId"], "case": case,
               "source": evidence["source"], "configuration": evidence["configuration"],
               "budgetEnforcement": evidence["budgetEnforcement"],
-              "association": {"runId": evidence["runId"], "sessionId": evidence["sessionId"], "runDir": str(run_dir),
+              "association": {"runId": evidence["runId"], "sessionId": evidence["sessionId"], "runDir": str(run_dir) if run_dir else None,
                               "casePath": str(case_path), "evidencePath": str(evidence_path)},
               "execution": execution, "recording": recording, "assertions": assertions, "outcome": "unevaluable"}
     if "batchId" in evidence:
         result["batchId"] = evidence["batchId"]
+    if "runtimeReport" in evidence:
+        result["association"]["runtimeReport"] = str((evidence_path.parent / evidence["runtimeReport"]).resolve())
     if recording["outcome"] != "complete":
         return result
     try:
@@ -135,7 +138,8 @@ def evaluate(case_path, evidence_path):
         sessions = recording["inspection"]["sessions"]
         require(manifest["runId"] == evidence["runId"] and len(sessions) == 1
                 and sessions[0].get("sessionId") == evidence["sessionId"], "Recording association mismatch; expected one session")
-        require(manifest.get("pluginVersion") == evidence["configuration"]["pluginVersion"], "Recorded plugin version/configuration mismatch")
+        if evidence["configuration"] is not None:
+            require(manifest.get("pluginVersion") == evidence["configuration"]["pluginVersion"], "Recorded plugin version/configuration mismatch")
         session = sessions[0]
         with (run_dir / session["traceFile"]).open(encoding="utf-8") as stream:
             events = [parse_json(line)["event"] for line in stream]
@@ -157,6 +161,11 @@ def evaluate(case_path, evidence_path):
         # Preserve unknown event types; only interpret the documented task events.
         view = task_view(events, case["input"])
         require(evidence["configuration"] == case["configRef"], "Actual configuration differs from case configRef")
+        if evidence["evidenceFormatVersion"] == 2 and evidence["source"] == "live":
+            headers = [event["data"]["header"]["config"] for event in events if event.get("type") == "request/header"]
+            require(headers and all(header.get("provider") == evidence["configuration"]["provider"]
+                                    and header.get("model") == evidence["configuration"]["model"] for header in headers),
+                    "Actual request routes do not match the evidence configuration")
         rows[:] = [check_assertion(item, view) for item in case["assertions"]]
         outcomes = {row["outcome"] for row in rows}
         assertions["outcome"] = ("insufficient_evidence" if "insufficient_evidence" in outcomes

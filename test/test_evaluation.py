@@ -277,6 +277,22 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         self.assertEqual(result["recording"]["outcome"], "unverified")
         self.assertEqual(result["outcome"], "unevaluable")
 
+    def test_version_two_live_routes_are_checked_against_fresh_events(self):
+        # Synthetic events exercise route validation without invoking a model.
+        events = fixture(kind="events")
+        events.insert(2, {"type": "request/header", "data": {"header": {"config": {"provider": "synthetic", "model": "none"}}}})
+        original = self.record(resequence(events))
+        self.edit_evidence(evidenceFormatVersion=2, source="live")
+        self.assertEqual(evaluate(self.case_path, self.evidence_path)["outcome"], "passed")
+        case = load_json(self.case_path)
+        case["configRef"]["model"] = "tampered"
+        self.case_path.write_text(json.dumps(case), encoding="utf-8")
+        self.edit_evidence(configuration={**original["configuration"], "model": "tampered"})
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["recording"]["outcome"], "complete")
+        self.assertEqual(result["outcome"], "unevaluable")
+        self.assertIn("request routes", result["assertions"]["reason"])
+
     def test_wrong_run_session_plugin_and_config_cannot_pass(self):
         original = self.record()
         for key in ("runId", "sessionId", "configuration"):
@@ -292,7 +308,7 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
 
     def test_bad_evidence_identity_and_versions_rejected(self):
         original = self.record()
-        for updates in ({"caseRunId": "not-uuid"}, {"caseRunId": original["runId"]}, {"caseId": "other"}, {"evidenceFormatVersion": 2},
+        for updates in ({"caseRunId": "not-uuid"}, {"caseRunId": original["runId"]}, {"caseId": "other"}, {"evidenceFormatVersion": 3},
                         {"budgetEnforcement": {"tokens": True}}):
             with self.subTest(updates=updates), self.assertRaises(ValueError):
                 validate_evidence({**original, **updates}, fixture())

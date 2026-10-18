@@ -1,6 +1,6 @@
 # dsh-eval-lab 架构与技术取舍
 
-当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。插件适配宿主，记录器负责队列和封存，Node 检查器读取磁盘证据；M2.3 有固定 fixture 任务检查，M3.1 新增 Python 通用离线用例断言。单用例真实驱动、状态化工具和批次尚未实现。
+当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 负责 M3.1 离线断言和 M3.2 真实单用例调度。状态化工具和批次尚未实现。
 
 ## 执行流程与模块
 
@@ -38,6 +38,9 @@ inspect --run <目录>
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
 | `dsh_eval/__main__.py` | 显式 case / evidence 参数、JSON 结果、0 / 1 / 2 退出码及新文件输出 |
+| `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
+| `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
+| `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
 | `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
@@ -102,7 +105,7 @@ Python 固定检查器读取版本化联调报告定位明确目录，并重新�
 
 ## M3.1 用例与离线断言
 
-`python -m dsh_eval --case <case.json> --evidence <evidence.json> [--output <新文件>]` 使用 Python 标准库。只在仓库根目录运行，不改变 main.py 或 npm 插件分发内容。三个独立版本字段为 caseFormatVersion / evidenceFormatVersion / evaluationFormatVersion，目前均为 1；详细字段、样例及边界见 [评测格式](evaluation-format.md)。
+`python -m dsh_eval --case <case.json> --evidence <evidence.json> [--output <新文件>]` 使用 Python 标准库。只在仓库根目录运行，不改变 main.py 或 npm 插件分发内容。M3.1 引入 caseFormatVersion / evidenceFormatVersion / evaluationFormatVersion，当时均为 1；当前用例仍为 1，证据 / 结果兼容 1 / 2，扩展见下节和 [评测格式](evaluation-format.md)。
 
 ```text
 版本化用例 + 证据清单
@@ -123,6 +126,29 @@ caseRunId 是一次用例执行的 UUID，与插件 runId 分开，复验沿用�
 清单记录配置、预算实施和执行干预事实，离线模块只能核对声明与已有证据；provider / model / profile、超时 / 进程错误由后续适配器负责采集。环境文件与预算本批只校验和保留，未执行。source=synthetic 的两组公开样例经过实际录制器与检查器，但不代表真实工具 / 模型或顺序批次已执行。Python 不复制录制摘要算法，也不读取旧检查快照代替本次 inspect；输出用例快照与明确关联路径，缺失指标不填零。
 
 独立版本格式先由 Python 校验器落实，避免为当前离线范围增加 schema 依赖。后续驱动需要扩展字段时使用显式版本或更新兼容约定；本批不预建实时工具协议。文件输出以新建模式写入，保留历史结果；尚未实现结果文件原子发布或在线一致快照。
+
+## M3.2 真实单用例与进程边界
+
+`--run` 使用新 caseRunId 子目录，保存用例快照，Python 实际写入初始文件后调用 `case-host.js prepare`。后者按已验证 CLI 的离线 link 安装方式创建独立 headless home / store，设置 read-only workspace、凭据路径引用、请求的默认路由和禁用额外标题请求；不会复制密钥、修改原 profile 或安装未知版本。
+
+Python 的准备期限为 150 秒。`case-host.js run` 使用 Node fork + IPC 启动实际 CLI，Python 通过单独 JSONL 控制流实施任务墙钟预算和取消；任务预算从适配进程创建后开始，包括宿主启动，准备与清理另计。控制插件复用 M2.3 的 agent.cancel / idle / flush / appExit 路径；独立观察 actual selection 和 request/header，不将请求配置直接当作实际模型调用事实。
+
+```text
+Python：校验用例 → UUID 目录 / case 快照 / workspace
+  → Node prepare：实际 CLI 安装新 headless profile（独立准备期限）
+  → Node run → 专用 Harness 子进程（任务墙钟预算）
+       IPC：实际选择 / 请求路由 / 首 chunk → Python 监督器
+       控制：cancel / timeout → Agent 停止 / idle / flush / 正常退出
+       超清理期限：尝试强停自己创建的进程 / 进程树
+  → 保存实际退出 / 清理观察及版本 2 evidence
+  → fresh Node inspect → 路由与任务断言 → evaluation.json
+```
+
+Node 清理请求 10 秒后尝试终止专用 CLI；Python 15 秒后尝试终止仍在运行的自有适配进程树，Windows 按确切 PID 使用 taskkill /T /F，权限失败不能宣称清理成功。Python 异常细节只写私有 runtime.json，公开 JSON 原因引用相应文件。实测正常 / 路由错误 / 超时 / 流后取消的专用 CLI 均已退出；进程树兜底用无模型的真实子进程测试验证，未对任意外部工具树或其他平台作保证。
+
+启动失败时 recorder / session / 路由可能尚不存在，故新增 evidenceFormatVersion / evaluationFormatVersion 2：保留 caseFormatVersion 1，允许实际 runId / sessionId / runDir / configuration 为 null，可选 runtimeReport；原版本 1 继续严格兼容。结果只保留已经观察到的实际身份。版本 2 正常任务重新核对日志全部 request/header 路由与清单配置，缺少或冲突无法评测。raw run / JSONL / status 版本不变。
+
+host-result.json 为 adapterFormatVersion 1，保存 CLI 版本、实际选择 / 路由、流通知、PID、退出码 / 信号、干预和关闭事实；runtime.json 为 runtimeFormatVersion 1，保存 Python 阶段、监督器和异常。文件随执行私有保存，不作为签名或完整历史。模型端实现不由本地 provider / model 字段独立证明。详细命令和预算边界见 [单用例运行](single-case-runner.md)。
 
 ## 离线检查
 
@@ -149,13 +175,14 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 | Harness/Cordis 插件、会话监听、写入队列、状态封存、宿主清理 | 已实现，继续使用 JavaScript |
 | M2.2 inspect 及宿主组件检查 | 已实现，继续使用 JavaScript；后续 Python 可调用现有 Node 检查入口 |
 | 用例加载、通用离线任务断言 | M3.1 已使用 Python 实现，合成正反例验证通过；M2.3 固定检查仍保留 |
-| 单用例真实驱动、状态化工具环境核心逻辑、批次调度 | M3.2—M3.4 计划使用 Python；宿主内工具注册与必要适配按实际接口实现 |
+| 单用例真实驱动与预算 / 退出事实 | M3.2 已使用 Python 调度和 JavaScript 宿主适配；受控文件任务与异常分别通过 |
+| 状态化工具环境核心逻辑、批次调度 | M3.3 / M3.4 计划使用 Python；宿主内工具注册与必要适配按实际接口实现 |
 | 重复试验、轨迹分析、指标聚合、配置比较与报告 | 计划优先使用 Python；缺失指标保持缺失 |
 
 跨语言离线边界复用现有版本化 run.json、JSONL、status 和 inspect 的 JSON 报告及退出码。M3.1 Python 先调用现有 Node 检查入口，仅在录制检查通过后执行任务断言；录制失败或无法确认与任务断言失败分别报告。Node 进程不可用、检查超时和协议不一致映射为录制 unverified。
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；当前未实现该桥接，也未指定具体传输方式。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 已区分执行状态、录制有效性和断言结论，建立 caseRunId 与 sessionId / runId 关联；下一批 M3.2 验证单用例真实运行，再推进实时工具桥接和批次隔离。
+后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；下一批 M3.3 实现状态化环境与实时工具桥接，再做 M3.4 批次隔离。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 36 项 Node 测试、30 项 Python 测试；真实组件、历史模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 39 项 Node、44 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。

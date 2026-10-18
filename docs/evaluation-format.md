@@ -1,6 +1,6 @@
-# M3.1 离线评测格式与运行
+# 用例、证据与评测结果格式
 
-日期：2026 年 10 月 16 日，Asia/Shanghai。已实现 Python 标准库包 `dsh_eval`，在仓库根目录运行；本批实测 Python 3.12.0 / Node.js v24.14.0。插件仍为 `0.1.2`，既有录制格式不变。
+更新：2026 年 10 月 17 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。用例仍为版本 1，插件仍为 `0.1.2`，既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
 
 ## 运行入口
 
@@ -22,7 +22,7 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | --- | --- |
 | caseFormatVersion / caseId | 整数 1 / 非空用例标识；标识不是文件路径 |
 | input | 非空任务文本，与 user/message 的文本块拼接结果精确相等 |
-| environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象；拒绝绝对路径、冒号、反斜杠、空 / 点 / 上级分量和文件目录冲突；本阶段只校验和保留声明，不写文件 |
+| environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象；拒绝绝对路径、冒号、反斜杠、空 / 点 / 上级分量和文件目录冲突；离线仅保留声明，M3.2 实际写入独立 workspace 并补查 Windows 名称 / 大小写冲突 |
 | configRef | provider / model / profile / pluginVersion 四个非空字符串；不得内嵌凭据 |
 | budget.timeoutSeconds | 正整数，声明预算；离线评测不会实施它，不支持 token / 步骤上限 |
 | assertions | 非空数组，每条有唯一 id 和已支持的 type；所有断言均为必需 |
@@ -60,14 +60,26 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 
 caseRunId 必须为 UUID，且与录制器 runId 不同；同一执行复验保留 caseRunId。caseId 必须与用例相同，可选 batchId 为非空字符串，本批不产生实际执行批次。runDir 相对 evidence.json 所在目录解析，也接受绝对路径。必须明确 runId、sessionId；首版仅接受检查目录中恰好一个会话，拒绝恢复、fork、多轮任务和子 Agent 范围，不能忽略额外会话。
 
-source 为 synthetic / live，是证据生产者的来源声明。configuration 为适配器声明的实际配置，格式同 configRef；必须与用例期望相等，pluginVersion 还要匹配录制 run.json。provider / model / profile 与预算实施标记尚不能由离线日志独立证明。未来真实运行适配器负责采集实际事实，本批不因填写 live 就认定做过模型验证。
+版本 1 的 source 为 synthetic / live，是证据生产者的来源声明。configuration 格式同 configRef；正常任务必须与用例期望相等，pluginVersion 还要匹配录制 run.json。版本 1 不独立证明 provider / model / profile 与预算实施；M3.2 版本 2 由适配器实际采集并补查请求头。仅填写 live 本身仍不能证明发生过真实模型调用。
 
 budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execution.status 为 completed / cancelled / timed_out / runtime_error / unknown，可选 reason、exitCode、signal。结束 / 退出证据与 completed 冲突时归为 unknown；cancelled 要求实际 aborted/user，缺少或冲突时也归 unknown。超时、启动 / 路由 / 桥接错误是适配器提供的进程事实，离线模块不执行或推测干预。
 
-## 检查与结果：evaluationFormatVersion 1
+## M3.2 新增：evidenceFormatVersion 2
+
+版本 1 输入继续兼容，严格要求录制身份、路径和配置。版本 2 保持相同字段，但允许 runId / sessionId / runDir / configuration 分别为 null，用于启动失败或尚无实际请求的事实，不能拿期望配置或任意 UUID 补齐实际身份。caseRunId 仍必须存在，不能与非空录制 runId 相同。
+
+版本 2 可选 runtimeReport 指向私有运行报告，相对清单解析。单用例驱动生成 runtimeFormatVersion 1 的 runtime.json 和 adapterFormatVersion 1 的 host-result.json：前者保留阶段、监督器和异常细节，后者保留实际选择、请求路由、流通知、子进程退出与清理观察；不是插件录制协议。
+
+版本 2 source=live 的正常任务在原有断言前额外核对：至少有一个 request/header，且全部 provider / model 与清单实际配置一致。没有请求时无法证明实际配置，保持 null 和无法评测。用例 configRef 仍是期望配置，真实驱动实际设置独立 profile 的默认选择，再从事件采集实际路由；配置不符不能 passed。
+
+版本 2 清单产生 evaluationFormatVersion 2 结果，原有版本 1 清单继续产生版本 1。结果关联字段和 configuration 同样允许 null，并新增 association.runtimeReport（清单提供时）；其他三维状态和退出码语义保持不变。工具与最终文本断言没有变化。
+
+真实入口为 `python -m dsh_eval --case <case.json> --run`。其会调用实际模型，写环境文件并实施任务墙钟预算；离线入口仍不执行环境或干预。完整生命周期、预算范围与输出见 [单用例运行](single-case-runner.md)。
+
+## 检查与结果：evaluationFormatVersion 1 / 2
 
 1. 严格加载用例和证据清单，再直接调用 `node scripts/inspect.js --run <runDir>`，检查 JSON 报告与退出码一致。不可用、超时或协议异常归为录制 unverified，不读取旧成功报告替代。
-2. 录制不为 complete 时跳过断言。为 complete 时复核 runId、单会话 sessionId 和插件版本；关联不符降为 unverified，保留原始 inspection。读取停止写入后的日志或稳定副本；未实现在线一致快照。
+2. 没有明确录制路径时为 unverified，不猜测目录；其他情况重新 inspect。录制不为 complete 时跳过断言。为 complete 时复核 runId、单会话 sessionId 和已知插件版本；关联不符降为 unverified，保留原始 inspection。读取停止写入后的日志或稳定副本；未实现在线一致快照。
 3. completed 需要唯一 completed 结束事件，且退出码为 0 或缺失、无信号。正常任务要求唯一真实用户输入、唯一结束、最终文本；消息和工具事件不能越过任务边界。任务范围内出现序号缺口、已知事件结构错误、重复调用 / 返回、孤立或倒序返回时报告证据不足。未知事件类型保留并跳过，不猜测含义。
 4. 仅执行正常、录制可验证、输入与配置匹配时运行必需断言。
 
@@ -82,6 +94,6 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 
 ## 当前限制与下一步
 
-M3.1 只实现离线单任务评测。环境是声明，合成轨迹不是环境执行、真实工具或模型证据；日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。缺少运行级会话清单、日志与摘要同时重写等限制沿用 [架构](architecture.md)。
+M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。缺少运行级会话清单、日志与摘要同时重写等限制沿用 [架构](architecture.md)。
 
-M3.2 再实现单用例真实 headless 驱动与退出 / 预算事实采集；M3.3 实现状态化工具和实时桥接；M3.4 实现顺序隔离批次。M3.1 的两个样例不代替后续路径过时 / 故障恢复真实验收。验证依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md)。
+M3.2 已完成受控单用例真实驱动与异常 / 预算分类；下一批 M3.3 实现状态化工具和实时桥接，再做 M3.4 顺序隔离批次。现有样例不代替路径过时 / 故障恢复的真实桥接验收。验证依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
