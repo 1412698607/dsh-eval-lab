@@ -1,0 +1,20 @@
+{
+  "experimentFormatVersion": 1,
+  "experimentName": "repeat-retry-recovery",
+  "repetitions": 2,
+  "failurePolicy": "continue",
+  "cases": [
+    { "entryId": "retry-read", "casePath": "retry-read.case.json" }
+  ],
+  "configurations": [
+    {
+      "configurationId": "deepseek-flash",
+      "configRef": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "profile": "headless",
+        "pluginVersion": "0.1.2"
+      }
+    }
+  ]
+}

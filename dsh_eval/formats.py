@@ -51,6 +51,44 @@ def configuration(value):
     require(all(nonempty(item) for item in value.values()), "Configuration values must be nonempty strings")
 
 
+def validate_batch(batch):
+    fields(batch, ("batchFormatVersion", "batchName", "failurePolicy", "cases"))
+    require(type(batch["batchFormatVersion"]) is int and batch["batchFormatVersion"] == 1, "Unsupported batch format")
+    require(nonempty(batch["batchName"]), "batchName must be nonempty")
+    require(batch["failurePolicy"] in ("continue", "stop"), "failurePolicy must be continue or stop")
+    require(isinstance(batch["cases"], list) and batch["cases"], "Batch must contain cases")
+    identifiers = set()
+    for entry in batch["cases"]:
+        fields(entry, ("entryId", "casePath"))
+        require(nonempty(entry["entryId"]) and entry["entryId"] not in identifiers, "Batch entryId must be nonempty and unique")
+        identifiers.add(entry["entryId"])
+        path = entry["casePath"]
+        require(nonempty(path) and "\\" not in path and ":" not in path and not path.startswith("/")
+                and all(part not in ("", ".") for part in path.split("/")),
+                "casePath must be a relative POSIX path, resolved beside the batch manifest")
+    return batch
+
+
+def validate_experiment(experiment):
+    fields(experiment, ("experimentFormatVersion", "experimentName", "repetitions", "failurePolicy", "cases", "configurations"))
+    require(type(experiment["experimentFormatVersion"]) is int and experiment["experimentFormatVersion"] == 1,
+            "Unsupported experiment format")
+    require(nonempty(experiment["experimentName"]), "experimentName must be nonempty")
+    require(type(experiment["repetitions"]) is int and experiment["repetitions"] > 0,
+            "repetitions must be a positive integer")
+    validate_batch({"batchFormatVersion": 1, "batchName": experiment["experimentName"],
+                    "failurePolicy": experiment["failurePolicy"], "cases": experiment["cases"]})
+    require(isinstance(experiment["configurations"], list) and experiment["configurations"], "Configurations are required")
+    identifiers = set()
+    for entry in experiment["configurations"]:
+        fields(entry, ("configurationId", "configRef"))
+        require(nonempty(entry["configurationId"]) and entry["configurationId"] not in identifiers,
+                "configurationId must be nonempty and unique")
+        identifiers.add(entry["configurationId"])
+        configuration(entry["configRef"])
+    return experiment
+
+
 def validate_case(case):
     fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"))
     require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] in (1, 2), "Unsupported case format")
@@ -88,7 +126,9 @@ def validate_case(case):
         elif kind == "tool_result":
             fields(assertion, ("id", "type", "tool", "arguments", "result"))
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
-            require(isinstance(assertion["arguments"], dict) and assertion["arguments"], "Expected tool arguments are required")
+            require(isinstance(assertion["arguments"], dict)
+                    and (case["caseFormatVersion"] == 2 or assertion["arguments"]),
+                    "Expected tool arguments must be an object (nonempty in case version 1)")
             fields(assertion["result"], ("isError",), ("textContains",))
             require(type(assertion["result"]["isError"]) is bool, "isError must be boolean")
             if "textContains" in assertion["result"]:

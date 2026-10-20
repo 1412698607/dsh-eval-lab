@@ -46,6 +46,7 @@ python -m dsh_eval --case 'runs/evaluation/<caseRunId>/case.json' --evidence 'ru
 
 - 准备阶段由 Python 单独实施 150 秒上限；任务预算从运行适配进程创建后开始，覆盖 Harness 启动和任务执行，不包含离线安装与最终 inspect。
 - `budget.timeoutSeconds` 是任务墙钟时间。达到期限后 Python 发 timeout，Node 通过 IPC 请求 Agent 停止 / idle / flush；仍未退出时，Node 10 秒后尝试强停专用 Harness 子进程，Python 15 秒后尝试终止自己创建的整个适配进程树。清理还有独立等待，总退出时间可超过任务预算；不是 token、费用或步骤上限。
+- 工具响应和控制帧由独立写线程串行写入，监督循环只入队。若响应阻塞，timeout / cancel 仍会记录；控制帧不能穿插进半条 JSONL，清理期限后仍尝试终止自有进程树。stdin 由写线程关闭，回收后记录 supervisor.stdinWriterStopped；超时后的管道写入错误不覆盖超时分类。详见 [修复记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
 - Windows 最后手段使用精确的本次进程 PID 和 `/T /F`，仅针对自己仍持有的运行进程；不按名称终止其他实例。权限拒绝时不能宣称树清理成功。POSIX 分组路径已实现，但本批未验证该平台。
 - `--cancel-after-stream` 在首个模型请求流 chunk 通知后发送 cancel，适用于受控取消验收；chunk 可能是块边界，不保证已产生文本或执行文件工具。Python Ctrl+C 请求取消路径已实现，本批未单独做手工按键验收。
 - 控制插件复用 M2.3 的 IPC 生命周期行为，父控制流断开时请求停止；本批没有单独验证运行中的 Python 被 OS 强杀。
@@ -80,3 +81,7 @@ M3.2 验证了一条受控真实文件任务及上述异常路径。M3.2 当时�
 ## M3.3 状态化扩展（2026 年 10 月 18 日）
 
 单用例入口现支持版本 2 状态化用例。Python 在监督循环内即时处理工具请求，Node 转发专用 IPC；状态化环境的文件不写入 workspace。路径、错误、取消和复现命令见 [状态化工具与桥接](stateful-tools.md)。原有 M3.2 历史验证范围保留。
+
+## M3.4 顺序调度复用
+
+批次入口逐项调用同一 runner，使用 `runs/batches/<batchId>/cases/<caseRunId>/`，每项仍保存自己的 case / evidence / evaluation。批次身份传入原有可选 batchId；准备进程退出和人工 KeyboardInterrupt 额外记入 runtime，便于确认清理并停止整批。单用例 CLI 用法不变；批次清单、继续 / 停止和进度文件见 [批次运行](batch-runner.md)。

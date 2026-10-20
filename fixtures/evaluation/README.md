@@ -11,3 +11,9 @@ read-project / missing-file 的 case 与 events 文件是人工合成数据，�
 再对输出中每一组 casePath / evidencePath 执行 `python -m dsh_eval --case <casePath> --evidence <evidencePath>`。完整格式、结果与边界见 [评测格式](../../docs/evaluation-format.md)。
 
 M3.3 新增 `stale-path.case.json` / `retry-read.case.json`：版本 2 的虚拟文件环境，分别验证旧路径失败后发现新文件、同路径暂时失败后重试。使用 `--run` 会调用真实模型；JSON 用例本身不是执行证据，也不参与合成 demo。工具及协议见 [状态化工具](../../docs/stateful-tools.md)。
+
+2026 年 10 月 18 日审查修复：stale-path 的发现断言使用版本 2 空 `arguments`，仅要求正确的 eval_list 成功结果包含目标路径，因此允许 `.` 和 `docs` 两种查找；其余旧路径失败、实际读取与答案断言保持。说明与合成回归见 [修复记录 014](../../docs/changes/2026-10-18-014-m3-3-review-fixes.md)。
+
+M3.4 的 `recovery.batch.json` 是真实执行清单，顺序包含 stale-path、retry-first、retry-reset；后两项显式引用同一 retry-read 用例以检查重置。运行 `python -m dsh_eval --batch fixtures/evaluation/recovery.batch.json --run` 会调用真实模型三次。stale-path 任务已明确实际尝试 README 引用后再选替代文件，避免答案正确但缺少目标故障证据。说明见 [批次运行](../../docs/batch-runner.md)。
+
+M4.1 的 `recovery.experiment.json` 显式声明一个用例、一个配置、两次重复，共两个真实模型任务。运行 `python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --run` 会调用模型；清单本身不是执行证据，也不参与合成 demo。重复状态、样本关联和统计口径见 [重复试验](../../docs/experiments.md)。

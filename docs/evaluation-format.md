@@ -43,6 +43,8 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 
 版本 2 保留版本 1 的必需字段和断言，允许 environment 增加 stateful 对象，其唯一必需字段 transientReadFailures 为“已有文件路径 → 非负整数次数”的映射，拒绝布尔值。没有 stateful 时仍使用实际文件环境；声明 stateful 后 files 只保存在 Python 内存，workspace 不写入这些文件。版本 1 不接受 stateful。证据和结果仍为版本 2，录制格式不变。示例见 [路径过时](../fixtures/evaluation/stale-path.case.json)、[失败恢复](../fixtures/evaluation/retry-read.case.json)；协议和取消语义见 [状态化工具](stateful-tools.md)。
 
+版本 2 允许 tool_result 的 `arguments` 为 `{}`，表示不限制调用参数值，仍必须有正确工具名、合法对象形式的实际参数、按 callId 关联的结果、预期 isError / textContains 和正确的任务顺序。非空对象仍逐键精确匹配；版本 1 继续要求非空对象。路径过时用例的发现断言使用空对象，并要求 eval_list 成功返回包含 docs/current.md 的列表，因此根目录 `.` 和 `docs` 都可通过，旧路径失败、读取新文件及答案断言保持原要求。此兼容扩展不增加新版本编号；旧快照中的非空参数约束仍按原语义检查。修复依据见 [记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
+
 ## 证据清单：evidenceFormatVersion 1
 
 适配器或合成演示为一次用例执行生成 evidence.json。最小示例：
@@ -94,10 +96,32 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 | assertions | passed / failed / insufficient_evidence / not_run；results 逐条保留 id、type、结论、实际值或原因及证据序号 / callId |
 | outcome | 只有执行 completed 且录制 complete，全部断言 passed 才 passed；证据充分且有明确不符为 failed；其余 unevaluable |
 
-输出保留 evaluatedAt（UTC）、完整版本化用例快照（含输入、环境、期望配置和预算）、实际配置声明、预算实施标记、source、caseRunId、caseId、可选 batchId，以及关联的 runId / sessionId / 明确路径。文件缺失与检查错误也保留分类；没有采集 token、费用、耗时或调用指标，不填零或推算。
+输出保留 evaluatedAt（UTC）、完整版本化用例快照（含输入、环境、期望配置和预算）、实际配置声明、预算实施标记、source、caseRunId、caseId、可选 batchId，以及关联的 runId / sessionId / 明确路径。文件缺失与检查错误也保留分类；M4.1 开始增加可选 metrics，历史文件缺少指标仍兼容，见文末扩展。
 
 ## 当前限制与下一步
 
 M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。缺少运行级会话清单、日志与摘要同时重写等限制沿用 [架构](architecture.md)。
 
-M3.2 已完成受控单用例真实驱动与异常 / 预算分类；下一批 M3.3 实现状态化工具和实时桥接，再做 M3.4 顺序隔离批次。现有样例不代替路径过时 / 故障恢复的真实桥接验收。验证依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
+M3.1 至 M3.4 已完成当前范围，M4 已增加重复试验、指标与离线配置报告；下一批为 M5 结果浏览与持续集成。合成样例不代替真实模型验收，各层验证分别保留。历史离线与单用例依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)，当前扩展见文末。
+
+## M3.4 批次扩展
+
+新增独立 batchFormatVersion=1 输入、batchResultFormatVersion=1 清单，命令为 `python -m dsh_eval --batch ... --run`。既有 evidence / evaluation 的可选 batchId 现由真实 runner 填写，单用例格式和版本保持；同 caseId 多次执行用不同 entryId / caseRunId 关联。runtimeReport 增加 preparation.processStarted / processExited、userInterrupted 等观察，不把计划身份当成实际会话。批次预检、冻结输入、状态、策略和相对路径口径见 [批次运行](batch-runner.md)。
+
+2026 年 10 月 19 日为 runtimeFormatVersion=1 添加可选 adapterProcessStarted：false 表示尚未尝试或 Popen 以 OSError 未能创建适配进程，true 表示成功创建，null 表示创建情况尚未确认。旧文件缺字段按未知处理，不能据此认为已清理；本字段不改变 execution、录制与断言三维结果，也不新增实际会话身份。证据、单项结果和批次格式版本不变。修复依据见 [记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。
+
+## M4.1 实验与观测指标扩展
+
+新增独立 experimentFormatVersion / experimentResultFormatVersion=1，`--experiment ... --run` 展开为标准顺序批次。以 experimentId / sampleId / caseEntryId / configurationId / repeatIndex 映射原 batchId / entryId / caseRunId，不修改 evidence 格式，也不补造实际会话身份。
+
+evaluationFormatVersion 1 / 2 新增可选 metrics（内部 metricsFormatVersion=1）；batchResultFormatVersion 1 的逐项清单新增可选 source / metrics，runtimeFormatVersion 1 新增可选 elapsedSeconds。新 evaluate 总会输出 metrics 对象；旧结果缺字段继续兼容，旧 runtime 无计时则保持 null。指标错误不改变三维结论。
+
+modelCalls 统计已结算 assistant/message / assistant/attempt，toolCalls 统计 tool/call；先 fresh inspect、身份关联和闭合任务边界检查。token 逐字段读取 assistant/message.data.usage，缺失 / 未结算 / 失败尝试用量不推算。elapsedSeconds 独立来自匹配 caseRunId 的单调时钟运行报告，包含准备 / 执行 / 清理，不含离线评测。费用仍为 null。所有字段、分母、样本路径和汇总覆盖率见 [重复试验](experiments.md)。
+
+同日审查修复明确有限数值范围：无法表示为有限浮点数的指标单值或 token 字段和保持 null。实验每项指标汇总若求和超出范围，保留观测 / 缺失样本数，总和与均值为 null，并增加可选 reason；不产生 Infinity / NaN，不改变任务结论或样本分母。实验与 metrics 格式仍为版本 1，历史结果不覆写。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
+
+## M4.2 独立比较报告
+
+新增 `comparisonReportFormatVersion=1`，通过 `--report <experiment-result.json>` 对一个终态实验生成新的报告目录。原 experiment / evidence / evaluation 格式不变，不改写旧结果；新 evaluations 仍使用原 evaluate 格式。报告保存原始分母、样本关联复核、新旧差异、按用例 / 配置 / 来源分组以及匹配配对差值，指标汇总增加观测范围并保留 reason。
+
+报告自身成功退出 0、输入输出错误 2，与单次任务 passed / failed / unevaluable 的退出码语义分开；原入口不变。完整字段、路径、actual configuration 的核对与不确定性边界见 [配置报告](configuration-reports.md)。

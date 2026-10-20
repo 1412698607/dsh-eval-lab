@@ -1,12 +1,12 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 18 日（Asia/Shanghai），插件版本 `0.1.2`。M3.3 已实现 Python 状态化工具环境及 JavaScript 实时桥接，路径过时 / 暂时读取失败后恢复两个真实模型用例通过。用例版本 2 兼容 1，证据 / 结果保持版本 2。本批尚未提交。已核实 M3.2 提交 `31a24fa`；旧交接“ M3.2 尚未提交”已过时，历史验证保留。
+截至 2026 年 10 月 21 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 M4.1 主体提交为 `1a6cf69`，指标溢出修复为 `a39e43c`，旧记录 018 的“尚未提交”为当时状态。本批完成 M4.2 离线配置报告：核对终态实验 / 冻结输入 / 实际路由 / 来源后复验，独立保存 JSON / Markdown 与逐项评测，详见 [记录 019](changes/2026-10-21-019-m4-2-configuration-reports.md)；本批尚未提交或推送。
 
-下一批为 M3.4 顺序批次回归，再做 M4、M5，共三个主要阶段（M4 拆两批，按实施批次为四批）。渠道补充和录制加固另按需求安排。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。
+下一批为 M5 结果浏览与持续集成，主路线剩一个实施批次。渠道补充和录制加固另按需求安排。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。
 
 ## 项目目标
 
-围绕 DeepSeek Harness 构建 Agent 行为回归测试工具：对固定任务与环境运行 Agent，检查工具行为和最终结果，比较配置。当前成果包含录制检查、离线断言和受控单用例真实闭环，不能据此报告模型任务通过率、成本或性能提升。
+围绕 DeepSeek Harness 构建 Agent 行为回归测试工具：对固定任务与环境运行 Agent，检查工具行为和最终结果，比较配置。当前成果包含录制检查、离线断言、受控单用例 / 批次、重复试验与配置报告，公开样本计数、分母、匹配 / 来源覆盖和条件配对差值；少量验收样本不能推断模型整体表现、成本或性能提升。
 
 ## 当前基线
 
@@ -14,11 +14,11 @@
 | --- | --- |
 | 插件版本 | `0.1.2`；本批不改变录制器及日志协议 |
 | 当前开发分支 | `20261015/feat/eval-workflow` |
-| 已核实基线提交 | `31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
-| 开发语言 | JavaScript 宿主接入和生命周期；Python 已实现离线断言及真实单用例调度 |
+| 已核实基线提交 | `a39e43c` 为 M4.1 指标溢出修复，`1a6cf69` 为主体；`5cdd803` 为 M3.4 启动失败修复；`bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
+| 开发语言 | JavaScript 宿主接入和生命周期；Python 已实现离线断言、状态化环境、真实单用例 / 批次、重复试验统计及离线配置报告 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 10 月 18 日，Asia/Shanghai |
+| 最新复核日期 | 2026 年 10 月 21 日，Asia/Shanghai |
 | 真实模型基线 | CLI `0.2.0-rc.2`；`deepseek-official / deepseek-flash`；独立 Web / headless profile |
 
 ## 功能状态
@@ -43,10 +43,75 @@
 | desktop / SDK、Web 页面手动取消及普通进程信号关闭 | 尚未验证 | 后续按渠道需求验证 |
 | 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；三种断言和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消、清理与新建结果；受控真实任务及异常通过 | `dsh_eval/runner.py`、`scripts/case-host.js` |
-| 状态化工具环境与实时桥接 | Python 虚拟文件 / 暂时故障计数、版本 1 实时桥接；两个真实模型用例通过 | `dsh_eval/environment.py`、`docs/stateful-tools.md` |
-| 批次与重复试验 / 指标比较 | 尚未实现 | M3.4 及后续 |
+| 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
+| 顺序批次、重置和结果清单 | 版本 1 批次 / 结果与历史真实恢复批次已验证；启动失败策略及 source / metrics 可选输出已实现 | `dsh_eval/batch.py`、[批次运行](batch-runner.md) |
+| 重复试验与观测统计 | 版本 1 实验、三种分母、缺失覆盖及异常单值 / 求和保护已实现；本批历史样本复验保持原分类 | `dsh_eval/experiment.py`、`dsh_eval/metrics.py`、[重复试验](experiments.md)、修复记录 018 |
+| 配置比较报告与不确定性边界 | 已实现版本 1 离线 JSON / Markdown；核对输入 / 身份 / 路由 / 来源，同用例和重复编号配对，公开范围、分母与排除；多配置验证为合成样本 | `dsh_eval/report.py`、[配置报告](configuration-reports.md)、记录 019 |
+| 结果浏览与持续集成 | 尚未实现 | M5 |
 
-## 最新验证：M3.3（2026 年 10 月 18 日）
+## 最新验证：M4.2 配置报告（2026 年 10 月 21 日）
+
+- `python -m unittest discover -s test -p test_report.py -v`：17 项新增检查通过。使用真实 Node 子进程、原录制器 / inspect 与 Python 状态化工具，适配器和配置标签为合成；覆盖独立报告、新旧差异、任务 / 环境 / 预算 / 断言快照、实际请求头、来源隔离、同配置别名、不同用例、目录迁移、损坏 / 缺失日志、停止跳过、取消、启动错误、数值缺失 / 溢出及 CLI。独立 Python 命令行还先复现 cp936 重定向导致中文 JSON 不能按 UTF-8 解码，再固定模块 stdout UTF-8；强制旧代码页的真实子进程回归通过。
+- `npm.cmd run test:python`：首次沙箱 117 项中四项既有真实进程树强停被权限阻挡，未计通过；获准环境完整 117 项通过（原 100 + 新 17）。`npm.cmd test` 42 项、`npm.cmd run check` 29 个 JavaScript 文件及 `python -m compileall -q dsh_eval test` 通过。
+- 两个 M4.1 既有实验的四个真实样本通过新 `--report` 入口，保持 passed / completed / complete / 断言 passed 与实际配置匹配。首轮旧实验新报告取得 modelCalls 3 / 3、totalTokens 22512 / 22750，原汇总仍保持旧指标；最终实验指标与原报告一致，modelCalls 3 / 4、totalTokens 22531 / 30240。
+- 两个历史实验各 40 份 JSON / JSONL 前后摘要一致。另新建一个两配置标签 × 两重复的合成实验，四项 passed，产生一个 synthetic 比较、两个共同配对；其 50 份 JSON / JSONL 摘要同样不变。报告的独立生成不等于真实多模型验收或模型表现结论。
+
+本批没有新模型调用，没有重复 `smoke:host` / `check:output` / `smoke_bridge`，没有复验更早 M3 模型轨迹。原任务与录制实现未改，历史验证保留；本批验证范围及取舍见 [记录 019](changes/2026-10-21-019-m4-2-configuration-reports.md)。
+
+## M4.1 指标溢出修复历史验证（2026 年 10 月 21 日）
+
+- 新增五项回归先复现超大耗时导致 OverflowError、有限单值相加后产生 Infinity，以及超大 token 字段和未被排除。修复后 `test_metrics.py` 11 项、`test_evaluation.py` 32 项通过，异常耗时不改变 passed / complete / 断言结果，CLI 返回 0。
+- `npm.cmd run test:python`：获准环境 100 项通过（原 95 + 新 5）；`npm.cmd test`：42 项通过；`npm.cmd run check`：29 个 JS 文件通过；`python -m compileall -q dsh_eval test` 通过。
+- `python -m scripts.smoke_bridge`：获准环境真实工具注册 / IPC 四次请求通过，无模型调用。新增指标反例是合成数值；原录制器、fresh inspect 和 CLI 检查不等于新的模型任务。
+- 两个历史实验的四个真实样本用各自保存 case / evidence 离线复验，三维分类与 passed 均保持。最终新实验的两个样本指标与原报告一致；首轮旧报告仍缺指标，复验可取得计数，未覆盖原文件。复验前后全部实验 JSON / JSONL SHA-256 相同。
+
+本批无新模型调用，未重复 smoke:host / check:output，未复验更早 M3 模型轨迹。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)，以下主体与历史验证保留。
+
+## M4.1 主体历史验证（2026 年 10 月 21 日）
+
+- `npm.cmd run test:python`：获准环境 95 项通过（原 76 + 新 19）。新增实验 / 指标检查覆盖配置展开、输入冻结、状态重置、身份关联、停止与跳过、取消、启动失败、分母、usage 缺失、损坏日志和计时身份；最后一项回归允许真实宿主在用户输入前打开 step。
+- `npm.cmd test`：42 项通过；`npm.cmd run check`：29 个 JS 文件通过；`python -m compileall -q dsh_eval test` 通过。首次沙箱完整 Python 运行中四项自有进程树强停检查被权限拒绝，未计为通过；获准环境分别重跑 94 项及补齐边界回归后的 95 项均通过。
+- `python -m scripts.smoke_bridge`：获准环境真实工具注册 / IPC 四次请求通过，无模型调用。
+- `python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --run`：修正指标边界后，新实验两个真实恢复任务均 passed / completed / complete；每次 project.md 读取先 Error 后成功，状态重置有效。已结算模型尝试分别 3 / 4 次，工具调用 2 / 3 次，报告的 totalTokens 分别 22531 / 30240，运行耗时约 5.719 / 7.406 秒，均包含准备 / 执行 / 清理；费用 null。这是一个配置、一个用例、两次重复的验收，不是配置优劣或性能结论。
+- 首轮两个真实任务也 passed，但将 step/start 纳入输出边界导致计数和 token 留空，原文件完整保留。修复后四次实际执行用各自保存 case / evidence 重新 inspect 和断言，均保持 passed；新实验指标与复验一致，首轮新复验恢复指标但没有覆盖旧报告。验证前后所有实验 JSON / JSONL 摘要一致。
+- 四个真实宿主 childClosed=true、forceStopped=false，写线程退出且适配进程退出 0；专用宿主 PID 查询均无进程。本批没有重复 smoke:host / check:output，也未复验更早 M3 历史模型轨迹；下列历史验证保留。
+
+确定性实验测试使用原录制器、fresh inspect、真实 Node 进程和 Python 状态，但适配器为合成程序；模拟配置标签、usage 与注入中断不等于真实多模型比较或手工按键验收。完整依据见 [记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。
+
+## M3.4 启动失败修复历史验证（2026 年 10 月 19 日）
+
+- `python -m unittest discover -s test -p test_batch.py`：18 项通过；修复前新增回归复现 continue / stop 均被误归清理未知，修复后符合策略。新增三项覆盖启动失败、启动事实缺失 / null 与启动期 KeyboardInterrupt，原已启动进程清理未知的停止检查继续通过。
+- `npm.cmd run test:python`：获准环境 76 项通过（原 73 + 新 3）；`npm.cmd test`：42 项通过；`npm.cmd run check`：29 个 JS 文件通过；`python -m compileall -q dsh_eval test` 通过。
+- `python -m scripts.smoke_bridge`：获准环境真实工具注册 / IPC 四次请求通过，未调用模型。启动失败与中断通过注入异常验证，后续成功项使用真实 Node 子进程和合成适配器，不代表实际模型任务或手工按键验收。
+
+本批未新增模型运行、未复验历史模型轨迹，未重复 smoke:host / check:output；下列历史验证及其边界保留。详见 [修复记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。
+
+## M3.4 主体历史验证（2026 年 10 月 18 日）
+
+- `npm.cmd run test:python`：获准环境 73 项通过（原 58 + 新 15）；格式和预检、冻结输入、重复状态重置、配置隔离、结果关联、失败 / 取消 / 超时策略、人工中断注入、清理未知和进度写入错误均覆盖。合成适配器使用真实 Node 进程与原录制器，未调用模型。
+- `npm.cmd test` / `npm.cmd run check`：42 项 / 29 个 JS 文件通过；Python compileall 通过。`python -m scripts.smoke_bridge` 无模型实际 Cordis / Tools / IPC 四次请求通过。
+- `python -m dsh_eval --batch fixtures/evaluation/recovery.batch.json --run`：新快照批次 completed / passed，stale-path / retry-first / retry-reset 均 passed；41 / 37 / 37 条、55889 / 50166 / 50783 字节。后两项 project.md 的读取结果各为一次失败后一次成功，状态不串用。
+- 实际未注册路由 + 正常用例：continue 保存 runtime_error 后继续得到 passed；stop 跳过后项。实际首流取消 + stop：cancelled 后跳过后项；跳过项身份和任务结论为 null。
+- 五个验证批次的十个实际启动项均使用保存的 case / evidence 离线复验，保持原结论；宿主 childClosed=true、forceStopped=false、写线程已退出，十个专用 PID 查询均不再存在。
+
+首次旧提示批次的路径过时用例先列目录，未实际读取旧路径，答案正确但必要证据不足，保留为 unevaluable。任务说明明确“先尝试引用路径再选择替代文件”后，新批次通过，旧日志和快照未改。实际模型结果、合成回归和人工中断注入分别记录，不据此报告成功率或成本变化。详见 [批次运行](batch-runner.md) 与 [记录 015](changes/2026-10-18-015-m3-4-sequential-batches.md)。
+
+## M3.3 历史修复验证（2026 年 10 月 18 日）
+
+- `npm.cmd run test:python`：获准环境 58 项通过（原 51 + 新 7）；阻塞响应下超时 / 首流取消可触发清理并收回进程与写线程，完整 Unicode 返回、写入错误分别验证。
+- `npm.cmd test` / `npm.cmd run check`：42 项 / 28 个 JS 文件通过；Python compileall 通过。
+- `python -m scripts.smoke_bridge`：获准环境实际 Cordis / Tools 注册、fork IPC 与 Python 状态四次请求通过，不调用模型。
+- 新版 stale-path 用例的根目录 / docs 两种合成轨迹均经过原记录器及 fresh inspect，评测 passed；错误工具、列表不含目标、isError 和缺结果反例不能通过；版本 1 仍拒绝空参数。
+- 原审查记录 013 的一秒预算 / 大响应复现现在保留 intervention=timeout、stdinWriterStopped=true，并归 timed_out；目标进程在清理宽限内自行退出，未强停。新增阻塞回归另用短清理宽限验证实际强停。
+- 三次历史模型执行以各自 case.json / evidence.json 离线复验，两个成功仍 passed，取消保持 cancelled / complete / unevaluable。本批没有新的模型调用，也未重复旧的输出子进程回归；其历史结果保留。
+
+实现及兼容说明见 [修复记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。下一步恢复 M3.4 入口。
+
+## M3.3 历史复查（2026 年 10 月 18 日）
+
+28 文件语法、42 项 Node、获准环境 51 项 Python 和无模型真实桥接四次请求均复验通过；旧成功 / 取消轨迹离线复验保持原分类。本次未重新调用模型。新增两项可复现审查发现：大文本同步写回阻塞监督循环、根目录发现轨迹被用例误拒绝。当时的结论是先修这两项再进入 M3.4；随后本批修复见上节及记录 014，历史问题和复现保留。复现与边界见 [审查记录 013](changes/2026-10-18-013-m3-3-review.md)。
+
+## M3.3 原验收验证（2026 年 10 月 18 日）
 
 - `npm.cmd run check`：28 个 JavaScript 文件通过；`npm.cmd test`：42 项通过。
 - `npm.cmd run test:python`：获准环境 51 项通过；首次沙箱强停权限失败保留为验证限制，复验后通过。
@@ -143,7 +208,7 @@
 - 状态替换验证限定当前 Windows 本地文件系统；没有验证所有网络盘、占用行为或操作系统强杀、断电场景。
 - 固定组件检查、真实 headless 和 Web 验证分别记录；本批只证明上述独立 profile 与固定任务。原有自定义模型配置没有导入测试 profile。
 - Web 使用测试专用 IPC 正常关闭，尚未验证页面手动取消、普通 Web 进程信号关闭、desktop 或 SDK。
-- `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。`dsh_eval` 的 --run 已实现受控单会话单任务 headless；离线入口仍不执行环境 / 预算。实时 Python 工具桥接已在 M3.3 实现，批次调度未实现。
+- `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。`dsh_eval` 的 --run 已实现受控单会话单任务 headless；离线入口仍不执行环境 / 预算。M3.3 / M3.4 已补桥接和顺序批次，M4 已实现重复统计和单实验离线报告；并发、崩溃续跑、跨实验合并及结果浏览界面尚未实现。指标只反映闭合录制和已报告 usage，运行耗时不是纯模型延迟，缺失与费用不补零。配对覆盖不足有选择偏差，没有置信区间、显著性或真实多配置表现结论。
 - 版本 2 由真实适配器采集请求路由 / 退出 / 干预，离线再核对日志请求头；来源字段本身不是签名。准备和清理另有期限，不把任务 timeoutSeconds 说成总退出硬上限，不支持 token / 步骤预算；本批只验证 Windows 与当前组件。
 
 ## 后续里程碑
@@ -156,14 +221,17 @@
 | M2.3 | 已完成 Web / headless 受控联调基线 | 实际安装、字段读取与缺失文件响应、真实流取消、专用进程强停；Node inspect + Python 固定证据检查 |
 | M3.1 | 已完成：Python 版本化用例与结果、caseRunId、离线证据断言和三维分类 | 两个合成用例、正反例及真实 Node inspect；损坏 / 开放日志不能判任务通过 |
 | M3.2 | 已完成：Python 单用例受控 headless、初始文件、实际配置与预算事实、版本 2 证据 | 真实读取 passed；启动 / 路由错误、超时 / 取消、专用子进程退出分别验证 |
-| M3.3 | 已完成：Python 状态化工具环境核心与 JavaScript 实时桥接 | 状态单测、真实宿主注册及跨进程桥接、路径过时 / 暂时失败恢复两个真实模型用例通过 |
-| M3.4 | 下一批，未实现：Python 顺序批次回归、环境隔离与结果清单 | 新会话和 caseRunId 独立，初始状态重置，逐项关联配置与录制证据 |
-| M4 | 优先 Python 实现多次重复配置比较、指标汇总与报告 | 报告样本数、配置和原始结果；缺失指标保持缺失 |
+| M3.3 | 已完成当前范围；复查两项问题已修复 | 原有状态 / 宿主 / 模型样例有效；新增管道与发现方式回归、58 项 Python 及无模型真实桥接通过，见记录 014 |
+| M3.4 | 已完成当前范围：Python 顺序批次、输入冻结与环境隔离、结果清单 | 真实恢复批次与故障重置通过，实际路由错误继续 / 停止及取消停止通过，73 项 Python 回归 |
+| M4.1 | 已完成当前范围：Python 重复试验、样本 / 配置关联、明确分母与已观测指标 | 95 项 Python、无模型真实桥接、两个真实重复样本及离线复验通过 |
+| M4.2 | 已完成当前范围：单实验离线复验、配置配对与 JSON / Markdown，公开不确定性边界 | 17 项新增 / 全量 117 Python；合成双配置重复与历史四真实样本报告通过，原证据摘要不变 |
 | M5 | 可视化与持续集成 | 浏览用例与结果，自动执行检查 |
 
 ## 文档导航
 
-- [M3 与后续计划](plans/m3-regression-evaluation.md)：M3.1 / M3.2 已完成范围，M3.4 下一批入口及后续待办。
+- [M3 与后续计划](plans/m3-regression-evaluation.md)：M3 / M4 已完成范围、M5 下一批入口及后续待办。
+- [重复试验](experiments.md)：显式配置、重复编号、分母与指标覆盖及运行入口。
+- [配置报告](configuration-reports.md)：冻结输入与来源 / 实际路由核对、独立复验、配对差值和不确定性。
 - [单用例运行](single-case-runner.md) 与 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)：当前真实执行入口与验证依据。
 - [M3.1 评测格式](evaluation-format.md) 与 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md)：当前离线入口与验证依据。
 - [M2.3 真实任务联调](changes/2026-10-15-008-m2-3-live-integration.md)：本批安装、真实模型和生命周期证据，以及固定 Python 检查范围。

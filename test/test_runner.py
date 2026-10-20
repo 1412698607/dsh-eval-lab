@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from dsh_eval.evaluate import evaluate
 from dsh_eval.formats import load_json, validate_case, validate_evidence
+from dsh_eval.environment import StatefulEnvironment
 from dsh_eval.runner import _process_options, classify_execution, prepare_workspace, run_case, supervise
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -139,6 +140,61 @@ class SupervisorTests(unittest.TestCase):
                     stream.close()
         self.addCleanup(cleanup)
         return process
+
+    def large_tool_child(self, tail, close_input=False):
+        environment = StatefulEnvironment({"files": {"large.txt": "中文" * 131072},
+                                           "stateful": {"transientReadFailures": {}}}, "case")
+        environment.bind("session")
+        request = {"type": "tool-request", "bridgeVersion": 1, "requestId": "large-read",
+                   "caseRunId": "case", "sessionId": "session", "operation": "read",
+                   "arguments": {"path": "large.txt"}}
+        code = "import json,os,sys,time\nsys.stdin.reconfigure(encoding='utf-8')\n"
+        if close_input:
+            code += "os.close(0)\n"
+        code += f"print(json.dumps({request!r}),flush=True)\n" + tail
+        return self.child(code), environment
+
+    def test_blocked_large_response_preserves_timeout_and_reaps_writer(self):
+        # Exit is bounded so this regression also fails promptly on the old implementation.
+        child, environment = self.large_tool_child("time.sleep(2)\n")
+        with patch("dsh_eval.runner.CLEANUP_TIMEOUT", 0.2):
+            report = supervise(child, 0.3, environment=environment)
+        self.assertEqual(report["intervention"], "timeout")
+        self.assertTrue(report["forceStopAttempted"])
+        self.assertTrue(report["stdinWriterStopped"])
+        self.assertIsNotNone(child.poll())
+        self.assertEqual(classify_execution({}, report)["status"], "timed_out")
+
+    def test_stream_cancellation_works_while_large_response_pipe_is_blocked(self):
+        child, environment = self.large_tool_child(
+            "time.sleep(0.1)\nprint(json.dumps({'type':'streaming'}),flush=True)\ntime.sleep(2)\n")
+        with patch("dsh_eval.runner.CLEANUP_TIMEOUT", 0.2):
+            report = supervise(child, 5, cancel_after_stream=True, environment=environment)
+        self.assertEqual(report["intervention"], "cancel")
+        self.assertTrue(report["forceStopAttempted"])
+        self.assertTrue(report["stdinWriterStopped"])
+        self.assertIsNotNone(child.poll())
+        self.assertEqual(classify_execution({}, report)["status"], "unknown")  # No fabricated turn/end.
+
+    def test_large_unicode_response_is_delivered_intact(self):
+        child, environment = self.large_tool_child(
+            "response=json.loads(sys.stdin.readline())\n"
+            "assert response['requestId']=='large-read' and response['text']=='中文'*131072\n")
+        report = supervise(child, 5, environment=environment)
+        self.assertEqual(report["adapterExitCode"], 0)
+        self.assertIsNone(report["intervention"])
+        self.assertIsNone(report["protocolError"])
+        self.assertTrue(report["stdinWriterStopped"])
+
+    def test_input_write_error_is_reported_and_owned_process_is_reaped(self):
+        child, environment = self.large_tool_child("time.sleep(2)\n", close_input=True)
+        with patch("dsh_eval.runner.CLEANUP_TIMEOUT", 0.2):
+            report = supervise(child, 5, environment=environment)
+        self.assertEqual(report["intervention"], "shutdown")
+        self.assertIn("adapter input", report["protocolError"])
+        self.assertTrue(report["stdinWriterStopped"])
+        self.assertIsNotNone(child.poll())
+        self.assertEqual(classify_execution({}, report)["status"], "runtime_error")
 
     def test_real_process_stream_trigger_sends_cancellation_and_reaps(self):
         child = self.child("import json,sys; print(json.dumps({'type':'streaming'}),flush=True); "
