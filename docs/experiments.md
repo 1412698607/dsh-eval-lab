@@ -103,4 +103,4 @@ elapsedSeconds 保存到 runtimeFormatVersion=1 的可选字段。离线仅在 r
 
 汇总仅接纳非负、可表示为有限浮点数的 int / float，拒绝布尔值及超大数值，拒绝的单值计入 missingSamples。若单值均有效但求和超出范围，observedSamples / missingSamples 保持实际覆盖，observedTotal / observedMean 均为 null，另有可选 reason 说明汇总数值超出范围；不输出 Infinity 或 NaN，也不改变通过比例的分母。该字段为版本 1 兼容扩展，旧结果不改写。回归与验证见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
 
-M4.2 再实现配置比较、报告及不确定性说明；本批没有 pass@k、置信区间、显著性判断或性能提升结论。当前验证依据见 [修改记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。
+M4.1 本身没有 pass@k、置信区间、显著性判断或性能提升结论，主体依据见 [修改记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。M4.2 已在独立报告中增加配置比较和不确定性边界：`python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.json'` 重新核对冻结输入 / 实际路由 / 来源并复验，不覆写实验。新报告说明全部分母、同来源配对、逐指标共同覆盖和观测范围；一个配置或同配置别名没有配置间差值。格式与限制见 [配置报告](configuration-reports.md)。

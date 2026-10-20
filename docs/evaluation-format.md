@@ -102,7 +102,7 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 
 M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。缺少运行级会话清单、日志与摘要同时重写等限制沿用 [架构](architecture.md)。
 
-M3.1 至 M3.4 已完成当前范围，M4.1 已增加重复试验与指标；下一批为 M4.2 配置比较与报告。合成样例不代替真实模型验收，各层验证分别保留。历史离线与单用例依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)，当前实验见文末扩展。
+M3.1 至 M3.4 已完成当前范围，M4 已增加重复试验、指标与离线配置报告；下一批为 M5 结果浏览与持续集成。合成样例不代替真实模型验收，各层验证分别保留。历史离线与单用例依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)，当前扩展见文末。
 
 ## M3.4 批次扩展
 
@@ -119,3 +119,9 @@ evaluationFormatVersion 1 / 2 新增可选 metrics（内部 metricsFormatVersion
 modelCalls 统计已结算 assistant/message / assistant/attempt，toolCalls 统计 tool/call；先 fresh inspect、身份关联和闭合任务边界检查。token 逐字段读取 assistant/message.data.usage，缺失 / 未结算 / 失败尝试用量不推算。elapsedSeconds 独立来自匹配 caseRunId 的单调时钟运行报告，包含准备 / 执行 / 清理，不含离线评测。费用仍为 null。所有字段、分母、样本路径和汇总覆盖率见 [重复试验](experiments.md)。
 
 同日审查修复明确有限数值范围：无法表示为有限浮点数的指标单值或 token 字段和保持 null。实验每项指标汇总若求和超出范围，保留观测 / 缺失样本数，总和与均值为 null，并增加可选 reason；不产生 Infinity / NaN，不改变任务结论或样本分母。实验与 metrics 格式仍为版本 1，历史结果不覆写。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
+
+## M4.2 独立比较报告
+
+新增 `comparisonReportFormatVersion=1`，通过 `--report <experiment-result.json>` 对一个终态实验生成新的报告目录。原 experiment / evidence / evaluation 格式不变，不改写旧结果；新 evaluations 仍使用原 evaluate 格式。报告保存原始分母、样本关联复核、新旧差异、按用例 / 配置 / 来源分组以及匹配配对差值，指标汇总增加观测范围并保留 reason。
+
+报告自身成功退出 0、输入输出错误 2，与单次任务 passed / failed / unevaluable 的退出码语义分开；原入口不变。完整字段、路径、actual configuration 的核对与不确定性边界见 [配置报告](configuration-reports.md)。

@@ -1,6 +1,6 @@
 # dsh-eval-lab 架构与技术取舍
 
-当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次及 M4.1 重复试验与指标汇总。
+当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次、M4.1 重复试验与指标汇总及 M4.2 独立配置报告。
 
 ## 执行流程与模块
 
@@ -37,10 +37,11 @@ inspect --run <目录>
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
-| `dsh_eval/__main__.py` | 显式 case / evidence 参数、JSON 结果、0 / 1 / 2 退出码及新文件输出 |
+| `dsh_eval/__main__.py` | 评测 / 运行 / 报告互斥入口、UTF-8 JSON stdout 与新文件输出；报告成功 0、输入输出错误 2，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
 | `dsh_eval/experiment.py` | 冻结实验输入、显式展开用例 / 配置 / 重复编号，复用顺序 batch，核对样本关联并汇总 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
+| `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
 | `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
@@ -180,15 +181,15 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 | 单用例真实驱动与预算 / 退出事实 | M3.2 已使用 Python 调度和 JavaScript 宿主适配；受控文件任务与异常分别通过 |
 | 状态化工具环境核心逻辑、批次调度 | M3.3 Python 核心及 JavaScript 实时注册桥接、M3.4 Python 顺序批次均已实现 |
 | 重复试验与指标聚合 | M4.1 已由 Python 实现，复用原 batch；缺失指标保持缺失 |
-| 配置比较与报告 | M4.2 计划使用 Python，先核对样本、实际配置与指标覆盖 |
+| 配置比较与报告 | M4.2 已由 Python 实现，核对冻结任务、样本关联、实际路由 / 来源和共同指标覆盖 |
 
 跨语言离线边界复用现有版本化 run.json、JSONL、status 和 inspect 的 JSON 报告及退出码。M3.1 Python 先调用现有 Node 检查入口，仅在录制检查通过后执行任务断言；录制失败或无法确认与任务断言失败分别报告。Node 进程不可用、检查超时和协议不一致映射为录制 unverified。
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4.1 已实现重复试验，下一批做 M4.2 配置比较与报告。
+后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，下一批为 M5 结果浏览与持续集成。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、100 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，当前少量样本不构成模型表现或性能改善结论。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、117 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，当前少量样本不构成模型表现或性能改善结论。
 
 ## M3.3 实时状态化工具边界
 
@@ -221,3 +222,15 @@ batch-result.json 是本批唯一活动进度快照，以同目录临时 JSON + 
 runner 在保存 case 快照后启动单调时钟，到保存 runtime 前记 elapsedSeconds，包含准备 / 执行 / 清理，排除离线 inspect 与断言。runtime 身份不符或无字段时计时缺失。新 metrics、批次行 source / metrics、runtime.elapsedSeconds 都是原版本可选扩展；recording / evidence 协议不变。实验初始计划与终态使用独立临时文件 replace，批次执行中仍查看原 batch 检查点，没有 fsync 或 resume。
 
 统计明确 planned / attempted / finished / skipped / errors、三维分类以及可评测通过比例、全尝试通过比例和可评测覆盖。指标总和与均值只计算已观测子集并公开 missingSamples；费用恒为 null。完整字段与验证限制见 [重复试验](experiments.md) 和 [记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。
+
+## M4.2 离线报告边界
+
+`report.py` 只读一个已结束实验，从传入结果旁定位冻结清单及批次，不信任旧绝对目录。核对计划展开、样本数、批次关联和执行 / 录制身份唯一性，路径保持在实验 / 批次目录内。每项以原用例加实验配置构造完整期望输入，比较批次及执行快照，覆盖任务、环境声明、预算、断言和版本；除 configRef 外规范 JSON 的 SHA-256 作为 taskFingerprint，不能代替签名或证明实际环境创建过程。
+
+逐项核对 evidence 身份、来源、实际配置及路径，复用原 evaluate 的 fresh inspect / 三维断言与指标采集。Windows 原生证据路径兼容后再核对；新报告各自保存复验结果，原实验和旧评测不覆写。旧 summary / 样本字段只作为 savedSummary / saved 留存，changedFields 解释新旧结果差异。样本快照或证据冲突降为 rejected / unevaluable 并留在原计划分母；全局计划 / 关联冲突拒绝整份输入。
+
+configurationMatch 还独立检查实际请求头，不仅比较选择声明。完整关联录制中的全部 provider / model 与请求配置一致且 evidence 全 configRef 匹配才 matched；其他为 mismatched / unknown。source=live / synthetic 仍是声明，并非签名。组汇总公开全部计划、匹配子集、来源、三维分类和三个分母，不能把请求分组直接当作模型成绩。
+
+比较按用例、配置对和来源分开，以同 repeatIndex 的双方 verified / matched 样本配对；指标进一步使用两侧都有值的共同子集。报告右减左的比例差、观测均值差及单对范围，同时列原计划对数、排除与缺失。沿用 metrics 的溢出 reason，均值不可表示时差值同样缺失。没有随机化、置信区间、显著性或自动赢家；单配置或同 configRef 别名不构造模型优劣。
+
+新 `comparisonReportFormatVersion=1` 与原 experiment / evidence / evaluation 格式独立；报告命令不调用模型，成功退出码表示生成报告，样本任务分类另看。结果写入新 UUID 目录，可能在磁盘错误时留下不完整目录，没有原子发布、fsync 或在线一致快照。字段、参数和限制见 [配置报告](configuration-reports.md) 与 [记录 019](changes/2026-10-21-019-m4-2-configuration-reports.md)。
