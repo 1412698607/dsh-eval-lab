@@ -95,7 +95,9 @@ python -m dsh_eval --case 'runs/batches/<batchId>/cases/<caseRunId>/case.json' -
 
 已启动或启动事实缺失 / 未知时，仍核对适配进程退出码、stdinWriterStopped，以及宿主 childClosed、未创建 child 的事实或成功返回的自有进程树强停路径；不能从空 supervisor 推断未启动。人工中断始终先停止整批。当前受控 Windows 宿主范围内确认后才进入下一项，不推定任意外部工具进程树或其他平台可靠。
 
-batch status=completed 仅说明排定项都执行完，不代表任务全部通过。outcome 规则：基础设施错误、人工中断或任一单项 unevaluable 优先得到 unevaluable；否则有明确任务 failed 则为 failed（即使 stop 跳过后项）；只有全部项完成且都 passed 才为 passed。没有采集通过率、重复试验统计、token、成本或配置比较指标。
+batch status=completed 仅说明排定项都执行完，不代表任务全部通过。outcome 规则：基础设施错误、人工中断或任一单项 unevaluable 优先得到 unevaluable；否则有明确任务 failed 则为 failed（即使 stop 跳过后项）；只有全部项完成且都 passed 才为 passed。批次本身不计算通过率或配置比较；M4.1 实验入口复用此调度，在上层记录重复编号和指标汇总，见 [重复试验](experiments.md)。
+
+2026 年 10 月 21 日起，版本 1 逐项结果增加可选 source / metrics，来自该次 evaluation，不改变 status、清理门槛和失败策略。尚未执行项为 null；历史结果缺少指标仍保持缺失，不补为零。
 
 ## 验证范围
 

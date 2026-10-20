@@ -195,6 +195,48 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         evidence.update(updates)
         self.evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
 
+    def test_metrics_use_fresh_linked_recordings_and_reported_usage(self):
+        events = fixture(kind="events")
+        events[4]["data"]["usage"] = {"inputTokens": 9, "outputTokens": 3, "totalTokens": 12}
+        events.insert(2, {"type": "assistant/message", "data": {"message": {"content": []},
+                         "usage": {"inputTokens": 2, "outputTokens": 0, "totalTokens": 2}}})
+        self.record(resequence(events))
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual({key: result["metrics"][key] for key in ("modelCalls", "toolCalls", "inputTokens", "outputTokens", "totalTokens")},
+                         {"modelCalls": 2, "toolCalls": 1, "inputTokens": 11, "outputTokens": 3, "totalTokens": 14})
+        self.assertIsNone(result["metrics"]["elapsedSeconds"])
+        self.assertIsNone(result["metrics"]["cost"])
+        trace = next(self.evidence_path.parent.glob("*.jsonl"))
+        trace.write_bytes(trace.read_bytes()[:-1])
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["recording"]["outcome"], "invalid")
+        self.assertIsNone(result["metrics"]["modelCalls"])
+        self.assertIsNone(result["metrics"]["totalTokens"])
+
+    def test_cancelled_task_can_retain_observed_metrics_without_becoming_evaluable(self):
+        events = fixture(kind="events")
+        events[-1]["data"]["reason"] = {"kind": "aborted", "reason": {"kind": "user"}}
+        self.record(events)
+        self.edit_evidence(execution={"status": "cancelled", "exitCode": 1})
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["outcome"], "unevaluable")
+        self.assertEqual(result["assertions"]["outcome"], "not_run")
+        self.assertEqual(result["metrics"]["modelCalls"], 1)
+        self.assertIsNone(result["metrics"]["inputTokens"])
+
+    def test_elapsed_measurement_requires_matching_runtime_identity(self):
+        original = self.record()
+        runtime_path = self.evidence_path.parent / "runtime.json"
+        self.edit_evidence(evidenceFormatVersion=2, runtimeReport="runtime.json")
+        for identity, elapsed, expected in (("wrong", 4.25, None), (original["caseRunId"], -1, None),
+                                            (original["caseRunId"], True, None), (original["caseRunId"], 4.25, 4.25)):
+            with self.subTest(identity=identity, elapsed=elapsed):
+                runtime_path.write_text(json.dumps({"runtimeFormatVersion": 1, "caseRunId": identity, "elapsedSeconds": elapsed}), encoding="utf-8")
+                result = evaluate(self.case_path, self.evidence_path)
+                self.assertEqual(result["metrics"]["elapsedSeconds"], expected)
+                self.assertEqual(result["outcome"], "passed")
+
     def test_stale_path_recovery_accepts_root_and_docs_discovery(self):
         case = fixture("stale-path")
         for directory in (".", "docs"):

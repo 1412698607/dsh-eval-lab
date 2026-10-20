@@ -262,6 +262,7 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
     user_interrupted = False
     stage = "workspace"
     execution = None
+    started = time.monotonic()
     try:
         prepare_workspace(directory, case)
         stage = "prepare"
@@ -315,7 +316,8 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
     save_json(directory / "runtime.json", {"runtimeFormatVersion": 1, "caseRunId": case_run_id, "stage": stage,
                                           "host": host, "supervisor": supervisor, "error": error_info,
                                           "preparation": preparation, "adapterProcessStarted": adapter_started,
-                                          "userInterrupted": user_interrupted or supervisor.get("userInterrupted", False)})
+                                          "userInterrupted": user_interrupted or supervisor.get("userInterrupted", False),
+                                          "elapsedSeconds": time.monotonic() - started})
     save_json(directory / "evidence.json", evidence)
     result = evaluate(case_snapshot, directory / "evidence.json")
     save_json(directory / "evaluation.json", result)

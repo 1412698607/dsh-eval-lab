@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 
 from .formats import load_json, parse_json, require, validate_case, validate_evidence
+from .metrics import empty_metrics, number, recording_metrics
 
 ROOT = Path(__file__).resolve().parents[1]
 KNOWN = {"user/message", "assistant/message", "tool/call", "tool/result", "turn/end"}
@@ -126,11 +127,19 @@ def evaluate(case_path, evidence_path):
               "budgetEnforcement": evidence["budgetEnforcement"],
               "association": {"runId": evidence["runId"], "sessionId": evidence["sessionId"], "runDir": str(run_dir) if run_dir else None,
                               "casePath": str(case_path), "evidencePath": str(evidence_path)},
-              "execution": execution, "recording": recording, "assertions": assertions, "outcome": "unevaluable"}
+              "execution": execution, "recording": recording, "assertions": assertions,
+              "metrics": empty_metrics(), "outcome": "unevaluable"}
     if "batchId" in evidence:
         result["batchId"] = evidence["batchId"]
     if "runtimeReport" in evidence:
         result["association"]["runtimeReport"] = str((evidence_path.parent / evidence["runtimeReport"]).resolve())
+        try:
+            runtime = load_json(result["association"]["runtimeReport"])
+            if (runtime.get("runtimeFormatVersion") == 1 and runtime.get("caseRunId") == evidence["caseRunId"]
+                    and number(runtime.get("elapsedSeconds"))):
+                result["metrics"]["elapsedSeconds"] = runtime["elapsedSeconds"]
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass  # Older or unavailable runtime measurements remain missing.
     if recording["outcome"] != "complete":
         return result
     try:
@@ -146,6 +155,12 @@ def evaluate(case_path, evidence_path):
     except (OSError, ValueError, KeyError, TypeError) as error:
         recording.update(outcome="unverified", reasons=[*recording["reasons"], str(error)])
         return result
+    try:
+        observed = recording_metrics(events, case["input"])
+        observed["elapsedSeconds"] = result["metrics"]["elapsedSeconds"]
+        result["metrics"] = observed
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        result["metrics"]["reason"] = str(error)
     try:
         ends = [event for event in events if event.get("type") == "turn/end"]
         end_reason = ends[0].get("data", {}).get("reason") if len(ends) == 1 else None

@@ -96,16 +96,24 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 | assertions | passed / failed / insufficient_evidence / not_run；results 逐条保留 id、type、结论、实际值或原因及证据序号 / callId |
 | outcome | 只有执行 completed 且录制 complete，全部断言 passed 才 passed；证据充分且有明确不符为 failed；其余 unevaluable |
 
-输出保留 evaluatedAt（UTC）、完整版本化用例快照（含输入、环境、期望配置和预算）、实际配置声明、预算实施标记、source、caseRunId、caseId、可选 batchId，以及关联的 runId / sessionId / 明确路径。文件缺失与检查错误也保留分类；没有采集 token、费用、耗时或调用指标，不填零或推算。
+输出保留 evaluatedAt（UTC）、完整版本化用例快照（含输入、环境、期望配置和预算）、实际配置声明、预算实施标记、source、caseRunId、caseId、可选 batchId，以及关联的 runId / sessionId / 明确路径。文件缺失与检查错误也保留分类；M4.1 开始增加可选 metrics，历史文件缺少指标仍兼容，见文末扩展。
 
 ## 当前限制与下一步
 
 M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。缺少运行级会话清单、日志与摘要同时重写等限制沿用 [架构](architecture.md)。
 
-M3.2 已完成受控单用例真实驱动与异常 / 预算分类；下一批 M3.3 实现状态化工具和实时桥接，再做 M3.4 顺序隔离批次。现有样例不代替路径过时 / 故障恢复的真实桥接验收。验证依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
+M3.1 至 M3.4 已完成当前范围，M4.1 已增加重复试验与指标；下一批为 M4.2 配置比较与报告。合成样例不代替真实模型验收，各层验证分别保留。历史离线与单用例依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)，当前实验见文末扩展。
 
 ## M3.4 批次扩展
 
 新增独立 batchFormatVersion=1 输入、batchResultFormatVersion=1 清单，命令为 `python -m dsh_eval --batch ... --run`。既有 evidence / evaluation 的可选 batchId 现由真实 runner 填写，单用例格式和版本保持；同 caseId 多次执行用不同 entryId / caseRunId 关联。runtimeReport 增加 preparation.processStarted / processExited、userInterrupted 等观察，不把计划身份当成实际会话。批次预检、冻结输入、状态、策略和相对路径口径见 [批次运行](batch-runner.md)。
 
 2026 年 10 月 19 日为 runtimeFormatVersion=1 添加可选 adapterProcessStarted：false 表示尚未尝试或 Popen 以 OSError 未能创建适配进程，true 表示成功创建，null 表示创建情况尚未确认。旧文件缺字段按未知处理，不能据此认为已清理；本字段不改变 execution、录制与断言三维结果，也不新增实际会话身份。证据、单项结果和批次格式版本不变。修复依据见 [记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。
+
+## M4.1 实验与观测指标扩展
+
+新增独立 experimentFormatVersion / experimentResultFormatVersion=1，`--experiment ... --run` 展开为标准顺序批次。以 experimentId / sampleId / caseEntryId / configurationId / repeatIndex 映射原 batchId / entryId / caseRunId，不修改 evidence 格式，也不补造实际会话身份。
+
+evaluationFormatVersion 1 / 2 新增可选 metrics（内部 metricsFormatVersion=1）；batchResultFormatVersion 1 的逐项清单新增可选 source / metrics，runtimeFormatVersion 1 新增可选 elapsedSeconds。新 evaluate 总会输出 metrics 对象；旧结果缺字段继续兼容，旧 runtime 无计时则保持 null。指标错误不改变三维结论。
+
+modelCalls 统计已结算 assistant/message / assistant/attempt，toolCalls 统计 tool/call；先 fresh inspect、身份关联和闭合任务边界检查。token 逐字段读取 assistant/message.data.usage，缺失 / 未结算 / 失败尝试用量不推算。elapsedSeconds 独立来自匹配 caseRunId 的单调时钟运行报告，包含准备 / 执行 / 清理，不含离线评测。费用仍为 null。所有字段、分母、样本路径和汇总覆盖率见 [重复试验](experiments.md)。

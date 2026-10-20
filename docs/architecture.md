@@ -1,6 +1,6 @@
 # dsh-eval-lab 架构与技术取舍
 
-当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境及 M3.4 顺序批次调度。
+当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次及 M4.1 重复试验与指标汇总。
 
 ## 执行流程与模块
 
@@ -39,6 +39,8 @@ inspect --run <目录>
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
 | `dsh_eval/__main__.py` | 显式 case / evidence 参数、JSON 结果、0 / 1 / 2 退出码及新文件输出 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
+| `dsh_eval/experiment.py` | 冻结实验输入、显式展开用例 / 配置 / 重复编号，复用顺序 batch，核对样本关联并汇总 |
+| `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
 | `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
@@ -177,15 +179,16 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 | 用例加载、通用离线任务断言 | M3.1 已使用 Python 实现，合成正反例验证通过；M2.3 固定检查仍保留 |
 | 单用例真实驱动与预算 / 退出事实 | M3.2 已使用 Python 调度和 JavaScript 宿主适配；受控文件任务与异常分别通过 |
 | 状态化工具环境核心逻辑、批次调度 | M3.3 Python 核心及 JavaScript 实时注册桥接、M3.4 Python 顺序批次均已实现 |
-| 重复试验、轨迹分析、指标聚合、配置比较与报告 | 计划优先使用 Python；缺失指标保持缺失 |
+| 重复试验与指标聚合 | M4.1 已由 Python 实现，复用原 batch；缺失指标保持缺失 |
+| 配置比较与报告 | M4.2 计划使用 Python，先核对样本、实际配置与指标覆盖 |
 
 跨语言离线边界复用现有版本化 run.json、JSONL、status 和 inspect 的 JSON 报告及退出码。M3.1 Python 先调用现有 Node 检查入口，仅在录制检查通过后执行任务断言；录制失败或无法确认与任务断言失败分别报告。Node 进程不可用、检查超时和协议不一致映射为录制 unverified。
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，下一批做 M4.1 重复试验与指标口径。
+后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4.1 已实现重复试验，下一批做 M4.2 配置比较与报告。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、76 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，没有模型成功率或性能改善数据。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、95 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，当前少量样本不构成模型表现或性能改善结论。
 
 ## M3.3 实时状态化工具边界
 
@@ -206,3 +209,13 @@ batch.py 在调用模型前校验并保存全部输入，逐项分配 caseRunId�
 2026 年 10 月 19 日修复未创建适配器时的误停：runtime.adapterProcessStarted 明确为 false 时，运行错误按批次策略处理；Popen 成功后为 true，创建过程尚未确认时为 null。缺失或未知值继续走原清理事实检查，不把空 supervisor 当成未启动。人工中断优先停止整批，既有实际身份缺失仍保持 null；格式兼容与回归依据见 [修复记录 016](changes/2026-10-19-016-m3-4-launch-failure-policy.md)。
 
 batch-result.json 是本批唯一活动进度快照，以同目录临时 JSON + replace 更新；已有单项结果不覆写。每个新批次使用新 UUID 目录，冻结后的 batch.json 可重新执行新任务，不是重放或恢复。普通失败 / 无法评测、调度中断 / 异常和 skipped 分开；其精确定义、字段和退出码见 [批次运行](batch-runner.md)。没有并发批次调度、崩溃续跑或性能 / 成本统计。
+
+## M4.1 实验与指标边界
+
+`experiment.py` 严格加载版本 1 清单，校验全部用例与配置组合，冻结原输入，再按重复 / 用例 / 配置顺序生成标准 batch；没有另写一套调度和清理逻辑。sampleId 对应 batch entryId，以 caseEntryId + configurationId + repeatIndex 表示计划位置，再关联实际 caseRunId / runId / sessionId。configuration 保留真实观察，requestedConfiguration 和匹配分布另列。结束后核对样本关联并生成总表及分组 JSON，不提供配置优劣判断。
+
+`metrics.py` 在 evaluate 重新 inspect 和核对身份后，从连续闭合任务片段提取已结算 assistant/message / assistant/attempt 和 tool/call 数量；request/header 是配置段事件，不能用作调用次数。step/start 可以早于 user/message，不能把生命周期开放事件当作任务输出越界。usage 逐字段检查覆盖，失败尝试或任一步缺失则 token 保持 null，不由 input / output 补造 total。任务失败与取消不抹掉合法观测；指标缺失不改变三维结论。
+
+runner 在保存 case 快照后启动单调时钟，到保存 runtime 前记 elapsedSeconds，包含准备 / 执行 / 清理，排除离线 inspect 与断言。runtime 身份不符或无字段时计时缺失。新 metrics、批次行 source / metrics、runtime.elapsedSeconds 都是原版本可选扩展；recording / evidence 协议不变。实验初始计划与终态使用独立临时文件 replace，批次执行中仍查看原 batch 检查点，没有 fsync 或 resume。
+
+统计明确 planned / attempted / finished / skipped / errors、三维分类以及可评测通过比例、全尝试通过比例和可评测覆盖。指标总和与均值只计算已观测子集并公开 missingSamples；费用恒为 null。完整字段与验证限制见 [重复试验](experiments.md) 和 [记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。

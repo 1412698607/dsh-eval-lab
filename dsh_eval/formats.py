@@ -69,6 +69,26 @@ def validate_batch(batch):
     return batch
 
 
+def validate_experiment(experiment):
+    fields(experiment, ("experimentFormatVersion", "experimentName", "repetitions", "failurePolicy", "cases", "configurations"))
+    require(type(experiment["experimentFormatVersion"]) is int and experiment["experimentFormatVersion"] == 1,
+            "Unsupported experiment format")
+    require(nonempty(experiment["experimentName"]), "experimentName must be nonempty")
+    require(type(experiment["repetitions"]) is int and experiment["repetitions"] > 0,
+            "repetitions must be a positive integer")
+    validate_batch({"batchFormatVersion": 1, "batchName": experiment["experimentName"],
+                    "failurePolicy": experiment["failurePolicy"], "cases": experiment["cases"]})
+    require(isinstance(experiment["configurations"], list) and experiment["configurations"], "Configurations are required")
+    identifiers = set()
+    for entry in experiment["configurations"]:
+        fields(entry, ("configurationId", "configRef"))
+        require(nonempty(entry["configurationId"]) and entry["configurationId"] not in identifiers,
+                "configurationId must be nonempty and unique")
+        identifiers.add(entry["configurationId"])
+        configuration(entry["configRef"])
+    return experiment
+
+
 def validate_case(case):
     fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"))
     require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] in (1, 2), "Unsupported case format")

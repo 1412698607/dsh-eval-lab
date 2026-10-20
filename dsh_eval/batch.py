@@ -62,7 +62,8 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
             "casePath": path, "requestedConfiguration": case["configRef"], "status": "pending", "caseRunId": None,
             "caseDirectory": None, "evaluationPath": None, "evidencePath": None, "runtimeReport": None,
             "runId": None, "sessionId": None, "runDir": None, "configuration": None,
-            "executionStatus": None, "recordingOutcome": None, "assertionOutcome": None, "outcome": None})
+            "executionStatus": None, "recordingOutcome": None, "assertionOutcome": None, "outcome": None,
+            "source": None, "metrics": None})
     save_json(directory / "batch.json", frozen)
     _checkpoint(directory, report)
     active = None
@@ -89,7 +90,7 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
                         if result["association"]["runDir"] else None,
                     configuration=result["configuration"], executionStatus=result["execution"]["status"],
                     recordingOutcome=result["recording"]["outcome"], assertionOutcome=result["assertions"]["outcome"],
-                    outcome=result["outcome"])
+                    outcome=result["outcome"], source=result["source"], metrics=result.get("metrics"))
                 if runtime.get("userInterrupted"):
                     report.update(status="interrupted", stopReason="user_interrupt")
                 elif not _cleanup_confirmed(runtime):
