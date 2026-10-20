@@ -188,7 +188,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4.1 已实现重复试验，下一批做 M4.2 配置比较与报告。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、95 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，当前少量样本不构成模型表现或性能改善结论。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、100 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，当前少量样本不构成模型表现或性能改善结论。
 
 ## M3.3 实时状态化工具边界
 
@@ -215,6 +215,8 @@ batch-result.json 是本批唯一活动进度快照，以同目录临时 JSON + 
 `experiment.py` 严格加载版本 1 清单，校验全部用例与配置组合，冻结原输入，再按重复 / 用例 / 配置顺序生成标准 batch；没有另写一套调度和清理逻辑。sampleId 对应 batch entryId，以 caseEntryId + configurationId + repeatIndex 表示计划位置，再关联实际 caseRunId / runId / sessionId。configuration 保留真实观察，requestedConfiguration 和匹配分布另列。结束后核对样本关联并生成总表及分组 JSON，不提供配置优劣判断。
 
 `metrics.py` 在 evaluate 重新 inspect 和核对身份后，从连续闭合任务片段提取已结算 assistant/message / assistant/attempt 和 tool/call 数量；request/header 是配置段事件，不能用作调用次数。step/start 可以早于 user/message，不能把生命周期开放事件当作任务输出越界。usage 逐字段检查覆盖，失败尝试或任一步缺失则 token 保持 null，不由 input / output 补造 total。任务失败与取消不抹掉合法观测；指标缺失不改变三维结论。
+
+同日审查修复为指标单值和求和增加有限范围检查，超大数值视为缺失，不将有效整数转成浮点数。token 某字段的单值或总和超范围仅使该字段缺失；实验汇总溢出时保留观测 / 缺失数量，总和与均值为 null，并给出可选 reason。该处理在指标层完成，不使异常 runtime 计时中断任务，也不输出 Infinity / NaN。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
 
 runner 在保存 case 快照后启动单调时钟，到保存 runtime 前记 elapsedSeconds，包含准备 / 执行 / 清理，排除离线 inspect 与断言。runtime 身份不符或无字段时计时缺失。新 metrics、批次行 source / metrics、runtime.elapsedSeconds 都是原版本可选扩展；recording / evidence 协议不变。实验初始计划与终态使用独立临时文件 replace，批次执行中仍查看原 batch 检查点，没有 fsync 或 resume。
 

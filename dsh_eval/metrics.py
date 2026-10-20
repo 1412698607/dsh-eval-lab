@@ -8,7 +8,20 @@ METRICS = ("modelCalls", "toolCalls", "inputTokens", "outputTokens", "totalToken
 
 
 def number(value):
-    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    try:
+        return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    except OverflowError:
+        return False
+
+
+def _total(values):
+    if not values:
+        return None
+    try:
+        total = sum(values)
+    except OverflowError:
+        return None
+    return total if number(total) else None
 
 
 def empty_metrics():
@@ -37,8 +50,8 @@ def recording_metrics(events, task_input):
                   toolCalls=sum(event.get("type") == "tool/call" for event in interval))
     for key in ("inputTokens", "outputTokens", "totalTokens"):
         values = [message.get("usage", {}).get(key) if isinstance(message.get("usage"), dict) else None for message in messages]
-        if values and not attempts and all(type(value) is int and value >= 0 for value in values):
-            result[key] = sum(values)
+        if values and not attempts and all(type(value) is int and number(value) for value in values):
+            result[key] = _total(values)
     return result
 
 
@@ -64,7 +77,10 @@ def summarize(samples):
     for key in METRICS:
         values = [(row.get("metrics") or {}).get(key) for row in samples]
         observed = [value for value in values if number(value)]
+        total = _total(observed)
         result["metrics"][key] = {"observedSamples": len(observed), "missingSamples": planned - len(observed),
-                                  "observedTotal": sum(observed) if observed else None,
-                                  "observedMean": sum(observed) / len(observed) if observed else None}
+                                  "observedTotal": total,
+                                  "observedMean": total / len(observed) if total is not None else None}
+        if observed and total is None:
+            result["metrics"][key]["reason"] = "Metric aggregate exceeds finite numeric range"
     return result

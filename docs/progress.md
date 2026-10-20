@@ -1,6 +1,6 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 21 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 M3.4 启动失败修复提交为 `5cdd803`，此前“尚未提交”说明已过时。本批完成 M4.1：显式重复试验清单、配置与重复编号关联、三类统计分母、调用 / token / 运行耗时观测及缺失覆盖；本批尚未提交或推送。见 [重复试验](experiments.md) 与 [记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。
+截至 2026 年 10 月 21 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 M4.1 主体提交为 `1a6cf69`，包含重复试验、样本关联、分母和指标覆盖；主体及真实模型验证见 [记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。本批修复异常指标数值与汇总溢出，保持任务结论及样本分母独立，详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)；本批尚未提交或推送。
 
 下一批为 M4.2 配置比较与报告；之后 M5 结果浏览与持续集成，剩两个实施批次。渠道补充和录制加固另按需求安排。见 [M3 与后续计划](plans/m3-regression-evaluation.md)。
 
@@ -14,7 +14,7 @@
 | --- | --- |
 | 插件版本 | `0.1.2`；本批不改变录制器及日志协议 |
 | 当前开发分支 | `20261015/feat/eval-workflow` |
-| 已核实基线提交 | `5cdd803` 为 M3.4 启动失败修复；`bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
+| 已核实基线提交 | `1a6cf69` 为 M4.1 主体；`5cdd803` 为 M3.4 启动失败修复；`bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
 | 开发语言 | JavaScript 宿主接入和生命周期；Python 已实现离线断言、状态化环境、真实单用例 / 批次及重复试验统计 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
@@ -45,10 +45,19 @@
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消、清理与新建结果；受控真实任务及异常通过 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
 | 顺序批次、重置和结果清单 | 版本 1 批次 / 结果与历史真实恢复批次已验证；启动失败策略修复已提交，本批新增 source / metrics 可选输出 | `dsh_eval/batch.py`、[批次运行](batch-runner.md) |
-| 重复试验与观测统计 | 版本 1 实验、样本 / 配置 / 重复编号、三种分母、缺失覆盖已实现；合成多配置和真实两个重复样本通过 | `dsh_eval/experiment.py`、`dsh_eval/metrics.py`、[重复试验](experiments.md) |
+| 重复试验与观测统计 | 版本 1 实验、三种分母及缺失覆盖已实现；本批补齐异常单值 / 求和保护，历史真实样本复验保持原分类 | `dsh_eval/experiment.py`、`dsh_eval/metrics.py`、[重复试验](experiments.md)、修复记录 018 |
 | 配置比较报告 / 不确定性 / 结果浏览 | 尚未实现 | M4.2 / M5 |
 
-## 最新验证：M4.1 重复试验（2026 年 10 月 21 日）
+## 最新验证：M4.1 指标溢出修复（2026 年 10 月 21 日）
+
+- 新增五项回归先复现超大耗时导致 OverflowError、有限单值相加后产生 Infinity，以及超大 token 字段和未被排除。修复后 `test_metrics.py` 11 项、`test_evaluation.py` 32 项通过，异常耗时不改变 passed / complete / 断言结果，CLI 返回 0。
+- `npm.cmd run test:python`：获准环境 100 项通过（原 95 + 新 5）；`npm.cmd test`：42 项通过；`npm.cmd run check`：29 个 JS 文件通过；`python -m compileall -q dsh_eval test` 通过。
+- `python -m scripts.smoke_bridge`：获准环境真实工具注册 / IPC 四次请求通过，无模型调用。新增指标反例是合成数值；原录制器、fresh inspect 和 CLI 检查不等于新的模型任务。
+- 两个历史实验的四个真实样本用各自保存 case / evidence 离线复验，三维分类与 passed 均保持。最终新实验的两个样本指标与原报告一致；首轮旧报告仍缺指标，复验可取得计数，未覆盖原文件。复验前后全部实验 JSON / JSONL SHA-256 相同。
+
+本批无新模型调用，未重复 smoke:host / check:output，未复验更早 M3 模型轨迹。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)，以下主体与历史验证保留。
+
+## M4.1 主体历史验证（2026 年 10 月 21 日）
 
 - `npm.cmd run test:python`：获准环境 95 项通过（原 76 + 新 19）。新增实验 / 指标检查覆盖配置展开、输入冻结、状态重置、身份关联、停止与跳过、取消、启动失败、分母、usage 缺失、损坏日志和计时身份；最后一项回归允许真实宿主在用户输入前打开 step。
 - `npm.cmd test`：42 项通过；`npm.cmd run check`：29 个 JS 文件通过；`python -m compileall -q dsh_eval test` 通过。首次沙箱完整 Python 运行中四项自有进程树强停检查被权限拒绝，未计为通过；获准环境分别重跑 94 项及补齐边界回归后的 95 项均通过。

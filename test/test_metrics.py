@@ -1,8 +1,9 @@
 import copy
+import json
 import unittest
 
-from dsh_eval.formats import load_json
-from dsh_eval.metrics import METRICS, recording_metrics, summarize
+from dsh_eval.formats import load_json, parse_json
+from dsh_eval.metrics import METRICS, number, recording_metrics, summarize
 from dsh_eval.runner import ROOT
 
 
@@ -57,6 +58,32 @@ class MetricTests(unittest.TestCase):
             event["seq"] = index
         self.assertIsNone(self.metrics()["inputTokens"])
 
+    def test_number_rejects_values_outside_finite_range_without_raising(self):
+        for value in (10 ** 400, -(10 ** 400), float("inf"), float("nan"), True, -1):
+            with self.subTest(value=value):
+                self.assertFalse(number(value))
+        for value in (0, 3, 1e308):
+            with self.subTest(value=value):
+                self.assertTrue(number(value))
+
+    def test_usage_overflow_keeps_other_fields_and_call_counts(self):
+        for values in ((10 ** 400,), (10 ** 308, 10 ** 308)):
+            with self.subTest(values=values):
+                events = copy.deepcopy(self.events)
+                events[4]["data"]["usage"] = {"inputTokens": values[0], "outputTokens": 1, "totalTokens": 2}
+                if len(values) == 2:
+                    extra = copy.deepcopy(events[4])
+                    extra["data"]["usage"]["inputTokens"] = values[1]
+                    events.insert(4, extra)
+                for index, event in enumerate(events):
+                    event["seq"] = index
+                metrics = self.metrics(events)
+                self.assertIsNone(metrics["inputTokens"])
+                self.assertEqual(metrics["modelCalls"], len(values))
+                self.assertEqual(metrics["outputTokens"], len(values))
+                self.assertEqual(metrics["totalTokens"], 2 * len(values))
+                self.assertEqual(parse_json(json.dumps(metrics, allow_nan=False)), metrics)
+
     def test_unclosed_wrong_task_gaps_and_outside_events_are_not_measured(self):
         outside = copy.deepcopy(self.events)
         outside.append({"seq": 6, "type": "assistant/message", "data": {}})
@@ -94,6 +121,31 @@ class MetricTests(unittest.TestCase):
             self.assertIsNone(result["attemptedPassRate"]["value"])
             for key in METRICS:
                 self.assertIsNone(result["metrics"][key]["observedTotal"])
+
+    def test_invalid_numeric_samples_are_missing_without_changing_denominators(self):
+        rows = [{"caseRunId": str(index), "status": "finished", "outcome": "passed",
+                 "metrics": {"elapsedSeconds": value}} for index, value in enumerate((10 ** 400, 0, 3))]
+        result = summarize(rows)
+        self.assertEqual(result["attemptedPassRate"], {"numerator": 3, "denominator": 3, "value": 1})
+        self.assertEqual(result["metrics"]["elapsedSeconds"],
+                         {"observedSamples": 2, "missingSamples": 1, "observedTotal": 3, "observedMean": 1.5})
+        self.assertEqual(parse_json(json.dumps(result, allow_nan=False)), result)
+
+    def test_summary_overflow_preserves_coverage_and_json_roundtrip(self):
+        for values in ((1e308, 1e308), (10 ** 308, 10 ** 308), (10 ** 308, 10 ** 308, 1.0)):
+            with self.subTest(values=values):
+                rows = [{"caseRunId": str(index), "status": "finished", "outcome": "passed",
+                         "metrics": {"elapsedSeconds": value, "toolCalls": 1}}
+                        for index, value in enumerate(values)]
+                result = summarize(rows)
+                aggregate = result["metrics"]["elapsedSeconds"]
+                self.assertEqual((aggregate["observedSamples"], aggregate["missingSamples"]), (len(values), 0))
+                self.assertIsNone(aggregate["observedTotal"])
+                self.assertIsNone(aggregate["observedMean"])
+                self.assertTrue(aggregate["reason"])
+                self.assertEqual(result["metrics"]["toolCalls"]["observedTotal"], len(values))
+                self.assertEqual(result["evaluablePassRate"]["value"], 1)
+                self.assertEqual(parse_json(json.dumps(result, allow_nan=False)), result)
 
 
 if __name__ == "__main__":

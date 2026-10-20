@@ -89,7 +89,7 @@ summary 与每个 group.summary 保留以下字段：
 | --- | --- |
 | modelCalls | 任务内 assistant/message + assistant/attempt 的数量，表示**已记录并结算的模型尝试**；包含中断前缀和无消息失败尝试，不保证覆盖未结算请求或适配器内部未记录的重试，不是供应商账单次数 |
 | toolCalls | 任务内 tool/call 事件数，含失败工具调用；不按结果数或成功数代替 |
-| inputTokens / outputTokens / totalTokens | assistant/message.data.usage 对应字段逐消息求和；每条消息该字段都必须为非负整数且无 assistant/attempt，否则该指标 null；没有报告 totalTokens 时不由其他字段补算 |
+| inputTokens / outputTokens / totalTokens | assistant/message.data.usage 对应字段逐消息求和；每条消息该字段都必须为可表示为有限浮点数的非负整数且无 assistant/attempt，该字段之和也须在有限范围内，否则该指标 null；没有报告 totalTokens 时不由其他字段补算 |
 | elapsedSeconds | runner 的 monotonic 计时：保存初始 case 快照后，到保存 runtime 前；包含环境准备、安装、执行、清理及运行事实整理，排除离线 inspect / 断言和最终结果写入，不是纯模型延迟或任务预算 |
 | cost | 当前没有价格及计费采集，恒为 null |
 
@@ -97,6 +97,10 @@ request/header 是模型配置 / 请求 epoch 的变更事件，不能代替请�
 
 elapsedSeconds 保存到 runtimeFormatVersion=1 的可选字段。离线仅在 runtimeFormatVersion 与 caseRunId 匹配、值有限且非负时使用；历史文件没有计时仍为 null。runtime 是适配器事实，不受录制摘要签名保护，即使日志不可用也可以保留独立的运行耗时。
 
+2026 年 10 月 21 日修复数值溢出：超出有限浮点表示范围的单值保持 null，避免 math.isfinite 转换超大整数时中断评测；有效 token 字段仍保留整数，不转成浮点数、截断或补零。各字段独立处理，某字段溢出不抹掉其他字段、调用次数或三维任务结论。
+
 各指标汇总分别给出 observedSamples、missingSamples、observedTotal、observedMean。缺失样本包括 skipped；没有观测时总和与均值都为 null。部分样本有值时只汇总已观测子集，不能称为全实验总 token / 耗时或成本。合成数据用于确定性验证，不能作为模型表现比较。
+
+汇总仅接纳非负、可表示为有限浮点数的 int / float，拒绝布尔值及超大数值，拒绝的单值计入 missingSamples。若单值均有效但求和超出范围，observedSamples / missingSamples 保持实际覆盖，observedTotal / observedMean 均为 null，另有可选 reason 说明汇总数值超出范围；不输出 Infinity 或 NaN，也不改变通过比例的分母。该字段为版本 1 兼容扩展，旧结果不改写。回归与验证见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
 
 M4.2 再实现配置比较、报告及不确定性说明；本批没有 pass@k、置信区间、显著性判断或性能提升结论。当前验证依据见 [修改记录 017](changes/2026-10-21-017-m4-1-repeated-experiments.md)。

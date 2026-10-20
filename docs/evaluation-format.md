@@ -117,3 +117,5 @@ M3.1 至 M3.4 已完成当前范围，M4.1 已增加重复试验与指标；下�
 evaluationFormatVersion 1 / 2 新增可选 metrics（内部 metricsFormatVersion=1）；batchResultFormatVersion 1 的逐项清单新增可选 source / metrics，runtimeFormatVersion 1 新增可选 elapsedSeconds。新 evaluate 总会输出 metrics 对象；旧结果缺字段继续兼容，旧 runtime 无计时则保持 null。指标错误不改变三维结论。
 
 modelCalls 统计已结算 assistant/message / assistant/attempt，toolCalls 统计 tool/call；先 fresh inspect、身份关联和闭合任务边界检查。token 逐字段读取 assistant/message.data.usage，缺失 / 未结算 / 失败尝试用量不推算。elapsedSeconds 独立来自匹配 caseRunId 的单调时钟运行报告，包含准备 / 执行 / 清理，不含离线评测。费用仍为 null。所有字段、分母、样本路径和汇总覆盖率见 [重复试验](experiments.md)。
+
+同日审查修复明确有限数值范围：无法表示为有限浮点数的指标单值或 token 字段和保持 null。实验每项指标汇总若求和超出范围，保留观测 / 缺失样本数，总和与均值为 null，并增加可选 reason；不产生 Infinity / NaN，不改变任务结论或样本分母。实验与 metrics 格式仍为版本 1，历史结果不覆写。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。

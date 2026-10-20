@@ -237,6 +237,26 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
                 self.assertEqual(result["metrics"]["elapsedSeconds"], expected)
                 self.assertEqual(result["outcome"], "passed")
 
+    def test_oversized_elapsed_metric_preserves_evaluation_and_cli_result(self):
+        original = self.record()
+        baseline = evaluate(self.case_path, self.evidence_path)
+        self.edit_evidence(evidenceFormatVersion=2, runtimeReport="runtime.json")
+        runtime_path = self.evidence_path.parent / "runtime.json"
+        for elapsed in (10 ** 400, -(10 ** 400)):
+            with self.subTest(elapsed=elapsed):
+                runtime_path.write_text(json.dumps({"runtimeFormatVersion": 1, "caseRunId": original["caseRunId"],
+                                                    "elapsedSeconds": elapsed}), encoding="utf-8")
+                result = evaluate(self.case_path, self.evidence_path)
+                self.assertEqual(result["outcome"], "passed")
+                self.assertEqual(result["execution"], baseline["execution"])
+                self.assertEqual(result["recording"]["outcome"], "complete")
+                self.assertEqual(result["assertions"], baseline["assertions"])
+                self.assertEqual(result["metrics"]["modelCalls"], baseline["metrics"]["modelCalls"])
+                self.assertIsNone(result["metrics"]["elapsedSeconds"])
+                with redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(main(["--case", str(self.case_path), "--evidence", str(self.evidence_path)]), 0)
+                self.assertEqual(parse_json(output.getvalue())["outcome"], "passed")
+
     def test_stale_path_recovery_accepts_root_and_docs_discovery(self):
         case = fixture("stale-path")
         for directory in (".", "docs"):
