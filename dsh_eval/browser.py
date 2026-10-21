@@ -22,7 +22,7 @@ FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_
            "experimentFormatVersion": ("experiment_manifest", (1,)), "batchResultFormatVersion": ("batch", (1,)),
            "experimentResultFormatVersion": ("experiment", (1,)), "comparisonReportFormatVersion": ("report", (1,)),
            "evaluationFormatVersion": ("evaluation", (1, 2)), "evidenceFormatVersion": ("evidence", (1, 2)),
-           "runtimeFormatVersion": ("runtime", (1,)), "formatVersion": ("recording", (1,)),
+           "runtimeFormatVersion": ("runtime", (1,)), "formatVersion": ("recording", (1, 2)),
            "statusFormatVersion": ("recording", (1,))}
 RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "evaluation.json"}
 TRACE_NAME = re.compile(r"[0-9a-f]{64}\.jsonl\Z")

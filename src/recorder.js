@@ -19,9 +19,11 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
   const runId = randomUUID();
   const runDir = join(outputDir, runId);
   mkdirSync(runDir, { recursive: true });
-  writeFileSync(join(runDir, "run.json"), JSON.stringify({
-    formatVersion: 1,
+  const runPath = join(runDir, "run.json");
+  const metadata = {
+    formatVersion: 2,
     statusFormatVersion: 1,
+    runManifestFormatVersion: 1,
     plugin: "dsh-eval-lab",
     pluginVersion,
     runId,
@@ -29,12 +31,31 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     captureScope: "live-events-only",
     sessionFileNaming: "sha256(sessionId).jsonl",
     maxPendingBytes,
-  }, null, 2) + "\n", { flag: "wx" });
+  };
+  writeFileSync(runPath, JSON.stringify({ ...metadata, state: "recording", sessions: [] }, null, 2) + "\n", { flag: "wx" });
 
   const states = new Map();
   let closed = false;
   let closePromise;
   let pendingBytes = 0;
+  let manifestPending = Promise.resolve(true);
+  let manifestError = null;
+
+  function persistRun(phase, selected = [...states.values()]) {
+    // Capture membership before enqueueing; one run queue serializes all replacements.
+    const snapshot = { ...metadata, state: phase, sessions: selected.map((state) => ({
+      sessionId: state.sessionId, traceFile: state.traceFile, statusFile: statusFilename(state.traceFile),
+    })) };
+    manifestPending = manifestPending.then(async () => {
+      if (manifestError) return false;
+      try { await writeStatus(runPath, snapshot); return true; } catch (error) {
+        manifestError = error;
+        try { onError(error, null); } catch { /* Preserve the run-level error. */ }
+        return false;
+      }
+    });
+    return manifestPending;
+  }
 
   function fail(state, error) {
     if (state.error) return;
@@ -57,7 +78,7 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
   function enqueue(state, work) {
     state.pending = state.pending.then(async () => {
       try { await work(); } catch (error) { fail(state, error); }
-      if (state.error && !state.failureSaved) {
+      if (state.registered && state.error && !state.failureSaved) {
         // Failure persistence may also fail; an old recording/missing status stays unverified.
         try { await persist(state, "failed"); state.failureSaved = true; } catch { /* flush rejects below */ }
       }
@@ -70,15 +91,21 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     if (typeof sessionId !== "string" || !sessionId) {
       throw new TypeError("eval-lab: sessionId 必须是非空字符串");
     }
+    if (manifestError) return false;
     let state = states.get(sessionId);
     if (!state) {
       state = {
-        sessionId, traceFile: traceFilename(sessionId), pending: Promise.resolve(), error: null,
+        sessionId, traceFile: traceFilename(sessionId), pending: Promise.resolve(), error: null, registered: false,
         receivedCount: 0, acceptedCount: 0, writtenCount: 0, writtenBytes: 0,
         firstSeq: null, lastSeq: null, acceptedLastSeq: null, hash: createHash("sha256"),
       };
       states.set(sessionId, state);
-      enqueue(state, () => state.error ? undefined : persist(state, "recording"));
+      const registration = persistRun("recording");
+      enqueue(state, async () => {
+        // No trace or status file may precede successful membership persistence.
+        state.registered = await registration;
+        if (state.registered && !state.error) await persist(state, "recording");
+      });
     }
     if (state.error) return false;
     state.receivedCount++;
@@ -109,7 +136,7 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     pendingBytes += line.length;
     enqueue(state, async () => {
       try {
-        if (state.error) return;
+        if (!state.registered || state.error) return;
         await appendFile(join(runDir, state.traceFile), line);
         state.hash.update(line);
         state.writtenCount++;
@@ -124,6 +151,7 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
   async function wait(selected, checkpoints) {
     await Promise.all(checkpoints);
     const failures = selected.filter((state) => state.error).map((state) => state.error);
+    if (manifestError) failures.push(manifestError);
     if (failures.length) throw new AggregateError(failures, "eval-lab: 日志不完整，不能作为有效评测输入");
   }
 
@@ -132,7 +160,7 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     const selected = sessionId === undefined ? [...states.values()] : [states.get(sessionId)].filter(Boolean);
     const checkpoints = selected.map((state) => {
       const counts = { receivedCount: state.receivedCount, acceptedCount: state.acceptedCount };
-      return enqueue(state, () => state.error ? undefined : persist(state, "recording", counts));
+      return enqueue(state, () => !state.registered || state.error ? undefined : persist(state, "recording", counts));
     });
     return wait(selected, checkpoints);
   }
@@ -141,8 +169,12 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     if (closePromise) return closePromise;
     closed = true;
     const selected = [...states.values()];
-    const checkpoints = selected.map((state) => enqueue(state, () => state.error ? undefined : persist(state, "sealed")));
-    closePromise = wait(selected, checkpoints);
+    const checkpoints = selected.map((state) => enqueue(state, () => !state.registered || state.error ? undefined : persist(state, "sealed")));
+    closePromise = (async () => {
+      await Promise.all(checkpoints);
+      await persistRun(selected.some((state) => state.error) || manifestError ? "failed" : "sealed", selected);
+      await wait(selected, []);
+    })();
     return closePromise;
   }
 

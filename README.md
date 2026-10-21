@@ -15,6 +15,7 @@
 - M4.1 已在状态化工具与顺序批次上增加重复试验、配置 / 重复编号关联、明确分母和已观测指标；缺失用量与费用保持 null。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
+- M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -160,9 +161,9 @@ runs/
       abrupt-exit/<run-id>/...
 ```
 
-`run.json` 包含格式版本、插件版本、运行 ID 和启动时间。JSONL 每行包含 `formatVersion`、`runId`、`sessionId` 和完整 `event`。哈希文件名避免会话 ID 被当成路径，原始 ID 仍保存在每条记录中。
+新 `run.json` 使用 `formatVersion: 2`，包含原插件版本、运行 ID、启动时间及 `runManifestFormatVersion: 1` 的会话清单、运行状态。JSONL 每行仍使用 `formatVersion: 1`，包含 `runId`、`sessionId` 和完整 `event`。哈希文件名避免会话 ID 被当成路径，原始 ID 仍保存在每条记录和清单中。详细字段见 [运行会话清单](docs/run-manifest.md)。
 
-状态文件使用独立的 `statusFormatVersion: 1`，包含 `recording` / `sealed` / `failed`、接收与写入计数、UTF-8 字节数、首尾序号及 SHA-256。`flush()` 保存检查点但保持 `recording`；`close()` 停止接收、排空队列后封存。插件使用 Cordis 的 `ctx.effect()` 注册关闭清理。
+状态文件使用独立的 `statusFormatVersion: 1`，包含 `recording` / `sealed` / `failed`、接收与写入计数、UTF-8 字节数、首尾序号及 SHA-256。首次会话文件写入必须等待清单登记成功；`flush()` 保存选中检查点但不封存运行，`close()` 停止接收、排空会话队列，最后封存运行清单。插件使用 Cordis 的 `ctx.effect()` 注册关闭清理。
 
 ## 离线检查
 
@@ -179,6 +180,8 @@ npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<run-id>'
 | `0` | `complete` | 找到的会话片段均已封存，身份、结构、计数、字节数、序号与摘要一致 |
 | `1` | `invalid` | 存在明确失败或损坏，包括截断、空日志、摘要不匹配和非法序号 |
 | `2` | `unverified` | 仍开放、旧日志缺少状态、版本不支持、无片段或文件无法读取 |
+
+新格式还必须通过清单与目录对照；清单未封存时不能 complete，sealed 清单中登记的日志 / 状态缺失或出现未登记会话均为 invalid。旧版本 1 元信息仍按原片段规则检查，但报告新增 `runManifest.outcome=unverified`，明确其无法确认运行级会话覆盖。必须使用升级后的 inspect 读取新格式，旧 inspect 会拒绝版本 2。
 
 序号必须是严格递增的非负安全整数，允许从非零开始；缺口显示在 `gaps` 中（最多 100 项，完整数量在 `gapCount`），不补造历史。未知事件类型保留可读。旧 JSONL 可以诊断，但不能自动变成已封存片段。开放状态仅复核已保存的检查点前缀，后续完整追加不会被误判为摘要损坏。
 
@@ -253,7 +256,7 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 
 - 只录制插件观察到的新增事件；不会补齐加载前、恢复会话或 fork 继承的历史。`run.json` 明确标注 `live-events-only`，这些日志不能直接作为完整会话恢复文件。
 - 已完成异步写入和封存不代表断电时绝对可靠；没有 fsync、跨进程恢复或日志轮转。状态替换使用同目录临时文件与 rename，当前 Windows 本地文件系统检查通过。
-- SHA-256 用于一致性校验，不是签名；同时篡改日志与摘要、删除整对会话文件都不在检测保证内。没有运行级会话清单，不能由磁盘上剩余片段推断所有会话都曾被保存。
+- SHA-256 用于一致性校验，不是签名。新版本 2 元信息可发现保留的清单中登记的整对会话文件缺失；旧格式仍无法检测这类删除。清单、版本、日志与摘要同时被改写，或整个运行目录被删除，均不在检测保证内。
 - 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；M3.3 状态化工具、M3.4 顺序批次、M4 重复试验 / 离线报告及 M5 本地浏览已完成当前范围。Windows 无模型云端 CI 已通过；配置差值由合成重复样本验证，历史真实任务只验证单配置报告，少量验收样本不构成模型表现或性能提升结论。
 
 ## 下一阶段
@@ -270,13 +273,14 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-既定主路线已完成当前功能范围及无模型云端 CI 验收。渠道补充和录制加固按需求另计。具体交付与边界见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。新增 [M6 扩展](docs/plans/m6-reliability-validation.md) 分四批，当前已完成 M6.1 的本地实现与验证；下一批是 M6.2 单条事件限制和资源基线，余三批。本批没有触发新的云端 CI 或模型调用，不把 M5 云端通过作为新改动的验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
 - [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
+- [M6 方案](docs/plans/m6-reliability-validation.md) 与 [运行会话清单](docs/run-manifest.md)：运行级成员、写入顺序、新旧版本和剩余三批。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
 - [评测格式](docs/evaluation-format.md)：版本 1 / 2 用例、证据与结果、离线命令。
 - [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。

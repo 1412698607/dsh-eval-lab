@@ -2,21 +2,25 @@
 
 当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次、M4.1 重复试验与指标汇总、M4.2 独立配置报告及 M5 只读本机浏览服务。
 
+M6.1 已扩展运行级会话清单：新 run.json 为版本 2，会话写入以清单登记为前置依赖，close 最后保存运行终态；JSONL / status 仍为版本 1。Node inspect 对照应有成员与目录，Python 继续复用整体检查结果。格式与边界见 [会话清单](run-manifest.md)。
+
 ## 执行流程与模块
 
 ```text
 apply(ctx, config)
   → 路径优先级解析、maxPendingBytes 校验
-  → 创建 UUID 运行目录和 run.json
+  → 创建 UUID 运行目录与版本 2 run.json：recording、空清单
 session/event
   → 接收时序列化、序号和容量校验
-  → 会话独立 Promise 队列：recording 状态 → JSONL 追加
+  → 新会话登记进入运行队列，保存成员快照
+  → 会话独立队列：等待登记 → recording 状态 → JSONL 追加
 session/flush
   → 在选定会话队尾插入检查点状态更新 → 等待并报告错误
 ctx.effect 清理
-  → close 停止接收 → 排空所有队列 → 各正常会话 sealed
+  → close 停止接收 → 排空所有会话队列 → 各正常会话 sealed
+  → 最后保存运行清单 sealed / failed，失败则拒绝关闭 Promise
 inspect --run <目录>
-  → 元信息与状态校验 → 流式解析、原始字节摘要及前缀/最终比较
+  → 新旧元信息 / 应有会话与目录对照 → 状态校验与原始字节检查
 ```
 
 | 模块 | 职责 |
@@ -66,7 +70,11 @@ M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=
   <sha256(sessionId)>.status.json
 ```
 
-run.json 和 JSONL 的 `formatVersion: 1` 保持不变。run.json 新增 `statusFormatVersion: 1` 和 `maxPendingBytes`，保留插件版本、运行 ID、启动时间、捕获范围与命名规则。`captureScope` 始终为 `live-events-only`。
+M6.1 新 run.json 使用 `formatVersion: 2`、`runManifestFormatVersion: 1`、state 和 sessions，同时保留原 statusFormatVersion、maxPendingBytes、插件版本、运行 ID、启动时间与命名规则。JSONL 的 `formatVersion: 1` 和状态版本 1 不变，`captureScope` 始终为 `live-events-only`。
+
+运行清单替换使用与状态相同的同目录临时文件 / rename，但有独立串行队列。清单登记成功之前不创建该会话的日志或状态；关闭先等待会话，再写最终成员集合。清单错误通过 onError(error, null) 上报，停止接受后续输入，检查点 / 关闭拒绝；最终清单可能仍为 recording 或缺失，不补造 sealed。这里没有 fsync 或断电恢复保证，也未测量新增成员时完整快照的规模成本。
+
+inspect 新增 runManifest 摘要。版本 2 清单开放则运行 unverified，终态失败 / 应有文件缺失 / 未登记成员则 invalid；整体 complete 仍需片段、临时文件等所有检查通过。旧版本 1 保留原片段结果，单独标明会话覆盖未知，不能升级历史保证。旧 inspect 不认识版本 2，会拒绝它；浏览器已允许只读查看两个元信息版本。
 
 每条 JSONL 为 `{ formatVersion: 1, runId, sessionId, event }`，event 保留序列化的原始内容。记录器要求序列化后的 `event.seq` 是严格递增非负安全整数；不排序、不去重、不解析工具参数，不校验业务事件 schema。未知事件类型仍可记录和检查，非零起点及序号缺口不代表自动补齐历史。
 
