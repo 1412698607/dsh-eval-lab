@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DSH 评测 · 结果浏览</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/">DSH <span>评测工作台</span></a>
+    <p class="eyebrow">LOCAL EVALUATION LAB</p>
+    <nav id="navigation" aria-label="结果分类"></nav>
+    <div class="sidebar-note"><span class="dot"></span>本机只读浏览<p>所有内容来自本地文件。浏览不会启动任务或调用模型。</p></div>
+  </aside>
+  <main>
+    <header><div><p class="eyebrow">RESULTS / <span id="section-label">实验</span></p><h1 id="title">实验</h1></div><button id="refresh" class="secondary">刷新文件</button></header>
+    <p class="notice">当前显示保存时的结论与复验记录。浏览不执行新的录制检查或任务断言。</p>
+    <div id="message" role="status" aria-live="polite"></div>
+    <section id="catalog-view">
+      <div class="toolbar"><label class="search"><span>搜索</span><input id="search" type="search" placeholder="名称、标识或文件路径" aria-label="搜索结果"></label><label>任务结论 <select id="outcome"><option value="">全部</option><option value="passed">通过</option><option value="failed">未通过</option><option value="unevaluable">无法评测</option></select></label><label>来源声明 <select id="source"><option value="">全部</option><option value="live">真实运行</option><option value="synthetic">合成</option><option value="unknown">缺失</option></select></label><span id="count"></span></div>
+      <div id="catalog" class="panel"></div>
+    </section>
+    <section id="detail-view" hidden>
+      <div class="detail-bar"><button id="back" class="secondary">← 返回列表</button><span id="document-path"></span></div>
+      <div id="detail"></div>
+    </section>
+    <footer>DSH EVAL LAB <span>原始证据保存在本地 · 时间以 Asia/Shanghai 显示</span></footer>
+  </main>
+</body>
+</html>

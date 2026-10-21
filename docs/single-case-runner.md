@@ -76,7 +76,7 @@ python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run --canc
 
 ## 下一批与限制
 
-M3.2 验证了一条受控真实文件任务及上述异常路径。M3.2 当时没有状态化工具环境或实时 Python 工具桥接；M3.3 已补齐，批次调度和重复试验仍未实现；公开合成演示仍是 M3.1 离线输入。工具环境和真实桥接见下方 M3.3 扩展，下一批 M3.4 实现顺序隔离批次，再做 M4 重复比较和 M5 浏览 / CI。详见 [路线](plans/m3-regression-evaluation.md)、[格式](evaluation-format.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
+M3.2 验证了一条受控真实文件任务及上述异常路径。M3.2 当时没有状态化工具环境或实时 Python 工具桥接，M3.3 已补齐；M3.4 顺序批次、M4 重复试验 / 报告及 M5 本地浏览 / 无模型 CI 配置现已实现，云端 CI 首跑尚未验证。公开合成演示仍是离线输入，不代替模型验收。工具环境和真实桥接见下方 M3.3 扩展；保存结果可用 [只读浏览](result-browser.md) 查看，浏览不会重新运行本节任务。详见 [路线](plans/m3-regression-evaluation.md)、[格式](evaluation-format.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)。
 
 ## M3.3 状态化扩展（2026 年 10 月 18 日）
 

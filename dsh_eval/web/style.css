@@ -1,0 +1,70 @@
+:root { color-scheme: light; font-family: Inter, "Segoe UI", "Microsoft YaHei", sans-serif; color: #243044; background: #f6f7f9; font-size: 14px; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select { font: inherit; }
+button, a, select { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; border: 0; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #9db9ed; outline-offset: 3px; }
+.sidebar { position: fixed; width: 232px; height: 100vh; background: #fff; border-right: 1px solid #e4e8ee; padding: 34px 20px; display: flex; flex-direction: column; }
+.brand { color: #233a66; text-decoration: none; font-size: 24px; font-weight: 750; padding-left: 10px; letter-spacing: -.8px; }
+.brand span { display: inline-block; font-size: 13px; font-weight: 500; letter-spacing: 0; margin-left: 9px; color: #64748b; }
+.eyebrow { font-size: 10px; letter-spacing: 1.7px; color: #8a96a8; font-weight: 600; }
+.sidebar > .eyebrow { margin: 18px 0 35px 10px; font-size: 9px; }
+nav { display: grid; gap: 8px; }
+nav button { display: flex; align-items: center; gap: 13px; text-align: left; padding: 13px 15px; border-radius: 7px; color: #64748b; background: transparent; }
+nav button.active { background: #edf2fb; color: #2e5896; font-weight: 600; }
+nav .nav-count { margin-left: auto; font-size: 12px; font-weight: 400; }
+.sidebar-note { margin-top: auto; padding: 18px 10px 0; border-top: 1px solid #edf0f4; color: #58677a; font-size: 12px; }
+.sidebar-note p { line-height: 1.8; font-size: 11px; color: #8a96a8; margin-bottom: 0; }
+.dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #4b9175; margin-right: 8px; }
+main { margin-left: 232px; padding: 42px clamp(24px, 4vw, 64px) 24px; max-width: 1800px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 22px; }
+header > div { min-width: 0; }
+header .eyebrow { margin: 0 0 10px; }
+h1 { margin: 0; font-size: 28px; letter-spacing: -.7px; font-weight: 650; overflow-wrap: anywhere; }
+h2 { font-size: 16px; font-weight: 600; margin: 0 0 18px; }
+h3 { font-size: 13px; font-weight: 600; margin: 0 0 12px; }
+p { line-height: 1.7; }
+.secondary { padding: 9px 14px; background: #fff; color: #52637a; border: 1px solid #dfe5ed; border-radius: 6px; white-space: nowrap; flex-shrink: 0; }
+.secondary:hover { background: #eef2f7; }
+.notice { color: #64748b; background: #edf1f6; border-left: 3px solid #a8b8ce; padding: 11px 15px; font-size: 12px; margin: 0 0 25px; }
+.toolbar { display: flex; align-items: center; gap: 24px; margin: 26px 0 18px; font-size: 12px; color: #66768b; flex-wrap: wrap; }
+.toolbar label { display: flex; align-items: center; gap: 10px; }
+input, select { border: 1px solid #dfe5ed; border-radius: 5px; padding: 9px 12px; background: #fff; color: #42516a; }
+input { width: min(270px, 45vw); }
+#count { margin-left: auto; color: #8994a4; }
+.panel { background: #fff; border: 1px solid #e2e7ee; border-radius: 8px; overflow-x: auto; margin-bottom: 20px; }
+.padded { padding: 24px; }
+table { width: 100%; min-width: 760px; border-collapse: collapse; text-align: left; font-size: 12px; }
+td:first-child { min-width: 150px; }
+th { color: #8a96a8; background: #fafbfd; font-size: 11px; font-weight: 500; padding: 15px 18px; white-space: nowrap; border-bottom: 1px solid #e9edf3; }
+td { padding: 17px 18px; border-bottom: 1px solid #edf0f5; vertical-align: top; line-height: 1.65; }
+tr:last-child td { border-bottom: 0; }
+.link { background: none; padding: 0; text-align: left; color: #365e98; font-weight: 500; word-break: break-word; }
+.link:hover { text-decoration: underline; }
+.subtext { color: #8a96a8; font-size: 11px; font-weight: 400; margin-top: 5px; word-break: break-all; }
+.badge { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: 11px; white-space: nowrap; background: #f0f3f7; color: #68768a; }
+.badge.good { background: #edf6f1; color: #38775d; }
+.badge.bad { background: #fbefef; color: #b45a5a; }
+.badge.warn { background: #fcf5e8; color: #99712c; }
+.detail-bar { display: flex; align-items: center; gap: 15px; margin: 22px 0; }
+#document-path { color: #8793a4; font-size: 11px; overflow-wrap: anywhere; }
+.cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 20px 0; }
+.card { border: 1px solid #e2e7ee; border-radius: 7px; background: #fff; padding: 20px; }
+.card .label { color: #8a96a8; font-size: 11px; margin-bottom: 12px; }
+.card .value { font-size: 24px; font-weight: 600; color: #304967; }
+.card .subtext { margin-top: 9px; }
+.two-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font: 12px/1.8 Consolas, "Microsoft YaHei", monospace; color: #526177; max-height: 520px; overflow: auto; }
+details { margin-top: 18px; }
+summary { cursor: pointer; color: #6a7b92; font-size: 12px; padding: 6px 0 12px; }
+.empty { padding: 64px 20px; text-align: center; color: #8996a8; }
+.empty strong { display: block; font-size: 16px; font-weight: 500; color: #66768b; margin-bottom: 8px; }
+.error { padding: 12px 15px; background: #fbefef; color: #a45454; margin-bottom: 18px; border-radius: 5px; white-space: pre-wrap; }
+.evidence { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.pagination { display: flex; gap: 15px; align-items: center; margin-top: 16px; color: #8994a4; font-size: 12px; }
+footer { margin-top: 50px; display: flex; justify-content: space-between; border-top: 1px solid #e0e6ed; padding-top: 20px; font-size: 9px; letter-spacing: 1px; color: #98a2b1; }
+footer span { font-size: 10px; letter-spacing: 0; }
+[hidden] { display: none !important; }
+@media (max-width: 1000px) { .sidebar { width: 190px; padding: 28px 12px; } main { margin-left: 190px; padding: 30px 24px; } .brand span { display: block; margin: 6px 0 0; } .cards { grid-template-columns: 1fr 1fr; } .two-columns { grid-template-columns: 1fr; } }
+@media (max-width: 650px) { .sidebar { position: static; width: 100%; height: auto; padding: 18px; } .brand span { display: inline-block; margin-left: 10px; } .sidebar > .eyebrow, .sidebar-note { display: none; } nav { display: flex; margin-top: 18px; gap: 3px; overflow-x: auto; } nav button { padding: 9px; white-space: nowrap; gap: 5px; } main { margin: 0; padding: 25px 16px; } .toolbar { gap: 12px; } .cards { gap: 10px; } .card { padding: 15px; } footer { flex-direction: column; gap: 8px; } }

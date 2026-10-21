@@ -7,33 +7,44 @@ from .evaluate import evaluate
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Evaluate evidence, run isolated cases, or report a saved experiment")
+    parser = argparse.ArgumentParser(description="Evaluate evidence, run tasks, report experiments, or browse saved results")
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--case", help="Version 1 or 2 case JSON")
     selection.add_argument("--batch", help="Version 1 sequential batch manifest")
     selection.add_argument("--experiment", help="Version 1 repeated-trial experiment manifest")
     selection.add_argument("--report", help="Recheck a saved terminal experiment-result.json without model calls")
+    selection.add_argument("--browse", action="store_true", help="Serve a read-only local viewer; never executes tasks")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")
     parser.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
-    parser.add_argument("--runs-root", help="Parent directory for new isolated case, batch, or experiment runs")
+    parser.add_argument("--runs-root", help="Run output parent; --browse reads existing results from this directory")
     parser.add_argument("--reports-root", help="Parent directory for new JSON/Markdown comparison reports")
+    parser.add_argument("--cases-root", help="Case library directory for --browse")
+    parser.add_argument("--port", type=int, help="Loopback port for --browse; default selects a free port")
     parser.add_argument("--host-modules", help="Explicit installed Harness node_modules directory")
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
+    if args.browse and (args.run or args.evidence or args.output or args.reports_root or args.host_modules or args.cancel_after_stream):
+        parser.error("--browse is read-only and cannot use execution, evidence, report, or output controls")
+    if not args.browse and (args.cases_root or args.port is not None):
+        parser.error("--cases-root and --port require --browse")
     if args.report and (args.run or args.evidence or args.output or args.runs_root or args.host_modules or args.cancel_after_stream):
         parser.error("--report cannot use execution, evidence, or output controls; use --reports-root")
     if args.reports_root and not args.report:
         parser.error("--reports-root requires --report")
     if (args.batch or args.experiment) and (not args.run or args.evidence or args.output):
         parser.error("--batch / --experiment requires --run and cannot use --evidence or --output")
-    if not (args.batch or args.experiment or args.report) and args.run == bool(args.evidence):
+    if not (args.batch or args.experiment or args.report or args.browse) and args.run == bool(args.evidence):
         parser.error("Choose --run or --evidence")
     if args.run and args.output:
         parser.error("--run saves evaluation.json in its new run directory; omit --output")
-    if not args.run and (args.runs_root or args.host_modules or args.cancel_after_stream):
+    if not args.run and not args.browse and (args.runs_root or args.host_modules or args.cancel_after_stream):
         parser.error("Run controls require --run")
     try:
+        if args.browse:
+            from .browser import serve
+            serve(args.cases_root, args.runs_root, args.port if args.port is not None else 0)
+            return 0
         if args.output and Path(args.output).resolve() in (Path(args.case).resolve(), Path(args.evidence).resolve()):
             raise ValueError("Output must differ from input paths")
         if args.report:
@@ -57,7 +68,7 @@ def main(argv=None):
         print(text, end="")
         return 0 if args.report else {"passed": 0, "failed": 1, "unevaluable": 2}[result["outcome"]]
     except (OSError, ValueError, KeyError, TypeError) as error:
-        version_key = ("comparisonReportFormatVersion" if args.report else "experimentResultFormatVersion" if args.experiment else
+        version_key = ("browserFormatVersion" if args.browse else "comparisonReportFormatVersion" if args.report else "experimentResultFormatVersion" if args.experiment else
                        "batchResultFormatVersion" if args.batch else "evaluationFormatVersion")
         print(json.dumps({version_key: 1, "outcome": "unevaluable", "error": str(error)}, ensure_ascii=False))
         return 2

@@ -1,0 +1,38 @@
+name: Deterministic checks (no model calls)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check JavaScript syntax
+        run: npm.cmd run check
+      - name: Test recorder and Node adapters
+        run: npm.cmd test
+      - name: Test Python evaluation and local browser
+        run: npm.cmd run test:python
+      - name: Check Python syntax
+        run: python -m compileall -q dsh_eval test
+      - name: Generate synthetic evaluation examples
+        run: npm.cmd run demo:eval
