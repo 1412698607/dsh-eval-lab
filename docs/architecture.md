@@ -43,7 +43,7 @@ inspect --run <目录>
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
-| `.github/workflows/deterministic.yml` | 干净 Windows 环境的无模型检查配置，不安装 Harness、不读取模型凭据；本批未实际云端运行 |
+| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；云端首跑已执行，路径修复后待复验 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
 | `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
@@ -56,6 +56,8 @@ M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=
 服务固定绑定 127.0.0.1，以启动时随机令牌、Host / Origin 检查及根目录解析限制访问，扫描不跟随符号目录 / junction。内容用文本节点呈现，默认排除独立 home / workspace 和私人目录。该方案复用现有 JSON 与原证据位置，无前端依赖和数据库；代价是没有实时一致快照、远程多用户访问或编辑 / 运行功能。容量、分页和已验证边界见 [结果浏览](result-browser.md)。
 
 关联路径先进行不跟随链接的文本范围与禁用目录检查，再解析真实路径并复核，根外引用不先做文件系统路径解析。浏览局部 JSON 包装限制对象 / 数组容器最多 128 层并隔离解析递归错误；超深文档单独报错，轨迹行保留预览及后续正常行，不改变原证据有效性。目录响应的 `sources` 以临时 `unknown` 保留缺失样本来源，供混合来源筛选使用，不回写持久化文件。修复与验证见 [记录 021](changes/2026-10-21-021-m5-review-fixes.md)。
+
+根目录预检同时登记显式配置的路径写法和对应真实根，兼容 Windows 短路径或目录别名；解析后的引用仍须落在相应真实根内。其他未配置前缀仍按原范围限制处理，不通过先解析外部位置来发现别名。云端差异与回归见 [记录 022](changes/2026-10-21-022-cloud-ci-path-aliases.md)。
 
 ```text
 <outputDir>/<runId>/

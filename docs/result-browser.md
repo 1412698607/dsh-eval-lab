@@ -20,6 +20,8 @@ python -m dsh_eval --browse --cases-root fixtures/evaluation --runs-root runs --
 
 `--runs-root` 在浏览模式中仅表示读取位置，不会创建目录。独立放置的报告、实验及录制目录，需要在指定结果根目录内才能互相打开；不存在或超出范围的关联显示“缺失或超出浏览目录”，不搜索其他磁盘位置。旧报告中的绝对路径迁移后可能失效，浏览器不会修补历史文件。
 
+配置目录使用 Windows 短路径或目录别名时，服务同时保留显式路径写法和解析后真实根，关联文件可使用这两种位置表示；其他未配置前缀仍需通过范围预检。
+
 浏览不能与 `--run`、`--evidence`、`--output`、`--reports-root` 或宿主控制选项混用。启动成功时服务持续运行，Ctrl+C 正常返回 0；非法端口或绑定失败输出错误 JSON 并返回 2。
 
 ## 从列表到证据
@@ -66,4 +68,4 @@ npm.cmd run demo:eval
 
 真实模型验收继续使用明确的 `--case / --batch / --experiment ... --run` 命令，预算来自用例 `timeoutSeconds`，调用前需单独选择任务与配置；本批没有新增模型自动工作流，也没有 token / 费用硬限额。工作流权限仅 `contents: read`，checkout 不保留凭据，整项检查上限 15 分钟。
 
-Action 用法核对自官方 [checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node)、[setup-python](https://github.com/actions/setup-python) 说明。本地检查通过不代表 GitHub 托管运行已通过；本批没有提交、推送或触发云端工作流，首次云端结果需在代码提交后核对。实现与本地验证见 [修改记录 020](changes/2026-10-21-020-m5-results-browser-ci.md)。
+Action 用法核对自官方 [checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node)、[setup-python](https://github.com/actions/setup-python) 说明。本地检查通过不代表 GitHub 托管运行已通过；实际核对的 `db6d572` 云端运行因 Windows 路径写法差异失败，兼容修复本地通过，云端复验待执行。原实现与历史验证见 [记录 020](changes/2026-10-21-020-m5-results-browser-ci.md)，实际云端验收见 [记录 022](changes/2026-10-21-022-cloud-ci-path-aliases.md)。

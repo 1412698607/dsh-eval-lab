@@ -161,6 +161,25 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(len(links), 5)
         self.assertTrue(all(link["id"] is None for link in links))
 
+    def test_configured_root_alias_keeps_absolute_links_readable(self):
+        import os
+        import subprocess
+        alias = self.directory / "runs-alias"
+        if os.name == "nt":
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(alias), str(self.runs)], capture_output=True, check=True)
+        else:
+            alias.symlink_to(self.runs, target_is_directory=True)
+        self.write(self.runs / "one/runtime.json", {"runtimeFormatVersion": 1})
+        self.evaluation["association"]["runtimeReport"] = str(alias / "one/runtime.json")
+        self.write(self.runs / "one/evaluation.json", self.evaluation)
+        browser = ArtifactBrowser(self.cases, alias)
+        links = browser.document("runs:one/evaluation.json")["links"]
+        self.assertEqual(next(link["id"] for link in links if link["label"] == "association / runtimeReport"),
+                         "runs:one/runtime.json")
+        self.assertEqual(browser.reference(browser.roots["runs"] / "one/runtime.json"), "runs:one/runtime.json")
+        with patch.object(Path, "resolve", side_effect=AssertionError("Must still reject external paths before resolving")):
+            self.assertIsNone(browser.reference(self.directory / "outside/runtime.json"))
+
     def test_links_resolve_snapshots_runtime_trace_and_report_with_missing_markers(self):
         directory = self.runs / "one"
         trace = directory / "traces/recording" / ("a" * 64 + ".jsonl")

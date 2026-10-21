@@ -276,7 +276,7 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         original = self.digest(copied)
         result = generate_report(copied / "experiment-result.json", self.outputs)
         self.assertEqual(result["verificationCounts"], {"verified": 4})
-        self.assertTrue(all(Path(row["sourceEvidencePath"]).is_relative_to(copied) for row in result["samples"]))
+        self.assertTrue(all(Path(row["sourceEvidencePath"]).is_relative_to(copied.resolve()) for row in result["samples"]))
         self.assertEqual(self.digest(copied), original)
 
     def test_failures_skips_cancellation_and_startup_errors_keep_denominators(self):

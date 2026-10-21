@@ -60,14 +60,18 @@ def _kind(data):
 
 class ArtifactBrowser:
     def __init__(self, cases_root=None, runs_root=None):
-        self.roots = {"cases": Path(cases_root or ROOT / "fixtures/evaluation").resolve(),
-                      "runs": Path(runs_root or ROOT / "runs").resolve()}
+        configured = {"cases": Path(os.path.abspath(cases_root or ROOT / "fixtures/evaluation")),
+                      "runs": Path(os.path.abspath(runs_root or ROOT / "runs"))}
+        self.roots = {label: root.resolve() for label, root in configured.items()}
+        # Only the explicitly configured spelling and its resolved root are trusted prefixes.
+        self._root_prefixes = [(root, self.roots[label]) for label, root in configured.items()]
+        self._root_prefixes.extend((root, root) for root in self.roots.values())
 
     def _resolve_reference(self, target):
         # abspath normalizes '..' without following links or querying the target's filesystem.
         target = Path(os.path.abspath(target))
-        roots = [root for root in self.roots.values()
-                 if target.is_relative_to(root) and _allowed_parts(target.relative_to(root).parts)]
+        roots = [root for prefix, root in self._root_prefixes
+                 if target.is_relative_to(prefix) and _allowed_parts(target.relative_to(prefix).parts)]
         if not roots:
             return None
         try:
