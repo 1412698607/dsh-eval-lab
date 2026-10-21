@@ -94,7 +94,7 @@ function renderCatalog() {
   const query = $("search").value.toLocaleLowerCase(), outcome = $("outcome").value, source = $("source").value;
   const items = catalog.filter((item) => (item.kind === category || item.kind === "unknown")
     && (!outcome || item.outcome === outcome || (!item.outcome && item.outcomes?.[outcome] > 0))
-    && (!source || (source === "unknown" ? !item.sources?.length : item.sources?.includes(source)))
+    && (!source || item.sources?.includes(source) || (source === "unknown" && !item.sources?.length))
     && (String(item.title || "") + " " + item.path).toLocaleLowerCase().includes(query));
   $("count").textContent = items.length + " 项";
   if (!items.length) {
@@ -148,7 +148,8 @@ function sampleTable(data, links) {
     if (row.verification) result.append(node("div", display(row.verification), "subtext"));
     if (row.changedFields?.length) result.append(node("div", "复验变化：" + row.changedFields.join("、"), "subtext"));
     if (row.saved) result.append(node("div", "原保存结论：" + display(row.saved.outcome), "subtext"));
-    if (row.reasons?.length || row.error) result.append(node("div", row.error || row.reasons.join("；"), "subtext"));
+    const error = typeof row.error === "string" ? row.error : [row.error?.type, row.error?.message].filter(Boolean).join(": ");
+    if (row.reasons?.length || row.error) result.append(node("div", error || row.reasons?.join("；") || "未知错误", "subtext"));
     return [identity, config, display(row.source), badge(row.executionStatus), badge(row.recordingOutcome), badge(row.assertionOutcome), result];
   });
   return panel("逐次结果", table(["样本", "请求 / 实际配置", "来源声明", "执行", "录制", "断言", "任务结论"], body));

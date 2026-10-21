@@ -93,6 +93,16 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(report["outcomes"], {"passed": 2, "failed": 0, "unevaluable": 1})
         self.assertEqual(self.digest(), before)
 
+    def test_catalog_keeps_missing_sources_in_mixed_results(self):
+        self.write(self.runs / "mixed/report.json", {"comparisonReportFormatVersion": 1,
+                   "samples": [{"source": "live"}, {"source": "synthetic"}, {"source": None}, {}]})
+        self.write(self.runs / "missing/experiment-result.json", {"experimentResultFormatVersion": 1,
+                   "samples": [{"source": None}, {}]})
+        catalog = {item["id"]: item for item in self.browser.catalog()["items"]}
+        self.assertEqual(catalog["runs:mixed/report.json"]["sources"], ["live", "synthetic", "unknown"])
+        self.assertEqual(catalog["runs:missing/experiment-result.json"]["sources"], ["unknown"])
+        self.assertEqual(catalog["runs:one/evaluation.json"]["sources"], ["synthetic"])
+
     def test_missing_and_malformed_files_are_visible_and_refresh_finds_new_files(self):
         catalog = ArtifactBrowser(self.cases, self.directory / "absent").catalog()
         self.assertEqual(len(catalog["warnings"]), 1)
@@ -138,6 +148,18 @@ class BrowserTests(unittest.TestCase):
                 with self.subTest(name=name), self.assertRaises(ValueError):
                     self.browser.document(f"runs:{name}/evaluation.json")
         self.assertEqual(len(self.browser.catalog()["items"]), 2)
+
+    def test_links_reject_external_and_private_paths_before_filesystem_resolution(self):
+        outside = self.directory / "outside/evaluation.json"
+        data = {"casePath": str(outside), "evidencePath": "../../outside/evidence.json",
+                "association": {"runtimeReport": str(self.runs / "home/runtime.json"),
+                                "runDir": "//m5-review.invalid/share/recording"},
+                "samples": [{"sourceEvidencePath": str(self.runs / "../outside/evidence.json")}]}
+        with patch.object(Path, "resolve", side_effect=AssertionError("Must reject before filesystem resolution")):
+            self.assertIsNone(self.browser.reference(outside))
+            links = self.browser._links(data, self.runs / "one")
+        self.assertEqual(len(links), 5)
+        self.assertTrue(all(link["id"] is None for link in links))
 
     def test_links_resolve_snapshots_runtime_trace_and_report_with_missing_markers(self):
         directory = self.runs / "one"
@@ -192,6 +214,45 @@ class BrowserTests(unittest.TestCase):
             self.assertTrue(self.browser.catalog()["truncated"])
         self.write(self.runs / "one/evaluation.json", {"evaluationFormatVersion": 2, "samples": 123})
         self.assertIn("error", self.browser.catalog()["items"][1])
+
+    def test_deep_json_is_isolated_in_catalog_and_http(self):
+        path = self.runs / "deep/evaluation.json"
+        path.parent.mkdir()
+        self.server()
+        for depth in (256, 1500):
+            with self.subTest(depth=depth):
+                path.write_text('{"evaluationFormatVersion":2,"deep":' + '[' * depth + '0' + ']' * depth + '}',
+                                encoding="utf-8")
+                before = self.digest()
+                with self.assertRaisesRegex(ValueError, "nesting"):
+                    self.browser.document("runs:deep/evaluation.json")
+                status, _, body = self.request("/api/catalog")
+                self.assertEqual(status, 200)
+                items = {item["id"]: item for item in json.loads(body)["items"]}
+                self.assertIn("nesting", items["runs:deep/evaluation.json"]["error"])
+                self.assertNotIn("error", items["runs:one/evaluation.json"])
+                status, _, body = self.request("/api/document?id=runs:deep/evaluation.json")
+                self.assertEqual(status, 400)
+                self.assertIn("nesting", json.loads(body)["error"])
+                self.assertEqual(self.request("/api/document?id=runs:one/evaluation.json")[0], 200)
+                self.assertEqual(self.digest(), before)
+
+    def test_deep_trace_rows_keep_previews_and_following_rows(self):
+        trace = self.runs / ("c" * 64 + ".jsonl")
+        self.server()
+        for depth in (256, 1500):
+            with self.subTest(depth=depth):
+                trace.write_text('{"event":{"type":"viewer/check","data":' + '[' * depth + '0' + ']' * depth
+                                 + '}}\n{"event":{"type":"turn/end"}}\n', encoding="utf-8")
+                before = self.digest()
+                status, _, body = self.request("/api/document?id=" + quote("runs:" + trace.name))
+                self.assertEqual(status, 200)
+                document = json.loads(body)
+                self.assertIn("nesting", document["rows"][0]["error"])
+                self.assertLessEqual(len(document["rows"][0]["preview"].encode("utf-8")), 2048)
+                self.assertEqual(document["rows"][1], {"line": 2, "data": {"event": {"type": "turn/end"}}})
+                self.assertIsNone(document["nextOffset"])
+                self.assertEqual(self.digest(), before)
 
     def test_http_authentication_origin_host_and_write_rejection(self):
         server = self.server()

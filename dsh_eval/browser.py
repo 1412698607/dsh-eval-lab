@@ -14,6 +14,7 @@ from .formats import parse_json, require
 ROOT = Path(__file__).resolve().parents[1]
 WEB = Path(__file__).with_name("web")
 MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
+MAX_JSON_DEPTH = 128
 MAX_CATALOG_ITEMS = 2000
 TRACE_LINE_BYTES = 65536
 BLOCKED = {"home", "workspace", "node_modules", "private-notes", "secrets", "credentials", "__pycache__"}
@@ -25,6 +26,27 @@ FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_
            "statusFormatVersion": ("recording", (1,))}
 RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "evaluation.json"}
 TRACE_NAME = re.compile(r"[0-9a-f]{64}\.jsonl\Z")
+
+
+def _allowed_parts(parts):
+    return all(part not in ("", ".", "..") and not part.startswith(".") and part.casefold() not in BLOCKED
+               for part in parts)
+
+
+def _viewer_json(text):
+    message = f"JSON nesting exceeds the viewer limit ({MAX_JSON_DEPTH} levels)"
+    try:
+        data = parse_json(text)
+    except RecursionError as error:
+        raise ValueError(message) from error
+    pending = [(data, 1)]
+    while pending:
+        value, depth = pending.pop()
+        if isinstance(value, (dict, list)):
+            require(depth <= MAX_JSON_DEPTH, message)
+            children = value.values() if isinstance(value, dict) else value
+            pending.extend((child, depth + 1) for child in children if isinstance(child, (dict, list)))
+    return data
 
 
 def _kind(data):
@@ -41,24 +63,38 @@ class ArtifactBrowser:
         self.roots = {"cases": Path(cases_root or ROOT / "fixtures/evaluation").resolve(),
                       "runs": Path(runs_root or ROOT / "runs").resolve()}
 
+    def _resolve_reference(self, target):
+        # abspath normalizes '..' without following links or querying the target's filesystem.
+        target = Path(os.path.abspath(target))
+        roots = [root for root in self.roots.values()
+                 if target.is_relative_to(root) and _allowed_parts(target.relative_to(root).parts)]
+        if not roots:
+            return None
+        try:
+            resolved = target.resolve()
+        except (OSError, ValueError, RuntimeError):
+            return None
+        return resolved if any(resolved.is_relative_to(root) and _allowed_parts(resolved.relative_to(root).parts)
+                               for root in roots) else None
+
     def path(self, identifier):
         label, separator, value = identifier.partition(":")
         parts = value.split("/")
         require(separator and label in self.roots and value and "\\" not in value and ":" not in value
                 and not PurePosixPath(value).is_absolute()
-                and all(part not in ("", ".", "..") and not part.startswith(".")
-                        and part.casefold() not in BLOCKED for part in parts), "Artifact path is not allowed")
+                and _allowed_parts(parts), "Artifact path is not allowed")
         root = self.roots[label]
-        path = (root / value).resolve()
-        require(path.is_relative_to(root) and path.is_file(), "Artifact is missing or outside its configured root")
-        require(all(not part.startswith(".") and part.casefold() not in BLOCKED
-                    for part in path.relative_to(root).parts), "Resolved artifact path is not allowed")
+        path = self._resolve_reference(root / value)
+        require(path is not None and path.is_relative_to(root) and path.is_file(), "Artifact is missing or outside its configured root")
+        require(_allowed_parts(path.relative_to(root).parts), "Resolved artifact path is not allowed")
         require(path.suffix == ".json" or TRACE_NAME.fullmatch(path.name) or path.name == "report.md",
                 "Unsupported artifact file")
         return path
 
     def reference(self, target):
-        target = target.resolve()
+        target = self._resolve_reference(target)
+        if target is None:
+            return None
         for label, root in self.roots.items():
             if target.is_relative_to(root):
                 identifier = label + ":" + target.relative_to(root).as_posix()
@@ -73,7 +109,7 @@ class ArtifactBrowser:
         with path.open("rb") as stream:
             content = stream.read(MAX_DOCUMENT_BYTES + 1)
         require(len(content) <= MAX_DOCUMENT_BYTES, "JSON exceeds the 8 MiB viewer limit")
-        data = parse_json(content.decode("utf-8"))
+        data = _viewer_json(content.decode("utf-8"))
         return _kind(data), data
 
     def catalog(self):
@@ -113,8 +149,9 @@ class ArtifactBrowser:
                             item["status"] = data["execution"].get("status")
                         rows = data.get("samples") or data.get("entries") or []
                         require(isinstance(rows, list), "Artifact samples/entries must be an array")
-                        item["sources"] = sorted({row["source"] for row in rows if isinstance(row, dict) and isinstance(row.get("source"), str)})
-                        if isinstance(item["source"], str):
+                        item["sources"] = sorted({row["source"] if isinstance(row.get("source"), str) and row["source"] else "unknown"
+                                                  for row in rows if isinstance(row, dict)})
+                        if isinstance(item["source"], str) and item["source"]:
                             item["sources"] = [item["source"]]
                     except (OSError, ValueError) as error:
                         item["error"] = str(error)
@@ -134,9 +171,8 @@ class ArtifactBrowser:
             path = Path(value.replace("\\", "/"))
             target = path if path.is_absolute() else directory / path
             if trace_directory:
-                resolved = target.resolve()
-                # Never enumerate a path supplied by an artifact outside the configured roots.
-                if not any(resolved.is_relative_to(root) for root in self.roots.values()):
+                resolved = self._resolve_reference(target)
+                if resolved is None:
                     links.append({"label": label, "id": None, "path": value})
                     return
                 if resolved.is_dir():
@@ -187,7 +223,7 @@ class ArtifactBrowser:
                         row = {"line": index + 1}
                         try:
                             require(not oversized, "Line exceeds the 64 KiB viewer limit; preview only")
-                            row["data"] = parse_json(line.decode("utf-8"))
+                            row["data"] = _viewer_json(line.decode("utf-8"))
                         except (ValueError, UnicodeError) as error:
                             row.update(error=str(error), preview=line[:2048].decode("utf-8", errors="replace"))
                         rows.append(row)
