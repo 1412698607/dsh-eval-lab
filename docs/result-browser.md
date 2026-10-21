@@ -68,4 +68,4 @@ npm.cmd run demo:eval
 
 真实模型验收继续使用明确的 `--case / --batch / --experiment ... --run` 命令，预算来自用例 `timeoutSeconds`，调用前需单独选择任务与配置；本批没有新增模型自动工作流，也没有 token / 费用硬限额。工作流权限仅 `contents: read`，checkout 不保留凭据，整项检查上限 15 分钟。
 
-Action 用法核对自官方 [checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node)、[setup-python](https://github.com/actions/setup-python) 说明。本地检查通过不代表 GitHub 托管运行已通过；实际核对的 `db6d572` 云端运行因 Windows 路径写法差异失败，兼容修复本地通过，云端复验待执行。原实现与历史验证见 [记录 020](changes/2026-10-21-020-m5-results-browser-ci.md)，实际云端验收见 [记录 022](changes/2026-10-21-022-cloud-ci-path-aliases.md)。
+Action 用法核对自官方 [checkout](https://github.com/actions/checkout)、[setup-node](https://github.com/actions/setup-node)、[setup-python](https://github.com/actions/setup-python) 说明。2026 年 10 月 21 日实际验收已通过：`e47de36` 的运行 `39625366038` 为 `success`，31 文件语法、44 Node、134 Python、compileall 和 demo 均成功。之前 `db6d572` 因 Windows 路径写法差异失败的记录保留。原实现与历史验证见 [记录 020](changes/2026-10-21-020-m5-results-browser-ci.md)，失败、修复与云端证据见 [记录 022](changes/2026-10-21-022-cloud-ci-path-aliases.md)。

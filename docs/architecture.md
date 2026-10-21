@@ -43,7 +43,7 @@ inspect --run <目录>
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
-| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；云端首跑已执行，路径修复后待复验 |
+| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`e47de36` 的语法 / Node / Python / compileall / 合成 demo 云端全部通过 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
 | `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
