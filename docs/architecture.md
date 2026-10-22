@@ -11,8 +11,9 @@ apply(ctx, config)
   → 路径优先级解析、maxPendingBytes 校验
   → 创建 UUID 运行目录与版本 2 run.json：recording、空清单
 session/event
+  → 新会话加入内存集合与共享待登记批次
   → 接收时序列化、序号和容量校验
-  → 新会话登记进入运行队列，保存成员快照
+  → 登记批次开始时生成完整成员快照并串行保存
   → 会话独立队列：等待登记 → recording 状态 → JSONL 追加
 session/flush
   → 在选定会话队尾插入检查点状态更新 → 等待并报告错误
@@ -29,7 +30,7 @@ inspect --run <目录>
 | `src/config.js` | 显式目录 > 环境变量 > 主目录；选中值无效报错；容量正安全整数校验 |
 | `src/metadata.js` | 从 package.json 读取版本及支持的会话组件基线 |
 | `src/recorder.js` | 运行目录、会话队列、接收与写入统计、字节容量、检查点、错误和封存 |
-| `src/session-status.js` | 状态文件命名及同目录临时文件、rename 替换与临时文件清理 |
+| `src/session-status.js` | 状态文件命名、同目录临时文件、有限 rename 重试与临时文件清理 |
 | `src/inspect.js` | 只读磁盘检查，区分 complete / invalid / unverified |
 | `scripts/inspect.js` | 显式 --run 参数、JSON 报告及退出码 |
 | `scripts/demo.js` | 8 条模拟事件 |
@@ -72,7 +73,7 @@ M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=
 
 M6.1 新 run.json 使用 `formatVersion: 2`、`runManifestFormatVersion: 1`、state 和 sessions，同时保留原 statusFormatVersion、maxPendingBytes、插件版本、运行 ID、启动时间与命名规则。JSONL 的 `formatVersion: 1` 和状态版本 1 不变，`captureScope` 始终为 `live-events-only`。
 
-运行清单替换使用与状态相同的同目录临时文件 / rename，但有独立串行队列。清单登记成功之前不创建该会话的日志或状态；关闭先等待会话，再写最终成员集合。清单错误通过 onError(error, null) 上报，停止接受后续输入，检查点 / 关闭拒绝；最终清单可能仍为 recording 或缺失，不补造 sealed。这里没有 fsync 或断电恢复保证，也未测量新增成员时完整快照的规模成本。
+运行清单替换使用与状态相同的同目录临时文件 / rename，但有独立串行队列。尚未开始的登记批次只共享 Promise 屏障，在实际开始时从内存成员表生成完整快照；写入期间加入的成员共用下一批屏障。这样不再为每个排队成员保留完整快照，仍保留首次观察顺序。各会话等待自己的登记成功才创建日志或状态；关闭先等待所有会话，再写最终成员集合。清单错误通过 onError(error, null) 上报，停止接受后续输入，检查点 / 关闭拒绝；已登记健康会话仍排空，最终清单可能仍为 recording 或缺失，不补造 sealed。修复及测量范围见 [记录 024](changes/2026-10-22-024-m6-1-registration-reliability.md)，这里没有 fsync、断电恢复或总内存硬上限保证。
 
 inspect 新增 runManifest 摘要。版本 2 清单开放则运行 unverified，终态失败 / 应有文件缺失 / 未登记成员则 invalid；整体 complete 仍需片段、临时文件等所有检查通过。旧版本 1 保留原片段结果，单独标明会话覆盖未知，不能升级历史保证。旧 inspect 不认识版本 2，会拒绝它；浏览器已允许只读查看两个元信息版本。
 
@@ -108,7 +109,7 @@ close 先禁止接收，然后为每个会话排队 sealed 更新；一个失败
 
 ## 状态替换与宿主生命周期
 
-状态更新先写同目录 UUID 临时文件，再 rename 到固定状态路径，最后清理临时文件。Windows 本地测试覆盖多次替换与目录占用导致的真实失败。此流程没有 fsync，也不承诺所有文件系统的原子持久性。写入 failed 本身可能失败；残留 recording、缺失或损坏状态都不能被视为完整。
+状态更新先写同目录 UUID 临时文件，再 rename 到固定状态路径，最后清理临时文件。只对 rename 的 EPERM / EACCES / EBUSY 使用同一临时文件有限重试：最多六次尝试，10 / 20 / 40 / 80 / 160 ms 退避合计 310 ms，不约束单次底层 I/O 耗时。临时文件写入、其他替换错误及 JSONL append 不重试。Windows 本地测试覆盖多次替换与目录占用导致的真实失败，受控故障注入覆盖暂时恢复与持续失败，不把错误码解释为已定位的占用原因。此流程没有 fsync，也不承诺所有文件系统的原子持久性。写入 failed 本身可能失败；残留 recording、缺失或损坏状态都不能被视为完整。
 
 2026 年 10 月 12 日真实卸载检查发现旧 `ctx.on("dispose")` 在 Cordis 4.0.4 没有执行关闭，旧测试只证明 flush 后内容一致。本批改用 `ctx.effect(() => () => recorder.close())` 显式注册所属 fiber 的清理，并验证卸载后 sealed 和 inspect 通过。普通函数 apply 还可能被该版本按构造函数执行，因此不能只依赖它返回的函数作为清理。
 

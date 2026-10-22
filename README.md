@@ -165,6 +165,8 @@ runs/
 
 状态文件使用独立的 `statusFormatVersion: 1`，包含 `recording` / `sealed` / `failed`、接收与写入计数、UTF-8 字节数、首尾序号及 SHA-256。首次会话文件写入必须等待清单登记成功；`flush()` 保存选中检查点但不封存运行，`close()` 停止接收、排空会话队列，最后封存运行清单。插件使用 Cordis 的 `ctx.effect()` 注册关闭清理。
 
+新会话共用待执行登记批次，批次开始才生成完整清单，写入期间新增成员等待下一批。清单与状态替换只对 rename 的 EPERM / EACCES / EBUSY 最多尝试六次，计划退避合计 310 ms，不约束底层 I/O 耗时；持续错误仍使检查点 / 关闭失败。没有增加总内存硬上限，详见 [修复记录 024](docs/changes/2026-10-22-024-m6-1-registration-reliability.md)。
+
 ## 离线检查
 
 显式指定一次运行目录，不自动选择最新批次：

@@ -39,15 +39,18 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
   let closePromise;
   let pendingBytes = 0;
   let manifestPending = Promise.resolve(true);
+  let registrationBatch = null;
   let manifestError = null;
 
-  function persistRun(phase, selected = [...states.values()]) {
-    // Capture membership before enqueueing; one run queue serializes all replacements.
-    const snapshot = { ...metadata, state: phase, sessions: selected.map((state) => ({
-      sessionId: state.sessionId, traceFile: state.traceFile, statusFile: statusFilename(state.traceFile),
-    })) };
+  function persistRun(phase) {
     manifestPending = manifestPending.then(async () => {
+      // Members observed before this write starts share its barrier. Members
+      // arriving during I/O join the next batch, which holds no snapshot yet.
+      if (phase === "recording") registrationBatch = null;
       if (manifestError) return false;
+      const snapshot = { ...metadata, state: phase, sessions: [...states.values()].map((state) => ({
+        sessionId: state.sessionId, traceFile: state.traceFile, statusFile: statusFilename(state.traceFile),
+      })) };
       try { await writeStatus(runPath, snapshot); return true; } catch (error) {
         manifestError = error;
         try { onError(error, null); } catch { /* Preserve the run-level error. */ }
@@ -100,7 +103,7 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
         firstSeq: null, lastSeq: null, acceptedLastSeq: null, hash: createHash("sha256"),
       };
       states.set(sessionId, state);
-      const registration = persistRun("recording");
+      const registration = registrationBatch ??= persistRun("recording");
       enqueue(state, async () => {
         // No trace or status file may precede successful membership persistence.
         state.registered = await registration;
@@ -172,7 +175,7 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     const checkpoints = selected.map((state) => enqueue(state, () => !state.registered || state.error ? undefined : persist(state, "sealed")));
     closePromise = (async () => {
       await Promise.all(checkpoints);
-      await persistRun(selected.some((state) => state.error) || manifestError ? "failed" : "sealed", selected);
+      await persistRun(selected.some((state) => state.error) || manifestError ? "failed" : "sealed");
       await wait(selected, []);
     })();
     return closePromise;
