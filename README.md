@@ -16,6 +16,7 @@
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
+- M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -53,7 +54,17 @@ npm.cmd run check:output
 
 脚本自动寻找 Windows npm 缓存里的匹配版本，加载真实 Cordis 和 SessionStore，挂载插件，创建会话并提交工具调用及结果，然后验证导出的事件与原事件一致。它不启动 Web 服务、不执行真实文件工具、不调用模型，也不修改已有 Harness profile。
 
-`check:output` 启动正常录制、真实磁盘写入失败、未关闭录制器直接退出三个独立子进程，核对输出通道及 `inspect` 的 0 / 1 / 2 结果。前两种场景加载真实宿主组件，第三种只运行独立录制器。父脚本的检查摘要正常写到 stdout。部分沙箱会以 `spawn EPERM` 禁止捕获子进程输出，此时需在获准环境或外部 PowerShell 执行同一命令，失败不能视为通过。
+`check:output` 启动正常录制、真实磁盘写入失败、未关闭录制器直接退出、单条事件超限四个独立子进程，分别核对 `inspect` 的 0 / 1 / 2 / 1 结果及输出通道。只有直接退出场景运行独立录制器，其他场景加载真实宿主组件。超限场景还检查已写前缀保持原样及健康会话封存。父脚本的检查摘要正常写到 stdout。部分沙箱会以 `spawn EPERM` 禁止捕获子进程输出，此时需在获准环境或外部 PowerShell 执行同一命令，失败不能视为通过。
+
+资源测量使用独立真实进程和文件，不调用模型，也不自动加入 CI：
+
+```powershell
+npm.cmd run measure:recorder
+# 默认 8 类场景各 3 次；可显式改为 1～10 次
+npm.cmd run measure:recorder -- --repeats 1
+```
+
+结果保存在新的 `runs/recorder-resources/<UUID>/summary.json`，包含输入、实际计数、错误、inspect、内存采样与清单写入量；运行需要子进程权限。测量方法、已测数据和局限见 [录制资源边界](docs/recorder-resources.md)。
 
 若 Harness 安装在其他位置，可以传入它的 `node_modules` 路径：
 
@@ -72,7 +83,20 @@ npm.cmd run check:output -- 'D:\your-harness\node_modules'
 
 显式配置和环境变量必须是非空绝对路径。选中的值无效时直接报错，不退回下一项。分发用 `cordis.patch.yml` 保持空配置，不再绑定开发机盘符；`demo` 与验证脚本仍显式写入项目内的 `runs/`。已有 profile 若保存了旧的显式 `outputDir`，它仍优先于环境变量，需要通过该 profile 的配置方式更改或移除。
 
-插件配置还支持 `maxPendingBytes`，默认 `16777216`（16 MiB），必须是正安全整数。它限制整个录制器尚未完成写入的 UTF-8 文本字节总量；超限会使受影响会话失败，其他会话可继续。该设置不是进程总内存上限，不通过环境变量配置。
+插件配置还支持两个独立的正安全整数，单位均为 UTF-8 字节，不通过环境变量配置：
+
+| 配置 | 默认值 | 计量范围 |
+| --- | --- | --- |
+| `maxEventBytes` | `1048576`（1 MiB） | 一整行 JSONL，包含包装字段、sessionId、序列化 event 及末尾换行；等于上限允许 |
+| `maxPendingBytes` | `16777216`（16 MiB） | 全录制器排队及正在追加的 Buffer 总字节数；完成或跳过后释放 |
+
+超限返回拒绝、上报 `EVENT_BYTES_LIMIT` 或 `PENDING_BYTES_LIMIT`，使受影响会话持续失败，flush / close 报错；其他健康会话可继续，但整个运行不能作为完整评测证据。不截断或另存大事件来伪装成功。M6.2 的新默认值可能拒绝以前能录制的大工具结果，需要时显式调高 `maxEventBytes`，同时考虑队列预算。例如插件的 config 对象可设为：
+
+```json
+{ "maxEventBytes": 4194304, "maxPendingBytes": 16777216 }
+```
+
+`run.json` 保存这两个实际配置；旧日志无需迁移，inspect 不按新默认值拒绝历史大行。单条限制在 JSON 序列化之后、Buffer 分配和反解析之前检查，不能限制原始输入、序列化临时字符串、会话成员表或总内存。细节见 [录制资源边界](docs/recorder-resources.md)。
 
 例如在启动 CLI 的同一个 PowerShell 窗口中，将真实任务日志写入本项目：
 
@@ -275,14 +299,14 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。新增 [M6 扩展](docs/plans/m6-reliability-validation.md) 分四批，当前已完成 M6.1 的本地实现与验证；下一批是 M6.2 单条事件限制和资源基线，余三批。本批没有触发新的云端 CI 或模型调用，不把 M5 云端通过作为新改动的验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。新增 [M6 扩展](docs/plans/m6-reliability-validation.md) 分四批，当前已完成 M6.1 / M6.2 的本地实现与验证；剩 M6.3 真实评测集和 M6.4 Web 生命周期两批。M6.3 开始前需确定实际配置与模型调用预算。本批没有触发新的云端 CI 或模型调用，不把 M5 云端通过作为新改动的验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
 - [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
-- [M6 方案](docs/plans/m6-reliability-validation.md) 与 [运行会话清单](docs/run-manifest.md)：运行级成员、写入顺序、新旧版本和剩余三批。
+- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、实测范围和剩余两批。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
 - [评测格式](docs/evaluation-format.md)：版本 1 / 2 用例、证据与结果、离线命令。
 - [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。

@@ -120,6 +120,10 @@ modelCalls 统计已结算 assistant/message / assistant/attempt，toolCalls 统
 
 同日审查修复明确有限数值范围：无法表示为有限浮点数的指标单值或 token 字段和保持 null。实验每项指标汇总若求和超出范围，保留观测 / 缺失样本数，总和与均值为 null，并增加可选 reason；不产生 Infinity / NaN，不改变任务结论或样本分母。实验与 metrics 格式仍为版本 1，历史结果不覆写。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
 
+## M6.2 单条超限的门禁
+
+单条事件超过配置上限时，录制器以 EVENT_BYTES_LIMIT 标记会话失败，整体 inspect 为 invalid；即使已写前缀包含完整工具结果和正确答案，Python 仍返回 unevaluable / assertions not_run。该门禁继续复用原 inspect 结果，没有改变任务断言或结果格式。新增真实 Node 录制 / Python 离线集成回归通过，配置与资源边界见 [录制资源说明](recorder-resources.md)。
+
 ## M4.2 独立比较报告
 
 新增 `comparisonReportFormatVersion=1`，通过 `--report <experiment-result.json>` 对一个终态实验生成新的报告目录。原 experiment / evidence / evaluation 格式不变，不改写旧结果；新 evaluations 仍使用原 evaluate 格式。报告保存原始分母、样本关联复核、新旧差异、按用例 / 配置 / 来源分组以及匹配配对差值，指标汇总增加观测范围并保留 reason。

@@ -3,7 +3,7 @@ import { appendFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { pluginVersion } from "./metadata.js";
-import { DEFAULT_MAX_PENDING_BYTES, validateMaxPendingBytes } from "./config.js";
+import { DEFAULT_MAX_EVENT_BYTES, DEFAULT_MAX_PENDING_BYTES, validateMaxEventBytes, validateMaxPendingBytes } from "./config.js";
 import { statusFilename, writeStatus } from "./session-status.js";
 
 export function traceFilename(sessionId) {
@@ -11,11 +11,13 @@ export function traceFilename(sessionId) {
 }
 
 // Each session owns an ordered write queue. The append observer never awaits I/O.
-export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDING_BYTES, onError = () => {} } = {}) {
+export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDING_BYTES,
+  maxEventBytes = DEFAULT_MAX_EVENT_BYTES, onError = () => {} } = {}) {
   if (typeof outputDir !== "string" || !isAbsolute(outputDir)) {
     throw new TypeError("eval-lab: outputDir 必须是绝对路径");
   }
   validateMaxPendingBytes(maxPendingBytes);
+  validateMaxEventBytes(maxEventBytes);
   const runId = randomUUID();
   const runDir = join(outputDir, runId);
   mkdirSync(runDir, { recursive: true });
@@ -31,6 +33,7 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     captureScope: "live-events-only",
     sessionFileNaming: "sha256(sessionId).jsonl",
     maxPendingBytes,
+    maxEventBytes,
   };
   writeFileSync(runPath, JSON.stringify({ ...metadata, state: "recording", sessions: [] }, null, 2) + "\n", { flag: "wx" });
 
@@ -115,17 +118,25 @@ export function createRecorder({ outputDir, maxPendingBytes = DEFAULT_MAX_PENDIN
     let line;
     let seq;
     try {
-      // Freeze observed content; validate serialized seq, including custom toJSON output.
-      line = Buffer.from(JSON.stringify({ formatVersion: 1, runId, sessionId, event }) + "\n", "utf8");
-      seq = JSON.parse(line.toString("utf8")).event?.seq;
+      // Size the frozen envelope before allocating a Buffer or parsing its seq.
+      // JSON.stringify still uses synchronous CPU and temporary memory.
+      const text = JSON.stringify({ formatVersion: 1, runId, sessionId, event }) + "\n";
+      const bytes = Buffer.byteLength(text, "utf8");
+      if (bytes > maxEventBytes) {
+        const error = new Error(`eval-lab: 单条事件 ${bytes} 字节超过 maxEventBytes=${maxEventBytes}`);
+        error.code = "EVENT_BYTES_LIMIT";
+        throw error;
+      }
+      seq = JSON.parse(text).event?.seq;
       if (!Number.isSafeInteger(seq) || seq < 0 || (state.acceptedLastSeq !== null && seq <= state.acceptedLastSeq)) {
         throw new Error("eval-lab: event.seq 必须是严格递增的非负安全整数");
       }
-      if (pendingBytes + line.length > maxPendingBytes) {
+      if (pendingBytes + bytes > maxPendingBytes) {
         const error = new Error(`eval-lab: 待写入字节超过 maxPendingBytes=${maxPendingBytes}`);
         error.code = "PENDING_BYTES_LIMIT";
         throw error;
       }
+      line = Buffer.from(text, "utf8");
     } catch (error) {
       fail(state, error);
       enqueue(state, async () => {});

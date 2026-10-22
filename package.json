@@ -23,6 +23,7 @@
     "demo:eval": "node scripts/demo-eval.js",
     "smoke:host": "node scripts/smoke-host.js",
     "check:output": "node scripts/check-output.js",
+    "measure:recorder": "node scripts/measure-recorder.js",
     "inspect": "node scripts/inspect.js",
     "live:prepare": "node scripts/prepare-live.js",
     "live:run": "node scripts/run-live.js"

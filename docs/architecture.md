@@ -4,15 +4,17 @@
 
 M6.1 已扩展运行级会话清单：新 run.json 为版本 2，会话写入以清单登记为前置依赖，close 最后保存运行终态；JSONL / status 仍为版本 1。Node inspect 对照应有成员与目录，Python 继续复用整体检查结果。格式与边界见 [会话清单](run-manifest.md)。
 
+M6.2 增加单条完整 JSONL 行的 maxEventBytes 限制，默认 1 MiB；运行元信息保存有效配置，不改变既有格式版本。超限进入原会话失败路径，Node inspect 和 Python 门禁继续拒绝不完整证据。资源实测见 [录制资源边界](recorder-resources.md)。
+
 ## 执行流程与模块
 
 ```text
 apply(ctx, config)
-  → 路径优先级解析、maxPendingBytes 校验
+  → 路径优先级解析、maxEventBytes / maxPendingBytes 校验
   → 创建 UUID 运行目录与版本 2 run.json：recording、空清单
 session/event
   → 新会话加入内存集合与共享待登记批次
-  → 接收时序列化、序号和容量校验
+  → 接收时序列化、完整 UTF-8 行大小、序号和队列容量校验 → Buffer 入队
   → 登记批次开始时生成完整成员快照并串行保存
   → 会话独立队列：等待登记 → recording 状态 → JSONL 追加
 session/flush
@@ -71,7 +73,7 @@ M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=
   <sha256(sessionId)>.status.json
 ```
 
-M6.1 新 run.json 使用 `formatVersion: 2`、`runManifestFormatVersion: 1`、state 和 sessions，同时保留原 statusFormatVersion、maxPendingBytes、插件版本、运行 ID、启动时间与命名规则。JSONL 的 `formatVersion: 1` 和状态版本 1 不变，`captureScope` 始终为 `live-events-only`。
+M6.1 新 run.json 使用 `formatVersion: 2`、`runManifestFormatVersion: 1`、state 和 sessions，同时保留原 statusFormatVersion、maxPendingBytes、插件版本、运行 ID、启动时间与命名规则。M6.2 添加 maxEventBytes 配置元信息，旧运行缺少它仍可检查，不重写历史或推定旧上限。JSONL 的 `formatVersion: 1` 和状态版本 1 不变，`captureScope` 始终为 `live-events-only`。
 
 运行清单替换使用与状态相同的同目录临时文件 / rename，但有独立串行队列。尚未开始的登记批次只共享 Promise 屏障，在实际开始时从内存成员表生成完整快照；写入期间加入的成员共用下一批屏障。这样不再为每个排队成员保留完整快照，仍保留首次观察顺序。各会话等待自己的登记成功才创建日志或状态；关闭先等待所有会话，再写最终成员集合。清单错误通过 onError(error, null) 上报，停止接受后续输入，检查点 / 关闭拒绝；已登记健康会话仍排空，最终清单可能仍为 recording 或缺失，不补造 sealed。修复及测量范围见 [记录 024](changes/2026-10-22-024-m6-1-registration-reliability.md)，这里没有 fsync、断电恢复或总内存硬上限保证。
 
@@ -97,11 +99,11 @@ recording 的统计只保证状态保存时的检查点前缀，可能落后于 
 
 ## 队列、检查点与容量
 
-各会话在 Map 中保存队尾 Promise、错误、计数、序号及增量哈希。首次观察建立状态任务，首条 JSONL 追加前必须完成 recording 状态写入。记录在入队前转成 UTF-8 Buffer，以固定观察时内容并按真实字节记账；同步序列化仍消耗 CPU 与临时内存。
+各会话在 Map 中保存队尾 Promise、错误、计数、序号及增量哈希。首次观察建立状态任务，首条 JSONL 追加前必须完成 recording 状态写入。接收时先 JSON.stringify 整个包装并加换行，Buffer.byteLength 计量；超过 maxEventBytes（默认 1 MiB）即以 EVENT_BYTES_LIMIT 拒绝。通过后反解析同一字符串校验序号，再检查队列容量，最后分配 UTF-8 Buffer 固定观察时内容。自定义 toJSON 的实际输出参与计量且只调用一次。同步序列化仍消耗 CPU 与临时内存，过大的原始输入不能靠这个检查得到内存硬保护。
 
 每次追加成功后更新写入统计和哈希。失败保存首次错误，后续该会话停止接收，已排队但尚未开始的写入被跳过；其他会话继续。队列捕获错误并尽力保存 failed 状态，检查点和关闭通过 AggregateError 报告。报告回调抛错不会替换原错误。
 
-`maxPendingBytes` 是录制器级上限，默认 16 MiB。包括所有会话排队及正在追加的 Buffer；追加完成或跳过时在 finally 释放。超限的那条不入队，受影响会话失败。没有阻塞宿主等待容量的背压接口，没有进程内存总量保证。
+`maxPendingBytes` 是录制器级上限，默认 16 MiB。包括所有会话排队及正在追加的 Buffer；追加完成或跳过时在 finally 释放。两个上限相互独立，都必须是正安全整数，等于上限允许；同时超限先报单条错误，队列超限为 PENDING_BYTES_LIMIT。超限的那条不入队，受影响会话失败，不截断证据；已在进行的 append 仍可能完成，尚未开始的该会话事件跳过。没有阻塞宿主等待容量的背压接口，没有进程内存总量保证。计数、错误封存与运行清单规则保持不变；单条上限不是文件总长度、会话总量或离线 inspect 的限制。
 
 flush 在调用时选定会话队尾插入状态写入任务，并捕获该检查点的 received / accepted 计数。状态任务在此前追加之后、此后追加之前执行，所以统计及哈希都属于同一个前缀。后续事件不属于此次等待范围；错误仍是会话级持续状态，检查点不是独立错误版本。flush 不封存，也不执行 fsync。
 

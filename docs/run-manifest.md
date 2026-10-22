@@ -19,7 +19,7 @@
   <sha256(sessionId)>.status.json
 ```
 
-`run.json` 保留 plugin、pluginVersion、runId、startedAt、captureScope、sessionFileNaming、statusFormatVersion 和 maxPendingBytes，新增以下内容。下面省略其他元信息，哈希名为占位示意：
+`run.json` 保留 plugin、pluginVersion、runId、startedAt、captureScope、sessionFileNaming、statusFormatVersion 和 maxPendingBytes，M6.1 新增以下内容。M6.2 另加实际生效的 maxEventBytes 配置元信息，旧日志缺少该字段仍兼容；它不改变清单格式和完整性语义。下面省略其他元信息，哈希名为占位示意：
 
 ```json
 {
@@ -99,4 +99,4 @@ Python 继续调用原 Node inspect：新运行整体 invalid / unverified 时�
 
 023 的历史验证结果保留。024 修复新增七项 Node 回归，旧实现六项失败、一项通过，修复后全部通过；完整 65 Node / 33 文件语法、35 离线评测 Python / 17 浏览 Python、获准环境完整 137 Python、真实组件与获准环境三个输出子进程通过。获准环境五轮各 600 个模拟小会话均 sealed / complete / 0；资源探针在 300 / 600 个全部因 maxPendingBytes=1 被拒的会话中，保留堆增量分别为 471976 / 887024 字节。这里只是指定输入和一次采样的观察，不是完整 benchmark，不把关闭用时作性能结论。
 
-下一批 [M6.2](plans/m6-reliability-validation.md) 仍计划单条事件限制和更完整的资源测量。合并消除了待写完整快照的平方级积累，但内存成员表、会话队列和实际写入的完整快照仍随规模增长；成员分散到不同批次时仍反复重写完整集合，累计 I/O 仍可能呈平方级，不宣称进程总内存硬上限。
+[M6.2](recorder-resources.md) 现已实现单条事件限制并完成 24 个独立进程资源样本，详见 [记录 025](changes/2026-10-22-025-m6-2-event-resource-limits.md)。合并消除了待写完整快照的平方级积累，但内存成员表、会话队列和实际写入的完整快照仍随规模增长；成员分散到不同批次时仍反复重写完整集合，累计 I/O 仍可能呈平方级，不宣称进程总内存硬上限。
