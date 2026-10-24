@@ -18,6 +18,7 @@
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
+- M6.4 已增加独立真实 Web 采集与验收：Windows / deepseek-flash 累计五次任务，保留首次正常失败和旧取消样本；最新取消补验已核对实际工作区与 README 读取，三个最终场景均有工作区匹配的生命周期样本，取消 / 中断任务仍 unevaluable。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -44,6 +45,30 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 ```
 
 一次任务可能含多次模型请求；该清单没有 token 或费用硬上限。用例范围、真实验收结果和离线复验方法见 [M6.3 固定评测集](docs/core-evaluation.md)。
+
+## Web 生命周期检查
+
+```powershell
+npm.cmd run check:web-lifecycle
+```
+
+此无模型命令无需安装 Harness 或配置凭据，三个场景使用合成事件、真实子进程和原录制器；取消 / 中断保持任务 unevaluable。每次保存独立证据并重新 inspect，source 固定为 synthetic；其通过不表示真实 Web 验收。
+
+中断验收明确核对受支持的录制版本和非空磁盘检查点；合成 fixture 在 flush 后停止追加，要求覆盖整个前缀。真实 Web 允许检查点之后的有效未确认尾部，但仍须覆盖操作序号，未知版本、空 / 落后检查点和未完成状态替换均拒绝通过。原修复见 [记录 032](docs/changes/2026-10-24-032-m6-4-interruption-gates.md)。
+
+真实 Web 使用另一个显式入口，需要已有 CLI `0.2.0-rc.2`、宿主 `node-pty` 与模型配置：
+
+```powershell
+New-Item -ItemType Directory -Force runs/web-lifecycle-live | Out-Null
+npm.cmd run live:web-lifecycle -- prepare runs/web-lifecycle-live/normal-new normal-exit
+npm.cmd run live:web-lifecycle -- run runs/web-lifecycle-live/normal-new
+# 只读复验，不调用模型
+python -m scripts.verify_web_live runs/web-lifecycle-live/normal-new --output runs/web-lifecycle-live/normal-new/fresh.json
+```
+
+prepare 仅冻结环境并离线安装本地插件；run 启动独立 Web，CUA 在页面提交任务时才调用模型。仓库命令不自动完成浏览器步骤。正常任务完成后输入 `{"type":"shutdown"}` 经真实 ConPTY Ctrl+C 清理；取消必须实际点击页面按钮，中断由监督器终止自己的 PID。完整操作、采集协议、四次尝试及取消样本的覆盖局限见 [Web 生命周期](docs/web-lifecycle.md) 和 [记录 033](docs/changes/2026-10-24-033-m6-4-live-web-validation.md)。
+
+[记录 034](docs/changes/2026-10-24-034-m6-4-cancel-workspace-validation.md) 另获授权只追加一个 deepseek-flash 取消任务：提交前注册表 / 原生 cwd 与隔离 fixture 一致，实际 README 读取成功后点击停止，结果 cancelled / complete / unevaluable，工作区两项观测均为 true。旧取消样本不改写，仍保留工作区未知；本轮未改生产代码、协议或运行方式。
 
 ## 本地演示
 
@@ -314,7 +339,7 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，本次只做无模型回归和历史录制的离线检查；首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。双配置与重复扩展仍待配置和预算，下一批为 M6.4 Web 页面取消 / 正常退出 / 处理中断；新模型任务另定规模。本次未运行云端 CI，不继承 M5 云端结果作为新修复验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [脚本与无模型阶段](docs/web-lifecycle.md)，下一步采集真实 Web 页面取消、普通退出与处理中断；新模型任务另定规模。双配置与重复扩展仍待配置和预算。本批未运行云端 CI，不继承 M5 云端结果作为本批验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
@@ -323,6 +348,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
 - [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、单配置验收及后续 Web 范围。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
+- [Web 生命周期](docs/web-lifecycle.md)：M6.4 无模型检查、进程与操作事实、真实 Web 待验收范围。
 - [评测格式](docs/evaluation-format.md)：版本 1 / 2 用例、证据与结果、离线命令。
 - [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。
 - [批次运行](docs/batch-runner.md)：顺序执行、输入快照、状态重置、失败策略与结果清单。
@@ -331,7 +357,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 21 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 24 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

@@ -1,0 +1,13 @@
+{
+  "caseFormatVersion": 1,
+  "caseId": "web-lifecycle-read",
+  "input": "Use the actual read tool with file_path README.md (a relative path) to read projectName. Return only its value. Do not modify files, run shell commands, or delegate.",
+  "environment": { "files": { "README.md": "# Controlled Web lifecycle fixture\nprojectName: dsh-eval-web-fixture\n" } },
+  "configRef": { "provider": "deepseek-official", "model": "deepseek-flash", "profile": "web", "pluginVersion": "0.1.2" },
+  "budget": { "timeoutSeconds": 120 },
+  "assertions": [
+    { "id": "answer", "type": "final_text", "equals": "dsh-eval-web-fixture" },
+    { "id": "actual-read", "type": "tool_result", "tool": "read", "arguments": { "file_path": "README.md" }, "result": { "isError": false, "textContains": "projectName: dsh-eval-web-fixture" } },
+    { "id": "completed", "type": "turn_end", "reason": { "kind": "completed" } }
+  ]
+}

@@ -2,6 +2,36 @@
 
 按开发批次记录目标、代码变化、设计取舍和验证。当前插件版本为 `0.1.2`，完成录制、M2 / M3 受控评测闭环、M4 重复试验 / 指标与离线报告、M5 本地浏览和无模型 Windows CI 验收。当前状态见 [开发进度](docs/progress.md)。
 
+## 2026年10月24日 M6.4 取消场景工作区补验
+
+按新授权只追加一个同配置 deepseek-flash 取消任务。提交前注册表 / 原生 cwd / fixture 一致，真实 README 读取成功后点击停止，再经普通 Ctrl+C 清理；25 条 sealed、工作区两项观测均为 true，结果 cancelled / complete / unevaluable。原取消样本仍保持工作区未知，累计五次任务不改写历史。未改生产代码或协议，现有 9 Python / 3 Node 定向复验和离线工作区边界检查通过。
+
+[查看修改记录 034](docs/changes/2026-10-24-034-m6-4-cancel-workspace-validation.md) · [Web 生命周期](docs/web-lifecycle.md)
+
+## 2026年10月24日 M6.4 真实 Web 接入与验收
+
+新增独立 Web 准备 / ConPTY 监督、纯观察插件和 live 验证协议，CUA 实际提交与点击取消，普通退出经过原生 Ctrl+C 清理。按授权共用四个 deepseek-flash 任务，保留首次正常失败，取消 / 中断与追加正常任务分别满足生命周期规则；取消样本缺工作区观测，仅验收取消和退出。原中断版本 / 检查点门禁用于真实录制，允许有效未确认尾部。最终 196 Python / 82 Node / 41 文件语法及 compileall 通过，四份样本与八组负例副本独立复验符合预期。
+
+[查看修改记录 033](docs/changes/2026-10-24-033-m6-4-live-web-validation.md) · [Web 生命周期](docs/web-lifecycle.md)
+
+## 2026年10月24日 M6.4 中断验收门禁修复
+
+修复不支持的录制状态格式和未覆盖操作序号的检查点仍被判为中断通过的问题。明确校验录制版本，核对磁盘检查点与 fresh inspect 的完整前缀，并拒绝额外未确认原因。新增 5 项回归先复现 11 个反例失败，修复后 22 项生命周期 / 完整 185 Python / 79 Node / 38 文件语法及 compileall 通过；独立 CLI 的三正例通过、四反例被拒绝。本批没有模型调用，真实 Web 验收仍待实施。
+
+[查看修改记录 032](docs/changes/2026-10-24-032-m6-4-interruption-gates.md) · [Web 生命周期](docs/web-lifecycle.md)
+
+## 2026年10月24日 M6.4 验收脚本与无模型检查
+
+新增三场景的专用子进程采集与 Python 离线验收器，复用原录制器及 fresh inspect，取消 / 中断保持任务 unevaluable。新增 17 项回归，完整 180 Python / 79 Node / 38 文件语法和 compileall 通过，独立检查入口三个场景均符合预期。第一阶段只接受 synthetic，真实 Web 生命周期仍待验收，本批没有模型调用。
+
+[查看修改记录 031](docs/changes/2026-10-24-031-m6-4-no-model-lifecycle.md) · [Web 生命周期](docs/web-lifecycle.md)
+
+## 2026年10月24日 M6.4 开发分支建立
+
+从实际工作分支 `20261020/feat/m5-m6-evaluation-reliability` 的 `2c60b63` 新建并切换到 `codex/m6-4-web-lifecycle`，作为下一批 Web 生命周期验收入口。本次仅建立分支并同步文档，M6.4 仍为计划。
+
+[查看修改记录 030](docs/changes/2026-10-24-030-m6-4-development-branch.md)
+
 ## 2026年10月24日 M5 / M6 交付分支整理
 
 按用户要求将当前版本整理到 `codex/m5-m6-evaluation-reliability`，保留 M5 / M6 原提交历史，补入已复审的断言修复，并以更新后的 `origin/master` 为比较基线。只同步分支状态和交接说明，本次没有新模型调用或新增功能。

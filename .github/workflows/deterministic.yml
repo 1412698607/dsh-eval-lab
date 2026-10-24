@@ -33,6 +33,6 @@ jobs:
       - name: Test Python evaluation and local browser
         run: npm.cmd run test:python
       - name: Check Python syntax
-        run: python -m compileall -q dsh_eval test
+        run: python -m compileall -q dsh_eval scripts test
       - name: Generate synthetic evaluation examples
         run: npm.cmd run demo:eval

@@ -1,8 +1,8 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 24 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 `a239d7d` 包含 [M6.2 配置传递修复 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md) 与 [M6.3 单配置固定评测集 027](changes/2026-10-24-027-m6-3-core-evaluation.md)，历史记录中的“尚未提交”为当时状态。[审查修复 028](changes/2026-10-24-028-m6-3-assertion-constraints.md) 补充工具结果的可选 after / textEquals 约束，格式编号及录制 / 宿主代码保持，已完成无模型回归和旧录制离线检查。当前按用户要求整理到 `codex/m5-m6-evaluation-reliability` 分支，用于提交与远程主分支 master 的差异；具体提交以 Git 记录为准，见 [分支整理记录 029](changes/2026-10-24-029-m5-m6-delivery-branch.md)。
+截至 2026 年 10 月 24 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 `a239d7d` 包含 [M6.2 配置传递修复 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md) 与 [M6.3 单配置固定评测集 027](changes/2026-10-24-027-m6-3-core-evaluation.md)，`2c60b63` 包含 [审查修复 028](changes/2026-10-24-028-m6-3-assertion-constraints.md) 与 [分支整理 029](changes/2026-10-24-029-m5-m6-delivery-branch.md)。[分支记录 030](changes/2026-10-24-030-m6-4-development-branch.md) 保留创建时名称；实际分支为 `20261024/feat/m6-4-web-lifecycle`。031 / 032 合成检查、门禁修复和 [真实 Web 接入 033](changes/2026-10-24-033-m6-4-live-web-validation.md) 保留，当前完成 [取消工作区补验 034](changes/2026-10-24-034-m6-4-cancel-workspace-validation.md)，本批尚未提交。
 
-既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；027 按用户选择用 deepseek-flash 执行 10 个固定用例各一次，首次真实任务和独立离线复验均 10 / 10 通过。028 已修复顺序和空文件断言及 README 状态，旧录制在新断言下离线检查仍 10 / 10 通过，没有重跑模型。双配置 / 重复扩展仍待定，M6.4 Web 生命周期仍计划；本批未运行云端 CI。
+既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；027 / 028 保持原范围。033 的四次 deepseek-flash Web 任务保留首次正常失败与旧取消工作区未知；034 按用户新授权只追加一个取消任务，完成工作区匹配、实际 README 读取、页面停止与退出复验。累计五次任务，三个最终场景均有工作区匹配的生命周期样本；取消 / 中断仍 unevaluable。双配置 / 重复扩展仍待定，本批没有新的云端 CI。
 
 ## 项目目标
 
@@ -13,8 +13,8 @@
 | 项目 | 当前状态 |
 | --- | --- |
 | 插件版本 | `0.1.2`；M6.1 新 run.json 版本 2 / 清单版本 1，JSONL / status 仍为版本 1 |
-| 当前开发分支 | `codex/m5-m6-evaluation-reliability` |
-| 当前文档基线 | `a239d7d` 包含 026 / 027；028 修复及 029 分支整理位于当前分支，提交以 Git 记录为准 |
+| 当前开发分支 | `20261024/feat/m6-4-web-lifecycle` |
+| 当前文档基线 | `2c60b63` 包含 026 / 027 / 028 / 029；030 / 031 / 032 / 033 及 034 取消工作区补验尚未提交 |
 | 已核实基线提交 | `e47de36` 为云端路径兼容修复；`db6d572` 为 M5 审查修复；`36b4e1b` 为 M5 主体；`b0de80c` 为 M4.2；`a39e43c` 为 M4.1 指标溢出修复，`1a6cf69` 为主体；`5cdd803` 为 M3.4 启动失败修复；`bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
 | 开发语言 | JavaScript 宿主接入和生命周期及浏览交互；Python 已实现离线断言、状态化环境、真实单用例 / 批次、重复统计、离线报告及只读浏览服务 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
@@ -43,7 +43,9 @@
 | 未关闭直接退出 | 独立录制器子进程 flush 后 `process.exit(0)`，inspect 返回 2 | `scripts/fixtures/output-child.js` |
 | Web / headless 真实模型联调 | 实际安装、文件读取及字段答案、工具失败后响应、取消、强停已验证 | `scripts/prepare-live.js`、`scripts/run-live.js` |
 | 固定 fixture 证据检查 | Python 先重新 inspect，再核对工具结果、答案及结束事实；6 项测试通过 | `scripts/verify_live.py` |
-| desktop / SDK、Web 页面手动取消及普通进程信号关闭 | 尚未验证 | 后续按渠道需求验证 |
+| desktop / SDK | 尚未验证 | 后续按渠道需求验证 |
+| M6.4 脚本与无模型检查 | 三个专用子进程、合成事件及 fresh inspect；中断核对版本与完整已写前缀，独立格式只接受 synthetic | `scripts/check_web_lifecycle.py`、[Web 生命周期](web-lifecycle.md) |
+| M6.4 真实 Web 生命周期 | Windows / 当前 CLI：正常、取消、中断最终样本均核对工作区；034 仅追加一个取消任务补齐实际读取 / 停止验证，累计五任务保留原样本 | `scripts/web-lifecycle-live.js`、`scripts/verify_web_live.py`、记录 033 / 034 |
 | 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；三种断言、可选 after / textEquals 和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消和清理；可选用例 recorder 经冻结后传入隔离插件配置，批次 / 实验保留 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
@@ -53,7 +55,45 @@
 | 固定真实评测集 | 10 个用例单配置首次真实验收通过；028 补齐必要步骤顺序和精确空文本，旧录制离线检查通过；双配置比较尚未执行 | [固定评测集](core-evaluation.md)、`fixtures/evaluation/core/` |
 | 结果浏览与持续集成 | 本地只读浏览及审查修复已实现；云端路径问题已修，Windows CI 的 134 Python / 44 Node / 31 文件语法、compileall 和 demo 全部通过 | [结果浏览](result-browser.md)、记录 020 / 021 / 022 |
 
-## 最新验证：M6.3 审查修复（028，2026 年 10 月 24 日）
+## 最新验证：取消工作区一致性（034，2026 年 10 月 24 日）
+
+- 按用户新授权，仍用 deepseek-official / deepseek-flash，只追加一个 page-cancel 任务；提交前实际任务数为 0，录制中恰有一个 source.kind=user 输入。没有重跑正常或中断，累计为五任务（正常两次、取消两次、中断一次），原样本和历史记录未改。
+- 提交前工作区注册表、隔离配置、原生 cwd 与冻结 fixture 一致；实际 read README 的 callSeq=17 / resultSeq=18 返回正确 projectName，早于取消检查点 afterSeq=21。CUA 在同任务中真实点击停止，turn/end 为 aborted/user；之后原生 Ctrl+C、SIGINT / 卸载和 exit130，无强停或错误。
+- 新样本 25 条 sealed，fresh inspect=complete，全部 25 条原生事件 cwd 匹配；environment.workspaceMatch 与 workspaceObservationAvailable 均为 true。结果 cancelled / complete / unevaluable，主断言 not_run；单独读取证据检查 passed 仅说明取消前读取成功，不代表任务完成。
+- 新样本独立 CLI 复验通过；错误工作区副本被拒绝；缺 cwd 副本和原取消样本仍只得到未知，不能通过文档中的工作区覆盖门禁。原取消样本的生命周期通过与工作区未知两项事实均保留。
+- 本轮未改生产代码、测试或协议，定向复验现有 9 Python / 3 Node 通过；228 份受保护代码 / 历史记录 / 旧证据、18 份新原始证据摘要不变，自有 CLI PID 再查不存在。033 的 196 Python / 82 Node / 41 文件语法及 compileall 是历史全量结果，本轮不重复执行或记作新成绩。
+
+唯一追加任务额度已使用，运行指标为 modelCalls=2 / toolCalls=1，取消后的不完整 token 与费用仍为 null。当前 Windows / CLI 范围的取消工作区缺口已由新样本补齐；旧样本不升级，其他平台 / 配置 / 重复仍待新范围。详见 [记录 034](changes/2026-10-24-034-m6-4-cancel-workspace-validation.md)。
+
+## 历史验证：M6.4 真实 Web（033，2026 年 10 月 24 日）
+
+- 新增独立 Web 准备 / ConPTY 监督器、纯观察插件及 live 协议验证器，CUA 实际提交任务和点击停止。普通退出实际触发 SIGINT、插件卸载和 exitCode=130；任务中断使用自有 PID 强停，本机实际 exitCode=1 / signal=null，录制不补造封存。
+- 首轮正常任务实际读取了错误的默认工作区，README 不存在，读取与答案断言失败；监督器又误把上下文消息当成第二个任务，最终超时强停。原始报告中的 PID=0 等缺陷事实完整保留，不能重标为通过。修复实际工作区绑定、source.kind=user 计数、就绪后 PID 捕获和结束后撤销计时器后，只追加正常任务，未重跑取消 / 中断。
+- 最终正常任务为 completed / complete / passed，实际 README 读取与答案匹配；取消为 cancelled / complete / unevaluable；中断为 interrupted / unverified / unevaluable，后两项断言 not_run。取消样本在 cwd 观测加入前采集，workspaceMatch=null，原读取失败；其通过仅说明页面取消与退出成立。正常与中断工作区均匹配。
+- 原两项审查修复已用于真实录制：未知状态版本、空检查点及未覆盖 afterSeq 的检查点副本均被拒绝。真实中断原始 16 条事件、检查点覆盖 14 条截至 seq=13，操作 afterSeq=13，最后两条保持未确认；合成 fixture 继续严格要求覆盖完整前缀。
+- 新增 11 Python / 3 Node 回归，最终完整 196 Python（57.089 秒）、82 Node（无失败 / 跳过）、41 文件 JS 语法和 compileall 通过。独立 CLI 复验四样本保留一拒绝 / 三通过，八组负例副本均拒绝；38 份本批原始证据及 77 份受保护源文件 / 历史证据摘要不变。四个实际 CLI PID 和最终控制台预检 PID 再查均不存在。
+
+本批四次模型任务额度已使用，三类生命周期各有通过样本不等于首次 3 / 3 或四次任务成功。取消 fixture 一致性、其他平台 / 版本、双配置 / 重复均未补验；不再自动新增模型任务。详见 [修改记录 033](changes/2026-10-24-033-m6-4-live-web-validation.md)。
+
+## 历史验证：M6.4 中断门禁修复（032，2026 年 10 月 24 日）
+
+- 复审发现 031 的 unverified / recording 条件不足以排除不支持的运行状态格式，也不能证明状态检查点已经覆盖操作 afterSeq。本次新增版本门禁，并比较磁盘检查点与 fresh inspect 的完整前缀；空 / 落后检查点和残留 .tmp 均拒绝场景通过，通用 inspect 的未确认分类及历史验证结果保留。
+- 新增 5 项回归，旧实现在其中 4 个方法触发 11 个反例失败；修复后 22 项生命周期测试通过（1.956 秒）。非零序号起点、正常 / 取消 / 中断三正例保持通过，断言和任务分类不变。
+- 获准完整 185 Python（49.510 秒）、79 Node（无失败 / 跳过）、38 文件 JS 语法及 dsh_eval / scripts / test compileall 通过。真实进程回归直接在获准环境执行，本批没有新增沙箱失败样本。
+- 独立无模型入口三个场景均 verified，正常为 completed / complete / passed，取消和中断仍为 unevaluable / 断言 not_run。另由独立 Python CLI 重查三正例、拒绝未知状态版本 / 空检查点 / 落后检查点 / 残留替换文件四反例，所有 liveWebVerified 均 false；77 份受保护源文件及历史证据、28 份本批原始采集文件摘要保持不变。
+
+本批仅修改专用 Python 生命周期验收器、回归和文档，原 recorder / inspect、通用评测包及文件格式不变，没有模型任务或云端运行。下一步仍为真实 Web 启动和操作来源采集，模型任务配置与数量另定。详见 [修改记录 032](changes/2026-10-24-032-m6-4-interruption-gates.md)。
+
+## 历史验证：M6.4 脚本与无模型阶段（031，2026 年 10 月 24 日）
+
+- 新增 Web 固定用例、合成子进程采集、独立 Python 验收器及 npm 检查入口。生命周期捕获 / 验证使用独立版本 1，不改原 run / JSONL / status 或通用评测格式；真实录制器、文件读取、close / SIGKILL 和 fresh inspect 均实际执行，不启动 Harness 或模型。
+- 新增 17 项回归，获准环境通过；完整 180 Python（48.692 秒）、79 Node、38 文件 JS 语法及 dsh_eval / scripts / test compileall 通过。初次沙箱检查仅 7 项事件规则通过，真实 fork EPERM 未计通过，随后获准复验通过。
+- `npm.cmd run check:web-lifecycle` 的三项实际进程检查均 verified：正常任务 completed / complete / passed，取消 cancelled / complete / unevaluable，中断 interrupted / unverified / unevaluable；后两项断言 not_run。所有结果保持 synthetic / liveWebVerified=false，拒绝将 source 改为 live；不把场景 verified 算作任务成功或真实 Web 验收。
+- 回归覆盖错误取消原因 / 输入 / 顺序、缺失工具结果、错误答案 / 参数、损坏后保留旧成功、整对会话消失、已封存成功重标中断、超时兜底、进程未关闭、inspect 不可用及输出不可覆盖。无模型 CI 的 compileall 范围加入 scripts，本批未触发云端运行。
+
+下一步接入真实 Web 启动、操作来源与生命周期观察，再安排实际页面取消、普通退出和处理中断；新增模型配置与数量另定。详见 [Web 生命周期](web-lifecycle.md) 和 [记录 031](changes/2026-10-24-031-m6-4-no-model-lifecycle.md)。
+
+## 历史验证：M6.3 审查修复（028，2026 年 10 月 24 日）
 
 - 六个顺序用例声明 11 条 after 关系，一个空文件用例声明 textEquals=""。后继调用必须晚于先行结果，独立重试路径仍可交错；非空或空白工具返回不能算空文件。
 - 新增 5 项固定集回归先在旧实现出现 9 个反例 subTest 失败，修复后固定集 11 项通过；新增 8 项格式 / 依赖 / 文本边界测试。完整 163 Python（获准环境，45.800 秒）、79 Node、36 文件语法及 compileall 通过。
@@ -291,7 +331,7 @@
 - 队列上限只计算待写文本字节，不涵盖序列化临时对象、会话状态或系统缓存。没有日志轮转、会话淘汰或性能基准。
 - 状态替换验证限定当前 Windows 本地文件系统；没有验证所有网络盘、占用行为或操作系统强杀、断电场景。
 - 固定组件检查、真实 headless 和 Web 验证分别记录；本批只证明上述独立 profile 与固定任务。原有自定义模型配置没有导入测试 profile。
-- Web 使用测试专用 IPC 正常关闭，尚未验证页面手动取消、普通 Web 进程信号关闭、desktop 或 SDK。
+- M2.3 Web 基线仍使用测试专用 IPC；033 另行验证 Windows 当前 CLI 的页面实际取消、普通 ConPTY Ctrl+C 清理及处理中断。033 旧取消样本缺工作区观测，034 已用一个新取消任务补齐匹配 / 实际读取，旧证据仍未知；desktop / SDK、其他平台 / 版本仍未验证。
 - `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。`dsh_eval` 的 --run 已实现受控单会话单任务 headless；离线入口仍不执行环境 / 预算。M3.3 / M3.4 已补桥接和顺序批次，M4 已实现重复统计和单实验离线报告，M5 已实现本地浏览；并发、崩溃续跑及跨实验合并尚未实现。浏览是保存文件的读取，不是实时一致快照或新复验。指标只反映闭合录制和已报告 usage，运行耗时不是纯模型延迟，缺失与费用不补零。配对覆盖不足有选择偏差，没有置信区间、显著性或真实多配置表现结论。
 - 版本 2 由真实适配器采集请求路由 / 退出 / 干预，离线再核对日志请求头；来源字段本身不是签名。准备和清理另有期限，不把任务 timeoutSeconds 说成总退出硬上限，不支持 token / 步骤预算；本批只验证 Windows 与当前组件。
 
@@ -313,12 +353,13 @@
 | M6.1 | 当前范围完成，登记可靠性两项审查问题已修复 | 原 14 新 Node / 3 新 Python 与历史验证保留；修复新增七 Node、完整 65 Node / 137 Python、33 文件语法、真实组件与获准子进程 / 五轮 600 会话通过；本批云端未运行 |
 | M6.2 | 当前范围完成，任务入口录制配置传递已修复 | 原资源 / 输出验收保留；配置修复新增四 Node / 六 Python、完整 79 Node / 144 Python、真实配置合并和三组无模型组件验证通过；本批云端未运行 |
 | M6.3 | 单配置范围及三项审查修复完成；双配置 / 重复扩展待定 | 原 10 个真实任务结果保留；028 无模型回归 163 Python / 79 Node / 36 文件语法，旧录制按新断言及原冻结断言分别复验通过 |
-| M6.4 | 计划：Web 生命周期验收 | 下一批验证实际页面点击取消、正常退出与处理中断，新模型任务另定规模 |
+| M6.4 | Windows / 当前 CLI 的合成检查及真实生命周期当前范围完成，034 补齐取消工作区 | 累计五任务保留初始失败与旧取消未知，三个最终样本工作区匹配；033 全量196 Python / 82 Node基线保留，034 定向9 Python / 3 Node、真实取消与离线边界复验通过 |
 
 ## 文档导航
 
 - [M3 与后续计划](plans/m3-regression-evaluation.md)：M3 至 M5 已实现范围、云端验收和按需后续事项。
 - [M6 方案](plans/m6-reliability-validation.md)、[运行会话清单](run-manifest.md) 与 [录制资源边界](recorder-resources.md)：当前格式、写入 / 检查顺序、字节限制、单配置验收和后续 Web 范围。
+- [Web 生命周期](web-lifecycle.md)：M6.4 合成与真实入口、采集协议、进程 / 页面证据及覆盖局限。
 - [结果浏览](result-browser.md)：本地入口、保存结论的边界、文件范围、分页和无模型 CI。
 - [重复试验](experiments.md)：显式配置、重复编号、分母与指标覆盖及运行入口。
 - [配置报告](configuration-reports.md)：冻结输入与来源 / 实际路由核对、独立复验、配对差值和不确定性。

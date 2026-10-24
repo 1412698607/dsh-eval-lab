@@ -43,6 +43,10 @@ inspect --run <目录>
 | `scripts/check-output.js` | 三个真实子进程场景，检查输出和持久化证据 |
 | `scripts/prepare-live.js` | 通过实际 CLI 离线安装两个独立 profile，复制受控 fixture，只引用已有凭据文件 |
 | `scripts/run-live.js`、`scripts/fixtures/live-control.js` | 专用 CLI 子进程、真实流取消 / 强停、Web 停止 Agent 后退出及 inspect |
+| `scripts/check-web-lifecycle.js`、`scripts/fixtures/web-lifecycle-child.js` | M6.4 三个合成场景的专用子进程、原录制器、已写检查点与退出事实；不启动 Harness |
+| `scripts/web-lifecycle-live.js`、`scripts/fixtures/web-lifecycle-observer.js` | 真实 Web 独立准备、ConPTY / 专用 PID 控制、原生生命周期观察；页面动作由外部 CUA 执行 |
+| `scripts/verify_web_live.py` | 独立 live 协议、页面动作 / 模型流 / 路由 / 环境及真实退出关联，复用原 inspect 与任务门禁 |
+| `scripts/check_web_lifecycle.py`、`scripts/verify_web_lifecycle.py` | 新目录检查入口、fresh inspect 与离线生命周期判定；本阶段拒绝 live，取消 / 中断不计任务成功 |
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
@@ -128,6 +132,26 @@ Cordis 卸载仍会捕获清理错误，fiber.dispose 完成不等于日志有�
 控制插件仅由专用 IPC 子进程加载，不加入分发 bundle。它按实际 `{ agent, frame }` 接口，在首个模型流 chunk 后通知父进程；取消调用 `agent.cancel({ kind: 'user' })`，强停由父进程终止自己创建的进程。Windows 的 child.kill 不作为正常 SIGINT 关闭使用；Web 的 `stop` 通过 IPC 请求停止 Agent 后 appExit。headless 有 120 秒超时，Web 正常关闭有 15 秒超时，超时强停不计为成功。
 
 Python 固定检查器读取版本化联调报告定位明确目录，并重新调用 Node inspect，避免旧快照掩盖磁盘损坏。录制通过后核对用户输入、文件参数、callId 关联的实际工具结果、结果在答案之前、字段值和 turn/end；工具名来自事件。缺失文件要求真实 isError 和后续响应；取消检查 aborted/user；强停检查 SIGKILL 与非完整录制。它限定单会话与固定 fixture，不承担通用用例格式、批次调度或统计。M3.1 使用下述独立包，不修改该历史验证器。
+
+## M6.4 合成检查与真实 Web 采集
+
+新增入口将生命周期场景和任务成功分开：JavaScript 冻结 Web fixture，在独立目录启动合成子进程；子进程先 flush / close，再通知 runId、sessionId 和已写 afterSeq，父进程随后发送合成取消、允许 fixture 自然退出或对自己创建的子进程发送 SIGKILL。捕获 process.closed、exitCode、signal、forceStopped、intervention 与错误；超时兜底保留不同来源，不能冒充预期中断。
+
+Python 读取每场景的独立 webLifecycleFormatVersion 1 清单，每次调用原 Node inspect 后核对单运行 / 单会话、状态、匹配输入与任务序号。正常任务复用现有断言；取消要求 afterSeq 之后 aborted/user，任务中断要求已有输入、尚无结束并保留可校验的 recording 前缀。缺文件、损坏、旧成功、进程事实缺失和 inspect 不可用均不通过。verification 使用独立版本 1，verified 表示合成场景符合规则，liveWebVerified 始终 false。
+
+032 收紧中断门禁：run.json 的 formatVersion / statusFormatVersion / runManifestFormatVersion 必须分别为整数 2 / 1 / 1，会话检查点版本为整数 1。运行和会话均须为 recording / unverified，整体检查不得含清单开放之外的额外未确认原因，例如残留 .tmp。原 inspect 已校验状态检查点与对应原始字节前缀；Python 再比较状态的 writtenCount、writtenBytes、firstSeq、lastSeq、sha256 与 inspect 扫描到的完整前缀，要求非空且 lastSeq 等于 afterSeq。本阶段 fixture 在 flush 后停止追加事件，因此该相等条件核对操作前的已写边界；通用 inspect 仍允许有效检查点之后存在未确认尾部。Python 没有复制摘要计算，也没有更改录制器 / inspect 或数据格式。
+
+该格式只接受 synthetic，不作为通用执行 evidence。033 新增的真实路径使用另一个 liveWebLifecycleFormatVersion=1 协议及独立验证入口，不能把 source 改标签后升级；原 run / JSONL / status、通用 runner / evaluate / report 和 M2.3 控制插件均不变。
+
+真实路径先冻结用例、独立 home / Web profile / pnpm store；凭据仅引用已有文件。Web 工作区由 workspace-controller 的 documentsDirectory 部署配置绑定到 fixture，不能只依赖 CLI cwd。观察插件仅记录原生 session/event 的序号 / cwd / sourceKind / 路由、首个模型 chunk、SIGINT 和卸载，不 cancel、flush 或 appExit。监督器只计 source.kind=user 的实际任务输入，保留运行时上下文及技能目录消息的序号；服务就绪后捕获 ConPTY 实际 PID，等待 native onExit。
+
+外部 CUA 提交一次任务并保存动作元信息和页面证据。取消在首个模型流后先读取磁盘检查点，再实际点击页面停止；正常任务结束后，监督器向自己的 ConPTY 写 Ctrl+C，经宿主原生 SIGINT 清理。Windows 此 CLI 的退出码为 130；不使用 child.kill('SIGINT') 或测试 IPC 模拟普通退出。中断直接 SIGKILL 精确的自有进程，本机 native 回报 exitCode=1、signal=null，requestedSignal 与实际退出字段分别保留。任务超时与退出超时有独立干预原因，不能充当正常场景。
+
+Python 先验证 live 清单、观察区间 / PID、实际模型流和 CUA 动作，再重新 inspect、核对单会话任务及实际请求路由。共享任务门禁默认保留合成完整前缀策略；仅 live 路径允许有效未确认尾部，仍要求非空 status.lastSeq 覆盖 operation.afterSeq，并拒绝未知版本和额外不确定原因。正常 / 中断要求实际 cwd 与冻结 workspace 匹配；取消允许旧采集缺 cwd，但环境覆盖显式为未知，不声称 fixture 读取成功。后置门禁失败不能保留整体 passed，独立断言事实可保留。
+
+033 的四次真实尝试保留首轮正常失败；追加正常任务、页面取消和处理中断分别符合规则，旧取消样本工作区未知。034 复用现有驱动和协议另追加一个取消任务，注册表 / 隔离配置 / 全部 25 条原生 cwd 匹配 fixture，实际 read 结果早于取消，完成同任务停止与原生 Ctrl+C 清理；新样本环境两项观测均为 true，旧样本仍未知。验证该覆盖时显式要求 workspaceMatch 和 workspaceObservationAvailable 均为 true，不能仅凭生命周期 verified。
+
+累计五次任务保留所有旧证据，取消 / 中断任务仍 unevaluable。034 没有修改架构、采集格式或生产代码，只补真实样本与离线证据；其他平台 / 版本未验证。elapsedSeconds 是服务进程存活时间含页面等待，缺失 token / 费用保持 null。入口、字段和失败修正见 [Web 生命周期](web-lifecycle.md)、[记录 033](changes/2026-10-24-033-m6-4-live-web-validation.md) 和 [补验记录 034](changes/2026-10-24-034-m6-4-cancel-workspace-validation.md)。
 
 ## M3.1 用例与离线断言
 
