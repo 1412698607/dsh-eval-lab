@@ -153,6 +153,12 @@ Python 先验证 live 清单、观察区间 / PID、实际模型流和 CUA 动�
 
 累计五次任务保留所有旧证据，取消 / 中断任务仍 unevaluable。034 没有修改架构、采集格式或生产代码，只补真实样本与离线证据；其他平台 / 版本未验证。elapsedSeconds 是服务进程存活时间含页面等待，缺失 token / 费用保持 null。入口、字段和失败修正见 [Web 生命周期](web-lifecycle.md)、[记录 033](changes/2026-10-24-033-m6-4-live-web-validation.md) 和 [补验记录 034](changes/2026-10-24-034-m6-4-cancel-workspace-validation.md)。
 
+[审查 035](changes/2026-10-24-035-m6-4-status-review.md) 的两项边界已由 [修复 036](changes/2026-10-24-036-m6-4-startup-cleanup-timeline.md) 处理：先拒绝旧输出 / 创建新日志，再启动 ConPTY 并立即注册 onExit；初始化、输出、观察和状态 I/O 的可捕获错误唤醒监督，finally 在保存终态前回收仍存活的自有进程。初始 PID 0 只等待，不发 kill；最多十秒等待有效 PID 与原生退出，未确认时保留 closed=false 和清理错误，不保证失败报告必能落盘。无模型测试可注入终端创建函数并启动真实 Node 子进程，CLI 默认仍用原生 ConPTY，另有原生 fixture 复验；不是模型任务。
+
+普通退出校验 turn/end ≤ console-ctrl-c 操作 ≤ SIGINT ≤ 唯一卸载；取消操作仍是取消前检查点，保留首流 / 标记 / 点击 / 结束的原顺序，再接 SIGINT / 唯一卸载。所有时间允许相等。协议版本、录制器、inspect 与原始样本不变，历史成功 / 失败和旧取消工作区未知继续保留。
+
+[038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 修复共享任务门禁的父目录表示：verify_recorded_task 自身先 Path(directory).resolve()，再将解析后的 runDir 与同样解析的采集根比较，不依赖外层入口预先处理。合法 junction / 非规范化父路径可用，真实 traces 别名逃逸仍在 inspect 前拒绝；strict / live-tail、状态版本和检查点门禁不变。旧云端失败堆栈已核对，新提交的云端验收尚未执行。
+
 ## M3.1 用例与离线断言
 
 `python -m dsh_eval --case <case.json> --evidence <evidence.json> [--output <新文件>]` 使用 Python 标准库。只在仓库根目录运行，不改变 main.py 或 npm 插件分发内容。M3.1 引入 caseFormatVersion / evidenceFormatVersion / evaluationFormatVersion，当时均为 1；当前用例仍为 1，证据 / 结果兼容 1 / 2，扩展见下节和 [评测格式](evaluation-format.md)。
@@ -234,9 +240,9 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，下一批为 M5 结果浏览与持续集成。
+分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；双配置 / 重复及其他渠道扩展仍待确定。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、117 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，当前少量样本不构成模型表现或性能改善结论。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。038 当前完整无模型 Python 回归为 202 项；036 的 85 项 Node / 199 项 Python、033 的 82 / 196 与 034 的 3 / 9 定向结果保留为各批历史，本轮未重跑 Node。真实组件、模型和子进程检查范围见 [进度](progress.md)，少量验收样本不构成模型表现或性能改善结论。
 
 ## M3.3 实时状态化工具边界
 

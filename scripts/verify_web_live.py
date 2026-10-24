@@ -76,16 +76,19 @@ def validate_live(capture, observations, ui):
                 and any(item.get("kind") == "process/SIGINT" for item in observations)
                 and any(item.get("kind") == "observer/disposed" for item in observations), "No observed native Ctrl+C cleanup")
         signals = [item for item in observations if item.get("kind") == "process/SIGINT"]
-        require(len(ends) == len(signals) == 1 and timestamp(ends[0]["at"]) <= timestamp(signals[0]["at"]),
-                "Console shutdown did not follow the finished task")
+        disposals = [item for item in observations if item.get("kind") == "observer/disposed"]
+        require(len(ends) == len(signals) == len(disposals) == 1
+                and timestamp(ends[0]["at"]) <= timestamp(signals[0]["at"]) <= timestamp(disposals[0]["at"]),
+                "Console shutdown/disposal did not follow the finished task")
         if capture["scenario"] == "page-cancel":
             require(operation["kind"] == "page-cancel" and operation["requestedSignal"] is None
                     and timestamp(streams[0]["at"]) <= timestamp(operation["at"])
                     <= timestamp(ui["actions"][1]["at"]) <= timestamp(ends[0]["at"]),
                     "No browser cancellation after the observed checkpoint")
         else:
-            require(operation["kind"] == "console-ctrl-c" and operation["requestedSignal"] == "SIGINT",
-                    "Normal exit did not use native console input")
+            require(operation["kind"] == "console-ctrl-c" and operation["requestedSignal"] == "SIGINT"
+                    and timestamp(ends[0]["at"]) <= timestamp(operation["at"]) <= timestamp(signals[0]["at"]),
+                    "Normal console input did not follow task completion and precede SIGINT")
     return capture
 
 

@@ -4,6 +4,7 @@ from contextlib import redirect_stdout
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -137,6 +138,16 @@ class WebLifecycleProcessTests(unittest.TestCase):
 
     def save_capture(self, directory, value):
         (directory / "lifecycle.json").write_text(json.dumps(value), encoding="utf-8")
+
+    def directory_alias(self, alias, target):
+        if os.name == "nt":
+            subprocess.run(["cmd", "/d", "/c", "mklink", "/J", str(alias), str(target.resolve())],
+                           capture_output=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            self.addCleanup(alias.rmdir)
+        else:
+            alias.symlink_to(target.resolve(), target_is_directory=True)
+            self.addCleanup(alias.unlink)
+        return alias
 
     def save_checkpoint(self, directory, count):
         capture = load_json(directory / "lifecycle.json")
@@ -294,6 +305,41 @@ class WebLifecycleProcessTests(unittest.TestCase):
         self.save_checkpoint(directory, 0)
         with self.assertRaises(ValueError):
             verify_recorded_task(directory, capture, case, {}, allow_unconfirmed_tail=True)
+
+    def test_shared_helper_accepts_directory_alias(self):
+        for scenario, status in (("normal-exit", "completed"), ("page-cancel", "cancelled"),
+                                 ("process-interrupt", "interrupted")):
+            directory = self.captures / scenario
+            alias = self.directory_alias(self.root / f"alias-{scenario}", directory)
+            self.assertNotEqual(alias, alias.resolve())
+            capture = load_json(directory / "lifecycle.json")
+            case = validate_case(load_json(directory / "case.json"))
+            for live_tail in (False, True):
+                with self.subTest(scenario=scenario, live_tail=live_tail):
+                    result = {}
+                    verify_recorded_task(alias, capture, case, result, allow_unconfirmed_tail=live_tail)
+                    self.assertEqual(result["execution"]["status"], status)
+
+    def test_shared_helper_normalizes_parent_path(self):
+        directory = self.copied()
+        (directory / "via").mkdir()
+        alias = directory / "via" / ".."
+        self.assertNotEqual(alias, alias.resolve())
+        result = {}
+        verify_recorded_task(alias, load_json(directory / "lifecycle.json"),
+                             validate_case(load_json(directory / "case.json")), result)
+        self.assertEqual(result["outcome"], "passed")
+
+    def test_shared_helper_still_rejects_resolved_escape(self):
+        directory = self.root / "escape-capture"
+        directory.mkdir()
+        source = self.captures / "normal-exit"
+        self.directory_alias(directory / "traces", source / "traces")
+        capture = load_json(source / "lifecycle.json")
+        case = validate_case(load_json(source / "case.json"))
+        with patch("scripts.verify_web_lifecycle.inspect_recording", side_effect=AssertionError("Must reject before inspect")):
+            with self.assertRaisesRegex(ValueError, "Trace directory escapes"):
+                verify_recorded_task(directory, capture, case, {})
 
     def test_interruption_rejects_pending_status_replacement(self):
         directory = self.copied("process-interrupt")

@@ -89,6 +89,7 @@ def validate_capture(capture):
 
 
 def verify_recorded_task(directory, capture, case, result, *, allow_unconfirmed_tail=False):
+    directory = Path(directory).resolve()
     require(case["configRef"]["profile"] == "web", "Expected a frozen Web case")
     run_dir = directory / capture["runDir"]
     require(run_dir.resolve().is_relative_to(directory), "Trace directory escapes the capture")

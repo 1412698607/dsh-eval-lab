@@ -1,7 +1,7 @@
 // Explicit real Web driver. Browser submission/cancellation happens outside this process.
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -80,10 +80,15 @@ export function checkpoint(directory, sessionId) {
   return { runId, sessionId, runDir: `traces/${runId}`, afterSeq: status.lastSeq };
 }
 
-export async function runWeb(directory) {
+export async function runWeb(directory, spawnTerminal) {
   const setup = readJson(join(directory, "setup.json"));
   if (setup.webLiveSetupVersion !== 1 || !scenarios.includes(setup.scenario)) throw new Error("Invalid live setup");
   await validateHost(setup.modulesDir);
+  for (const name of ["state.json", "state.json.new", "lifecycle-live.json", "browser-url.txt"]) {
+    if (existsSync(join(directory, name))) throw new Error(`Refusing existing capture: ${name}`);
+  }
+  // Reserve output before starting a child. Later I/O failures still require cleanup.
+  writeFileSync(join(directory, "terminal.log"), "", { flag: "wx" });
   const report = { liveWebLifecycleFormatVersion: 1, source: "live", scenario: setup.scenario,
     runId: null, sessionId: null, runDir: null, operation: null,
     platform: process.platform, cliVersion: setup.cliVersion, nodePtyVersion: setup.nodePtyVersion,
@@ -93,6 +98,9 @@ export async function runWeb(directory) {
   let interval;
   let timeout;
   let shutdownTimer;
+  let exited;
+  let failCapture;
+  const failed = new Promise(resolve => { failCapture = resolve; });
   let seen = 0;
   let text = "";
   let firstStream = false;
@@ -104,6 +112,16 @@ export async function runWeb(directory) {
     const path = join(directory, "state.json");
     writeFileSync(`${path}.new`, JSON.stringify({ ...report, firstStream, turnEnd: end, observedWorkspace }) + "\n");
     renameSync(`${path}.new`, path);
+  };
+  const abort = (error) => {
+    report.process.error ??= String(error.message);
+    failCapture();
+  };
+  const killOwned = () => {
+    const pid = terminal.pid;
+    if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Owned terminal PID is not ready");
+    report.process.pid = pid;
+    process.kill(pid, "SIGKILL");
   };
   const stop = (intervention) => {
     if (!terminal || report.process.closed || report.process.intervention) return;
@@ -120,7 +138,7 @@ export async function runWeb(directory) {
       }
       if (intervention === "expected-interrupt" || intervention === "timeout") {
         report.process.forceStopped = true;
-        process.kill(terminal.pid, "SIGKILL");
+        killOwned();
       } else {
         // Actual ConPTY input. Never child.kill('SIGINT') or process.emit('SIGINT').
         terminal.write("\x03");
@@ -128,15 +146,13 @@ export async function runWeb(directory) {
           if (report.process.closed) return;
           report.process.forceStopped = true;
           report.process.intervention = "shutdown-timeout";
-          process.kill(terminal.pid, "SIGKILL");
+          try { killOwned(); } catch (error) { abort(error); }
         }, 10000);
       }
     } catch (error) {
-      report.process.error = String(error.message);
-      report.process.forceStopped = true;
-      try { process.kill(terminal.pid, "SIGKILL"); } catch { /* Preserve the original error. */ }
+      abort(error);
     }
-    state();
+    try { state(); } catch (error) { abort(error); }
   };
   commands.on("line", (line) => {
     try {
@@ -156,31 +172,42 @@ export async function runWeb(directory) {
       if (command.type !== "shutdown") throw new Error("Only console shutdown is supported; cancel on the actual page");
       if (!end) throw new Error("Wait for the actual task's turn/end before shutdown");
       stop("console-shutdown");
-    } catch (error) { output({ error: error.message }); }
+    } catch (error) {
+      if (error.code) abort(error);
+      output({ error: error.message });
+    }
   });
   const parentLost = () => stop("parent-disconnected");
   commands.on("close", parentLost);
   try {
-    terminal = ptyModule(setup.modulesDir).spawn(process.execPath, [setup.cli, "--profile", "web", "--patch", setup.patch,
+    const spawn = spawnTerminal ?? ((...args) => ptyModule(setup.modulesDir).spawn(...args));
+    terminal = spawn(process.execPath, [setup.cli, "--profile", "web", "--patch", setup.patch,
       "--no-open", "--host", "127.0.0.1", "--port", "0"], {
       name: "xterm-color", cols: 180, rows: 40, cwd: setup.workspace,
       env: { ...process.env, DSH_HOME: setup.home, DSH_TELEMETRY_DISABLED: "1",
         DSH_EVAL_OUTPUT_DIR: join(directory, "traces"), DSH_EVAL_WEB_OBSERVATIONS: join(directory, "observations.jsonl") },
     });
+    // Register exit observation before subscribing to output or writing any more evidence.
+    exited = new Promise((done) => terminal.onExit(({ exitCode, signal }) => {
+      Object.assign(report.process, { pid: terminal.pid, closed: true, exitCode, signal: signal ?? null });
+      done();
+    }));
     report.process.pid = terminal.pid;
-    writeFileSync(join(directory, "terminal.log"), "", { flag: "wx" });
     terminal.onData((chunk) => {
-      appendFileSync(join(directory, "terminal.log"), chunk);
-      text = (text + chunk).slice(-100000);
-      const match = stripVTControlCharacters(text).match(/dsh web: (http:\/\/127\.0\.0\.1:\d+\S*)/);
-      if (match && !report.url) {
-        // Bootstrap URL carries a local process token; keep it in ignored evidence only.
-        writeFileSync(join(directory, "browser-url.txt"), match[1] + "\n", { flag: "wx" });
-        report.url = new URL(match[1]).origin;
-        report.process.pid = terminal.pid; // ConPTY assigns the real PID after initial pipe readiness.
-        state();
-        output({ ready: true, directory, url: report.url, pid: terminal.pid });
-      }
+      if (report.process.error) return;
+      try {
+        appendFileSync(join(directory, "terminal.log"), chunk);
+        text = (text + chunk).slice(-100000);
+        const match = stripVTControlCharacters(text).match(/dsh web: (http:\/\/127\.0\.0\.1:\d+\S*)/);
+        if (match && !report.url) {
+          // Bootstrap URL carries a local process token; keep it in ignored evidence only.
+          writeFileSync(join(directory, "browser-url.txt"), match[1] + "\n", { flag: "wx" });
+          report.url = new URL(match[1]).origin;
+          report.process.pid = terminal.pid; // ConPTY assigns the real PID after initial pipe readiness.
+          state();
+          output({ ready: true, directory, url: report.url, pid: terminal.pid });
+        }
+      } catch (error) { abort(error); }
     });
     interval = setInterval(() => {
       try {
@@ -208,19 +235,39 @@ export async function runWeb(directory) {
           }
         }
         if (seen !== previousSeen) state();
-      } catch (error) { report.process.error ??= error.message; stop("observation-error"); }
+      } catch (error) { abort(error); }
     }, 30);
-    await new Promise((done) => terminal.onExit(({ exitCode, signal }) => {
-      Object.assign(report.process, { closed: true, exitCode, signal: signal ?? null });
-      done();
-    }));
-  } catch (error) { report.process.error ??= String(error.message); }
+    await Promise.race([exited, failed]);
+  } catch (error) { abort(error); }
   finally {
     clearInterval(interval);
     clearTimeout(timeout);
     clearTimeout(shutdownTimer);
     commands.off("close", parentLost);
     commands.close();
+    if (terminal && !report.process.closed) {
+      report.process.forceStopped = true;
+      report.process.intervention ??= "capture-error";
+      // ConPTY may initially expose PID 0. Never pass that value to process.kill.
+      const deadline = Date.now() + 10000;
+      while (!report.process.closed && !(Number.isSafeInteger(terminal.pid) && terminal.pid > 0) && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      let cleanupError;
+      if (!report.process.closed) {
+        try { killOwned(); } catch (error) { cleanupError = error.message; }
+        let cleanupTimer;
+        try {
+          await Promise.race([exited, new Promise(resolve => {
+            cleanupTimer = setTimeout(resolve, Math.max(0, deadline - Date.now()));
+          })]);
+        } finally { clearTimeout(cleanupTimer); }
+      }
+      if (!report.process.closed) {
+        const reason = cleanupError ?? "Owned process exit was not observed during cleanup";
+        report.process.error = `${report.process.error ?? "Capture failed"}; cleanup: ${reason}`;
+      }
+    }
     report.finishedAt = new Date().toISOString();
     state();
     saveNew(join(directory, "lifecycle-live.json"), report);

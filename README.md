@@ -19,6 +19,8 @@
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
 - M6.4 已增加独立真实 Web 采集与验收：Windows / deepseek-flash 累计五次任务，保留首次正常失败和旧取消样本；最新取消补验已核对实际工作区与 README 读取，三个最终场景均有工作区匹配的生命周期样本，取消 / 中断任务仍 unevaluable。
+- M6.4 [审查 035](docs/changes/2026-10-24-035-m6-4-status-review.md) 的异常启动清理与普通退出时间关联两项 P2 已由 [修复 036](docs/changes/2026-10-24-036-m6-4-startup-cleanup-timeline.md) 处理；新增无模型回归及原生 ConPTY 复验，历史样本与原始证据保留。
+- [复审 037](docs/changes/2026-10-24-037-m6-4-final-review-ci-status.md) 保留原云端失败与当时日志不可读的边界；[038](docs/changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 登录读取堆栈后修复共享验证函数的父目录规范化缺口，补真实目录别名与越界回归。本地修复仍未提交，不把本地通过当作新云端验收。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -68,7 +70,7 @@ python -m scripts.verify_web_live runs/web-lifecycle-live/normal-new --output ru
 
 prepare 仅冻结环境并离线安装本地插件；run 启动独立 Web，CUA 在页面提交任务时才调用模型。仓库命令不自动完成浏览器步骤。正常任务完成后输入 `{"type":"shutdown"}` 经真实 ConPTY Ctrl+C 清理；取消必须实际点击页面按钮，中断由监督器终止自己的 PID。完整操作、采集协议、四次尝试及取消样本的覆盖局限见 [Web 生命周期](docs/web-lifecycle.md) 和 [记录 033](docs/changes/2026-10-24-033-m6-4-live-web-validation.md)。
 
-[记录 034](docs/changes/2026-10-24-034-m6-4-cancel-workspace-validation.md) 另获授权只追加一个 deepseek-flash 取消任务：提交前注册表 / 原生 cwd 与隔离 fixture 一致，实际 README 读取成功后点击停止，结果 cancelled / complete / unevaluable，工作区两项观测均为 true。旧取消样本不改写，仍保留工作区未知；本轮未改生产代码、协议或运行方式。
+[记录 034](docs/changes/2026-10-24-034-m6-4-cancel-workspace-validation.md) 另获授权只追加一个 deepseek-flash 取消任务：提交前注册表 / 原生 cwd 与隔离 fixture 一致，实际 README 读取成功后点击停止，结果 cancelled / complete / unevaluable，工作区两项观测均为 true。旧取消样本不改写，仍保留工作区未知；034 未改生产代码、协议或运行方式。
 
 ## 本地演示
 
@@ -339,16 +341,16 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [脚本与无模型阶段](docs/web-lifecycle.md)，下一步采集真实 Web 页面取消、普通退出与处理中断；新模型任务另定规模。双配置与重复扩展仍待配置和预算。本批未运行云端 CI，不继承 M5 云端结果作为本批验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。已核实提交 `103c090` 包含 030 至 034，035 同步提交状态，036 已修复两项审查问题并补无模型回归。双配置与重复扩展、其他平台 / CLI / desktop / SDK 仍待确定范围；本轮没有新增模型任务或云端 CI，不继承 M5 云端结果作为本轮验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
 - [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
-- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、单配置验收及后续 Web 范围。
+- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、单配置与 Web 当前验收范围。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
-- [Web 生命周期](docs/web-lifecycle.md)：M6.4 无模型检查、进程与操作事实、真实 Web 待验收范围。
+- [Web 生命周期](docs/web-lifecycle.md)：M6.4 合成与真实采集、进程与操作事实、工作区核对及覆盖局限。
 - [评测格式](docs/evaluation-format.md)：版本 1 / 2 用例、证据与结果、离线命令。
 - [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。
 - [批次运行](docs/batch-runner.md)：顺序执行、输入快照、状态重置、失败策略与结果清单。

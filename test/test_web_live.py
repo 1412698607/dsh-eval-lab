@@ -119,6 +119,45 @@ class LiveWebMetadataTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_live(capture, observations, {**ui, **change})
 
+    def test_normal_console_operation_must_follow_end_and_precede_sigint(self):
+        capture, observations, ui = reference()
+        for second in (1, 9, 16, 19):
+            changed = copy.deepcopy(capture)
+            changed["operation"]["at"] = at(second)
+            with self.subTest(second=second), self.assertRaises(ValueError):
+                validate_live(changed, observations, ui)
+        for second in (10, 12, 15):
+            changed = copy.deepcopy(capture)
+            changed["operation"]["at"] = at(second)
+            with self.subTest(boundary=second):
+                self.assertIs(validate_live(changed, observations, ui), changed)
+
+    def test_console_disposal_must_be_unique_and_follow_sigint(self):
+        for scenario in ("normal-exit", "page-cancel"):
+            capture, observations, ui = reference(scenario)
+            for second in (3, 9, 10, 14):
+                changed = copy.deepcopy(observations)
+                next(item for item in changed if item["kind"] == "observer/disposed")["at"] = at(second)
+                changed.sort(key=lambda item: item["at"])
+                with self.subTest(scenario=scenario, second=second), self.assertRaises(ValueError):
+                    validate_live(capture, changed, ui)
+            with self.subTest(scenario=scenario, duplicate=True), self.assertRaises(ValueError):
+                validate_live(capture, [*observations, observations[-1]], ui)
+            for second in (15, 16, 20):
+                changed = copy.deepcopy(observations)
+                changed[-1]["at"] = at(second)
+                with self.subTest(scenario=scenario, boundary=second):
+                    self.assertIs(validate_live(capture, changed, ui), capture)
+
+    def test_equal_console_lifecycle_timestamps_are_accepted(self):
+        for scenario in ("normal-exit", "page-cancel"):
+            capture, observations, ui = reference(scenario)
+            for item in observations[1:]:
+                item["at"] = at(10)
+            if scenario == "normal-exit":
+                capture["operation"]["at"] = at(10)
+            self.assertIs(validate_live(capture, observations, ui), capture)
+
     def test_interrupt_rejects_finished_task_timeout_and_wrong_signal(self):
         original, observations, ui = reference("process-interrupt")
         ended = [*observations, {"observationVersion": 1, "at": at(5), "kind": "session/event", "type": "turn/end", "pid": 123}]

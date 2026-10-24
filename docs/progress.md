@@ -1,6 +1,6 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 24 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 `a239d7d` 包含 [M6.2 配置传递修复 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md) 与 [M6.3 单配置固定评测集 027](changes/2026-10-24-027-m6-3-core-evaluation.md)，`2c60b63` 包含 [审查修复 028](changes/2026-10-24-028-m6-3-assertion-constraints.md) 与 [分支整理 029](changes/2026-10-24-029-m5-m6-delivery-branch.md)。[分支记录 030](changes/2026-10-24-030-m6-4-development-branch.md) 保留创建时名称；实际分支为 `20261024/feat/m6-4-web-lifecycle`。031 / 032 合成检查、门禁修复和 [真实 Web 接入 033](changes/2026-10-24-033-m6-4-live-web-validation.md) 保留，当前完成 [取消工作区补验 034](changes/2026-10-24-034-m6-4-cancel-workspace-validation.md)，本批尚未提交。
+截至 2026 年 10 月 24 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 `a239d7d` 包含 [M6.2 配置传递修复 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md) 与 [M6.3 单配置固定评测集 027](changes/2026-10-24-027-m6-3-core-evaluation.md)，`2c60b63` 包含 [审查修复 028](changes/2026-10-24-028-m6-3-assertion-constraints.md) 与 [分支整理 029](changes/2026-10-24-029-m5-m6-delivery-branch.md)。实际分支为 `20261024/feat/m6-4-web-lifecycle`，HEAD `103c090` 已包含 030 至 034。035 至 037 及 036 两项 P2 修复均保留未提交状态；本轮 [038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 登录读取原云端失败堆栈，修复共享验证函数的父目录规范化缺口，完整 202 Python 回归通过，没有新增模型、提交 / 推送或云端运行。
 
 既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；027 / 028 保持原范围。033 的四次 deepseek-flash Web 任务保留首次正常失败与旧取消工作区未知；034 按用户新授权只追加一个取消任务，完成工作区匹配、实际 README 读取、页面停止与退出复验。累计五次任务，三个最终场景均有工作区匹配的生命周期样本；取消 / 中断仍 unevaluable。双配置 / 重复扩展仍待定，本批没有新的云端 CI。
 
@@ -14,7 +14,8 @@
 | --- | --- |
 | 插件版本 | `0.1.2`；M6.1 新 run.json 版本 2 / 清单版本 1，JSONL / status 仍为版本 1 |
 | 当前开发分支 | `20261024/feat/m6-4-web-lifecycle` |
-| 当前文档基线 | `2c60b63` 包含 026 / 027 / 028 / 029；030 / 031 / 032 / 033 及 034 取消工作区补验尚未提交 |
+| 当前文档基线 | `103c090` 已包含 030 至 034；035 至 038 尚未提交，历史验证结果保留 |
+| 当前云端状态 | 103c090 的运行 40075970788 保持原 Python failure；038 已读取 196 项中一项路径误判堆栈并本地修复 / 验证，新修复尚未进入云端运行 |
 | 已核实基线提交 | `e47de36` 为云端路径兼容修复；`db6d572` 为 M5 审查修复；`36b4e1b` 为 M5 主体；`b0de80c` 为 M4.2；`a39e43c` 为 M4.1 指标溢出修复，`1a6cf69` 为主体；`5cdd803` 为 M3.4 启动失败修复；`bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
 | 开发语言 | JavaScript 宿主接入和生命周期及浏览交互；Python 已实现离线断言、状态化环境、真实单用例 / 批次、重复统计、离线报告及只读浏览服务 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
@@ -45,7 +46,7 @@
 | 固定 fixture 证据检查 | Python 先重新 inspect，再核对工具结果、答案及结束事实；6 项测试通过 | `scripts/verify_live.py` |
 | desktop / SDK | 尚未验证 | 后续按渠道需求验证 |
 | M6.4 脚本与无模型检查 | 三个专用子进程、合成事件及 fresh inspect；中断核对版本与完整已写前缀，独立格式只接受 synthetic | `scripts/check_web_lifecycle.py`、[Web 生命周期](web-lifecycle.md) |
-| M6.4 真实 Web 生命周期 | Windows / 当前 CLI：正常、取消、中断最终样本均核对工作区；034 仅追加一个取消任务补齐实际读取 / 停止验证，累计五任务保留原样本 | `scripts/web-lifecycle-live.js`、`scripts/verify_web_live.py`、记录 033 / 034 |
+| M6.4 真实 Web 生命周期 | Windows / 当前 CLI 三类最终样本的历史验收保留；036 修复 035 的异常启动清理与普通退出时间关联，无模型原生 / 离线复验通过 | `scripts/web-lifecycle-live.js`、`scripts/verify_web_live.py`、记录 033 至 036 |
 | 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；三种断言、可选 after / textEquals 和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消和清理；可选用例 recorder 经冻结后传入隔离插件配置，批次 / 实验保留 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
@@ -55,7 +56,40 @@
 | 固定真实评测集 | 10 个用例单配置首次真实验收通过；028 补齐必要步骤顺序和精确空文本，旧录制离线检查通过；双配置比较尚未执行 | [固定评测集](core-evaluation.md)、`fixtures/evaluation/core/` |
 | 结果浏览与持续集成 | 本地只读浏览及审查修复已实现；云端路径问题已修，Windows CI 的 134 Python / 44 Node / 31 文件语法、compileall 和 demo 全部通过 | [结果浏览](result-browser.md)、记录 020 / 021 / 022 |
 
-## 最新验证：取消工作区一致性（034，2026 年 10 月 24 日）
+## 最新验证：M6.4 CI 采集目录规范化（038，2026 年 10 月 24 日）
+
+- 登录后已读原 job 的真实堆栈：196 项 / 57.720 秒 / errors=1，失败在共享 verify_recorded_task 的目录包含关系比较，尚未进入目标检查点断言；036 未涉及此处。
+- 共享函数只增加入口 Path(directory).resolve()，使父子目录以相同表示比较；真实 traces 别名逃逸仍在 inspect 前拒绝，外层固定 runDir 校验、格式版本和检查点门禁不变。
+- 新增三项真实 junction / 非规范化父路径 / 逃逸回归，修复前 3 项出现 7 个错误，修复后生命周期 39 项通过；获准完整 202 Python / 48.113 秒及 compileall 通过。
+- 独立合成入口三场景 verified，liveWebVerified=false；正常 passed，取消 / 中断 unevaluable。没有新增模型任务，不重复 036 的 Node / JS 检查，不改原始证据或历史记录。
+- 当前修复仍在本地，未提交 / 推送或触发云端；下一入口是包含修复的新提交验收，不将原失败改写为云端通过。详见 [记录 038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md)。
+
+## 历史复审：M6.4 修复与云端状态（037，2026 年 10 月 24 日）
+
+- 036 的四份代码 / 测试差异和相关文档复审未发现新的可确认代码问题；本轮不改实现，不重复完整回归，036 的 199 Python / 85 Node 等结果保留为历史。
+- 新执行 demo:eval，并用真实离线 CLI / fresh inspect 检查 read-project、missing-file 两份新合成输出，均 completed / complete / passed；无模型任务。
+- [现有云端运行 40075970788](https://github.com/1412698607/dsh-eval-lab/actions/runs/40075970788) 的 head SHA 精确匹配 103c090：JS 语法 / Node 步骤通过，Python 步骤失败，后续 Python 编译 / 示例跳过，不能验收为通过。
+- check-run 仅提供退出码 1；日志 API 返回 403，网页要求登录，未取得失败测试名 / 堆栈，根因仍未知。该运行未包含本地 035 / 036，不能从其状态判断本地修复是否解决了云端问题。
+- 下一入口：取得失败堆栈再定位；035 至 037 保留未提交状态，没有推送、重跑云端或新模型。详见 [记录 037](changes/2026-10-24-037-m6-4-final-review-ci-status.md)。
+
+## 历史验证：M6.4 启动清理与退出时间关联修复（036，2026 年 10 月 24 日）
+
+- 启动前拒绝旧输出，启动成功后立即注册退出观察；初始化 / I/O 可捕获错误统一回收自有正整数 PID，最多十秒等待有效 PID 与实际退出，不将 PID 0 传入 kill，失败事实不伪装为正常关闭。
+- 普通退出要求 turn/end ≤ Ctrl+C 操作 ≤ SIGINT ≤ 唯一卸载；取消检查点 / 页面停止保留原时间顺序，允许同一毫秒相等。
+- 新增三项 Python / 三项 Node 回归。修复前 Python 出现 14 个反例失败，两项 Node 启动检查失败；修复后定向 36 Python / 6 Node 通过。
+- 实际原生 ConPTY 无模型 fixture 验证旧输出预拒绝、启动后写入冲突回收和真实退出；首轮因输入管道关闭导致 fixture 未启动的失败保留，保持输入打开后新目录通过。
+- 八份明确保存场景经 fresh inspect / 独立 CLI 核对：五份应通过样本通过，初始失败及两份时间矛盾反例拒绝；原证据未改，旧取消环境未知保留，新增模型任务为零。
+- 获准完整 199 Python / 85 Node（无失败 / 跳过）、41 份 JS 语法及 compileall 通过，未新增模型任务。文档 / 摘要收尾结果见 [记录 036](changes/2026-10-24-036-m6-4-startup-cleanup-timeline.md)。本轮不提交、推送或运行云端 CI，后续当前提交的云端验收 / 扩展范围另定。
+
+## 历史审查：文档状态与 M6.4 交付（035，2026 年 10 月 24 日）
+
+- 已核实 `103c090` 包含 030 至 034；同步当前提交与完成范围，旧记录中的未提交和失败均保留。
+- 两项 P2 待修：ConPTY 启动后证据文件写入失败未回收子进程；普通退出的 operation / 卸载时间未关联原生任务结束与 SIGINT，矛盾时间副本仍通过。
+- 无模型复现：实际原生专用子进程验证清理遗漏后已按自有 PID 回收；已有正常样本的两份独立时间副本经 fresh inspect / CLI 均误通过，原证据未改。
+- 获准环境现有 33 项 Python、3 项 Node、41 份 JS 语法通过；首次沙箱 spawn / 管道 EPERM 均不计通过。本轮未修改代码 / 测试，未运行真实模型、完整回归或云端 CI。
+- 下一批先修上述两项并补回归，再做当前提交的无模型云端验收或扩大配置 / 重复范围。详见 [记录 035](changes/2026-10-24-035-m6-4-status-review.md)。
+
+## 历史验证：取消工作区一致性（034，2026 年 10 月 24 日）
 
 - 按用户新授权，仍用 deepseek-official / deepseek-flash，只追加一个 page-cancel 任务；提交前实际任务数为 0，录制中恰有一个 source.kind=user 输入。没有重跑正常或中断，累计为五任务（正常两次、取消两次、中断一次），原样本和历史记录未改。
 - 提交前工作区注册表、隔离配置、原生 cwd 与冻结 fixture 一致；实际 read README 的 callSeq=17 / resultSeq=18 返回正确 projectName，早于取消检查点 afterSeq=21。CUA 在同任务中真实点击停止，turn/end 为 aborted/user；之后原生 Ctrl+C、SIGINT / 卸载和 exit130，无强停或错误。
@@ -353,7 +387,7 @@
 | M6.1 | 当前范围完成，登记可靠性两项审查问题已修复 | 原 14 新 Node / 3 新 Python 与历史验证保留；修复新增七 Node、完整 65 Node / 137 Python、33 文件语法、真实组件与获准子进程 / 五轮 600 会话通过；本批云端未运行 |
 | M6.2 | 当前范围完成，任务入口录制配置传递已修复 | 原资源 / 输出验收保留；配置修复新增四 Node / 六 Python、完整 79 Node / 144 Python、真实配置合并和三组无模型组件验证通过；本批云端未运行 |
 | M6.3 | 单配置范围及三项审查修复完成；双配置 / 重复扩展待定 | 原 10 个真实任务结果保留；028 无模型回归 163 Python / 79 Node / 36 文件语法，旧录制按新断言及原冻结断言分别复验通过 |
-| M6.4 | Windows / 当前 CLI 的合成检查及真实生命周期当前范围完成，034 补齐取消工作区 | 累计五任务保留初始失败与旧取消未知，三个最终样本工作区匹配；033 全量196 Python / 82 Node基线保留，034 定向9 Python / 3 Node、真实取消与离线边界复验通过 |
+| M6.4 | Windows / 当前 CLI 历史交付保留；036 两项修复及 038 CI 路径缺口本地已验证，新提交云端待验收 | 038 完整202 Python、39生命周期、compileall与独立三场景通过；036的85 Node / 41 JS为历史，原103c090云端失败不覆盖 |
 
 ## 文档导航
 
