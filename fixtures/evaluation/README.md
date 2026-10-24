@@ -17,3 +17,5 @@ M3.3 新增 `stale-path.case.json` / `retry-read.case.json`：版本 2 的虚拟
 M3.4 的 `recovery.batch.json` 是真实执行清单，顺序包含 stale-path、retry-first、retry-reset；后两项显式引用同一 retry-read 用例以检查重置。运行 `python -m dsh_eval --batch fixtures/evaluation/recovery.batch.json --run` 会调用真实模型三次。stale-path 任务已明确实际尝试 README 引用后再选替代文件，避免答案正确但缺少目标故障证据。说明见 [批次运行](../../docs/batch-runner.md)。
 
 M4.1 的 `recovery.experiment.json` 显式声明一个用例、一个配置、两次重复，共两个真实模型任务。运行 `python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --run` 会调用模型；清单本身不是执行证据，也不参与合成 demo。重复状态、样本关联和统计口径见 [重复试验](../../docs/experiments.md)。
+
+M6.3 的 [core 目录](core/README.md) 提供 10 个固定版本 2 用例及单配置、单轮实验清单，覆盖读取、发现、引用、缺失 / 空文件、中文与故障恢复。无模型验收加入正常 Python 测试；真实运行必须显式选择 `--experiment fixtures/evaluation/core/core.experiment.json --run`，共 10 次计划任务，不自动参与 demo 或 CI。验收结果与边界见 [固定评测集](../../docs/core-evaluation.md)。

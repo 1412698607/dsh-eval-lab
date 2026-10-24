@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 let count = 0;
-for (const directory of ["src", "scripts", "test"]) {
+for (const directory of ["src", "scripts", "test", "dsh_eval/web"]) {
   const root = new URL(`../${directory}/`, import.meta.url);
   for (const entry of await readdir(root, { recursive: true })) {
     if (!entry.endsWith(".js")) continue;

@@ -90,7 +90,7 @@ def validate_experiment(experiment):
 
 
 def validate_case(case):
-    fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"))
+    fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"), ("recorder",))
     require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] in (1, 2), "Unsupported case format")
     require(nonempty(case["caseId"]) and nonempty(case["input"]), "caseId and input must be nonempty strings")
     fields(case["environment"], ("files",), ("stateful",) if case["caseFormatVersion"] == 2 else ())
@@ -111,12 +111,18 @@ def validate_case(case):
         require(all(path in files and type(count) is int and count >= 0 for path, count in failures.items()),
                 "Transient failures require an existing file and a nonnegative integer")
     configuration(case["configRef"])
+    if "recorder" in case:
+        fields(case["recorder"], (), ("maxEventBytes", "maxPendingBytes"))
+        for name, value in case["recorder"].items():
+            require(type(value) is int and 0 < value <= 9007199254740991,
+                    f"recorder.{name} must be a positive safe integer (UTF-8 bytes)")
     fields(case["budget"], ("timeoutSeconds",))
     require(type(case["budget"]["timeoutSeconds"]) is int and case["budget"]["timeoutSeconds"] > 0,
             "timeoutSeconds must be a positive integer")
     assertions = case["assertions"]
     require(isinstance(assertions, list) and assertions, "At least one assertion is required")
     ids = set()
+    tool_ids = set()
     for assertion in assertions:
         require(isinstance(assertion, dict), "Assertion must be an object")
         kind = assertion.get("type")
@@ -124,15 +130,22 @@ def validate_case(case):
             fields(assertion, ("id", "type", "equals"))
             require(nonempty(assertion["equals"]), "Final text must be nonempty")
         elif kind == "tool_result":
-            fields(assertion, ("id", "type", "tool", "arguments", "result"))
+            fields(assertion, ("id", "type", "tool", "arguments", "result"), ("after",))
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
+            if "after" in assertion:
+                require(nonempty(assertion["after"]) and assertion["after"] in tool_ids,
+                        "after must name an earlier tool_result assertion")
             require(isinstance(assertion["arguments"], dict)
                     and (case["caseFormatVersion"] == 2 or assertion["arguments"]),
                     "Expected tool arguments must be an object (nonempty in case version 1)")
-            fields(assertion["result"], ("isError",), ("textContains",))
+            fields(assertion["result"], ("isError",), ("textContains", "textEquals"))
             require(type(assertion["result"]["isError"]) is bool, "isError must be boolean")
+            require(not {"textContains", "textEquals"} <= assertion["result"].keys(),
+                    "Choose textContains or textEquals")
             if "textContains" in assertion["result"]:
                 require(nonempty(assertion["result"]["textContains"]), "textContains must be nonempty")
+            if "textEquals" in assertion["result"]:
+                require(isinstance(assertion["result"]["textEquals"], str), "textEquals must be text")
         elif kind == "turn_end":
             fields(assertion, ("id", "type", "reason"))
             require(isinstance(assertion["reason"], dict) and nonempty(assertion["reason"].get("kind")), "Expected end reason is required")
@@ -140,6 +153,8 @@ def validate_case(case):
             raise ValueError(f"Unsupported assertion type: {kind}")
         require(nonempty(assertion["id"]) and assertion["id"] not in ids, "Assertion IDs must be nonempty and unique")
         ids.add(assertion["id"])
+        if kind == "tool_result":
+            tool_ids.add(assertion["id"])
     return case
 
 

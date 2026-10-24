@@ -96,8 +96,9 @@ function validateStatus(status, file, manifest) {
   }
 }
 
-async function inspectSession(runDir, file, manifest, files) {
+async function inspectSession(runDir, file, manifest, files, expected) {
   const result = { traceFile: file, outcome: "unverified", reasons: [] };
+  if (expected) result.sessionId = expected.sessionId;
   let status;
   if (files.has(statusFilename(file))) {
     try {
@@ -105,7 +106,10 @@ async function inspectSession(runDir, file, manifest, files) {
       if (object(status) && status.statusFormatVersion !== 1) {
         result.reasons.push("不支持的状态格式版本");
         status = undefined;
-      } else validateStatus(status, file, manifest);
+      } else {
+        validateStatus(status, file, manifest);
+        if (expected && status.sessionId !== expected.sessionId) throw new Error("状态与运行清单的会话身份不匹配");
+      }
     } catch (error) {
       result.outcome = error.code && !["EISDIR", "ERR_ENCODING_INVALID_ENCODED_DATA"].includes(error.code) ? "unverified" : "invalid";
       result.reasons.push(`状态无法校验：${error.message}`);
@@ -126,7 +130,8 @@ async function inspectSession(runDir, file, manifest, files) {
     return result;
   }
   try {
-    const scanned = await scanTrace(join(runDir, file), file, manifest?.runId ?? status?.runId, status?.sessionId, status?.writtenBytes);
+    const scanned = await scanTrace(join(runDir, file), file, manifest?.runId ?? status?.runId,
+      expected?.sessionId ?? status?.sessionId, status?.writtenBytes);
     const { checkpoint, ...summary } = scanned;
     Object.assign(result, summary);
     if (status) {
@@ -144,9 +149,71 @@ async function inspectSession(runDir, file, manifest, files) {
   return result;
 }
 
+function inspectRunManifest(manifest, files, traces) {
+  const summary = { formatVersion: null, outcome: "unverified", state: null, expectedSessionCount: null, reasons: [] };
+  const expected = new Map();
+  if (manifest.formatVersion === 1 && !Object.hasOwn(manifest, "runManifestFormatVersion")
+    && !Object.hasOwn(manifest, "state") && !Object.hasOwn(manifest, "sessions")) {
+    summary.reasons.push("旧版运行没有会话清单，仅检查发现的片段，运行级会话覆盖未知");
+    return { summary, expected, legacy: true };
+  }
+  if (manifest.formatVersion !== 2) {
+    summary.outcome = "invalid";
+    summary.reasons.push("运行元信息版本与会话清单格式不一致");
+    return { summary, expected, legacy: false };
+  }
+  summary.formatVersion = manifest.runManifestFormatVersion ?? null;
+  if (Number.isSafeInteger(manifest.runManifestFormatVersion) && manifest.runManifestFormatVersion > 1) {
+    summary.reasons.push("不支持的运行会话清单版本，运行级会话覆盖未知");
+    return { summary, expected, legacy: false };
+  }
+  try {
+    if (manifest.runManifestFormatVersion !== 1 || !["recording", "sealed", "failed"].includes(manifest.state)
+      || !Array.isArray(manifest.sessions)) throw new Error("运行会话清单格式或状态无效");
+    const identities = new Set();
+    for (const entry of manifest.sessions) {
+      if (!object(entry) || typeof entry.sessionId !== "string" || !entry.sessionId
+        || entry.traceFile !== traceFilename(entry.sessionId) || entry.statusFile !== statusFilename(entry.traceFile)
+        || identities.has(entry.sessionId) || expected.has(entry.traceFile)) {
+        throw new Error("运行会话清单身份、文件名无效或重复");
+      }
+      identities.add(entry.sessionId);
+      expected.set(entry.traceFile, entry);
+    }
+    summary.state = manifest.state;
+    summary.expectedSessionCount = expected.size;
+    summary.outcome = manifest.state === "sealed" ? "complete" : manifest.state === "failed" ? "invalid" : "unverified";
+    if (manifest.state === "recording") summary.reasons.push("运行会话清单尚未封存，成员集合可能继续增长");
+    if (manifest.state === "failed") summary.reasons.push("运行关闭时存在录制失败，清单未成功封存");
+    for (const file of traces) {
+      if (!expected.has(file)) {
+        summary.outcome = "invalid";
+        summary.reasons.push(`发现未登记的会话文件：${file}`);
+      }
+    }
+    if (manifest.state === "sealed") {
+      for (const entry of expected.values()) {
+        for (const file of [entry.traceFile, entry.statusFile]) {
+          if (!files.has(file)) {
+            summary.outcome = "invalid";
+            summary.reasons.push(`已封存的运行清单缺少文件：${file}`);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    summary.outcome = "invalid";
+    summary.reasons.push(error.message);
+    expected.clear(); // Never use a partially validated membership list to choose files.
+  }
+  return { summary, expected, legacy: false };
+}
+
 export async function inspectRun(directory) {
   const runDir = resolve(directory);
-  const report = { runDir, outcome: "unverified", exitCode: 2, reasons: [], sessions: [] };
+  const report = { runDir, outcome: "unverified", exitCode: 2, reasons: [], sessions: [],
+    runManifest: { formatVersion: null, outcome: "unverified", state: null, expectedSessionCount: null,
+      reasons: ["无法确认运行级会话清单"] } };
   let entries;
   try { entries = await readdir(runDir); } catch (error) {
     report.reasons.push(`运行目录无法读取：${error.message}`);
@@ -157,7 +224,7 @@ export async function inspectRun(directory) {
   let invalid = false;
   try {
     manifest = await readJson(join(runDir, "run.json"));
-    if (!object(manifest) || manifest.formatVersion !== 1 || manifest.plugin !== "dsh-eval-lab"
+    if (!object(manifest) || ![1, 2].includes(manifest.formatVersion) || manifest.plugin !== "dsh-eval-lab"
       || typeof manifest.runId !== "string" || !manifest.runId || manifest.captureScope !== "live-events-only"
       || manifest.sessionFileNaming !== "sha256(sessionId).jsonl") throw new Error("运行元信息格式或身份无效");
     manifestVerified = manifest.statusFormatVersion === 1;
@@ -178,8 +245,24 @@ export async function inspectRun(directory) {
       } else traces.add(file);
     }
   }
+  let inventory;
+  if (manifest) {
+    inventory = inspectRunManifest(manifest, files, traces);
+    report.runManifest = inventory.summary;
+    if (!inventory.legacy) report.reasons.push(...inventory.summary.reasons);
+    if (inventory.summary.outcome === "invalid") invalid = true;
+    for (const file of inventory.expected.keys()) traces.add(file);
+  }
   if (entries.some((entry) => entry.endsWith(".tmp"))) report.reasons.push("存在未完成状态替换的临时文件");
-  for (const file of [...traces].sort()) report.sessions.push(await inspectSession(runDir, file, manifest, files));
+  for (const file of [...traces].sort()) {
+    const session = await inspectSession(runDir, file, manifest, files, inventory?.expected.get(file));
+    if (inventory?.summary.state === "sealed" && inventory.expected.has(file)
+      && (!files.has(file) || !files.has(statusFilename(file)))) {
+      session.outcome = "invalid";
+      session.reasons.push("已封存运行的登记会话缺少日志或状态文件");
+    }
+    report.sessions.push(session);
+  }
   if (!report.sessions.length) report.reasons.push("没有可检查的录制片段");
   if (invalid || report.sessions.some((session) => session.outcome === "invalid")) {
     report.outcome = "invalid";

@@ -3,19 +3,19 @@ import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { resolveConfig, DEFAULT_MAX_PENDING_BYTES } from "../src/config.js";
+import { resolveConfig, DEFAULT_MAX_PENDING_BYTES, DEFAULT_MAX_EVENT_BYTES } from "../src/config.js";
 import { apply } from "../src/index.js";
 
 test("explicit outputDir takes priority even over an invalid environment value", () => {
   const outputDir = resolve("explicit-runs");
-  assert.deepEqual(resolveConfig({ outputDir }, { env: { DSH_EVAL_OUTPUT_DIR: "relative" } }), { outputDir, maxPendingBytes: DEFAULT_MAX_PENDING_BYTES });
+  assert.deepEqual(resolveConfig({ outputDir }, { env: { DSH_EVAL_OUTPUT_DIR: "relative" } }), { outputDir, maxPendingBytes: DEFAULT_MAX_PENDING_BYTES, maxEventBytes: DEFAULT_MAX_EVENT_BYTES });
 });
 
 test("environment outputDir is used when no explicit override is supplied", () => {
   const outputDir = resolve("env-runs");
   const options = { env: { DSH_EVAL_OUTPUT_DIR: outputDir } };
-  assert.deepEqual(resolveConfig({}, options), { outputDir, maxPendingBytes: DEFAULT_MAX_PENDING_BYTES });
-  assert.deepEqual(resolveConfig({ outputDir: undefined }, options), { outputDir, maxPendingBytes: DEFAULT_MAX_PENDING_BYTES });
+  assert.deepEqual(resolveConfig({}, options), { outputDir, maxPendingBytes: DEFAULT_MAX_PENDING_BYTES, maxEventBytes: DEFAULT_MAX_EVENT_BYTES });
+  assert.deepEqual(resolveConfig({ outputDir: undefined }, options), { outputDir, maxPendingBytes: DEFAULT_MAX_PENDING_BYTES, maxEventBytes: DEFAULT_MAX_EVENT_BYTES });
 });
 
 test("default outputDir belongs to the user home, independent of the project location", () => {

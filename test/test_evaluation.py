@@ -195,6 +195,41 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         evidence.update(updates)
         self.evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
 
+    def test_oversized_event_invalidates_recording_before_task_assertions(self):
+        evidence = self.record()
+        code = """
+import { createRecorder } from './src/recorder.js';
+let input = '';
+for await (const chunk of process.stdin) input += chunk;
+const data = JSON.parse(input);
+const recorder = createRecorder({ outputDir: data.outputDir });
+// First persist all the valid task evidence, then reject an oversized event.
+for (const event of data.events) recorder.record(data.sessionId, event);
+await recorder.flush();
+const accepted = recorder.record(data.sessionId, { seq: data.events.length, data: 'x'.repeat(1024 * 1024) });
+let closeRejected = false;
+try { await recorder.close(); } catch (error) {
+  if (!(error instanceof AggregateError)) throw error;
+  closeRejected = true;
+}
+console.log(JSON.stringify({ runId: recorder.runId, runDir: recorder.runDir, accepted, closeRejected }));
+"""
+        process = subprocess.run(["node", "--input-type=module", "-e", code], cwd=ROOT,
+                                 input=json.dumps({"outputDir": str(self.directory), "sessionId": evidence["sessionId"],
+                                                   "events": fixture(kind="events")}),
+                                 capture_output=True, text=True, encoding="utf-8", timeout=30, check=True)
+        run = json.loads(process.stdout)
+        self.assertFalse(run["accepted"])
+        self.assertTrue(run["closeRejected"])
+        self.edit_evidence(runId=run["runId"], runDir=run["runDir"])
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["execution"]["status"], "completed")
+        self.assertEqual(result["recording"]["outcome"], "invalid")
+        self.assertEqual(result["outcome"], "unevaluable")
+        self.assertEqual(result["assertions"]["outcome"], "not_run")
+        status = load_json(next(Path(run["runDir"]).glob("*.status.json")))
+        self.assertEqual(status["error"]["code"], "EVENT_BYTES_LIMIT")
+
     def test_metrics_use_fresh_linked_recordings_and_reported_usage(self):
         events = fixture(kind="events")
         events[4]["data"]["usage"] = {"inputTokens": 9, "outputTokens": 3, "totalTokens": 12}
@@ -317,6 +352,49 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         self.edit_evidence(runDir="does-not-exist")
         self.assertEqual(evaluate(self.case_path, self.evidence_path)["outcome"], "unevaluable")
 
+    def test_missing_inventory_pair_cannot_inherit_a_previous_passed_result(self):
+        import hashlib
+        self.record()
+        self.assertEqual(evaluate(self.case_path, self.evidence_path)["outcome"], "passed")
+        path = self.evidence_path.parent / "run.json"
+        manifest = load_json(path)
+        filename = hashlib.sha256(b"missing-session").hexdigest()
+        manifest["sessions"].append({"sessionId": "missing-session", "traceFile": f"{filename}.jsonl",
+                                     "statusFile": f"{filename}.status.json"})
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["outcome"], "unevaluable")
+        self.assertEqual(result["recording"]["outcome"], "invalid")
+        self.assertEqual(result["recording"]["inspection"]["runManifest"]["outcome"], "invalid")
+        self.assertEqual(result["assertions"]["outcome"], "not_run")
+
+    def test_open_inventory_does_not_inherit_a_sealed_sessions_success(self):
+        self.record()
+        path = self.evidence_path.parent / "run.json"
+        manifest = load_json(path)
+        manifest["state"] = "recording"
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["outcome"], "unevaluable")
+        self.assertEqual(result["recording"]["outcome"], "unverified")
+        self.assertEqual(result["recording"]["inspection"]["sessions"][0]["outcome"], "complete")
+        self.assertEqual(result["assertions"]["outcome"], "not_run")
+
+    def test_legacy_recording_keeps_its_pass_with_explicitly_unknown_run_coverage(self):
+        self.record()
+        path = self.evidence_path.parent / "run.json"
+        manifest = load_json(path)
+        for key in ("runManifestFormatVersion", "state", "sessions"):
+            manifest.pop(key)
+        manifest["formatVersion"] = 1
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        before = path.read_bytes()
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual(result["recording"]["outcome"], "complete")
+        self.assertEqual(result["recording"]["inspection"]["runManifest"]["outcome"], "unverified")
+        self.assertEqual(path.read_bytes(), before)
+
     def test_valid_recording_wrong_answer_is_task_failed(self):
         events = fixture(kind="events")
         events[4]["data"]["message"]["content"][0]["text"] = "wrong"
@@ -388,6 +466,9 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         status.update(sessionId=second_id, traceFile=f"{filename}.jsonl", writtenBytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
         (run_dir / f"{filename}.jsonl").write_bytes(raw)
         (run_dir / f"{filename}.status.json").write_text(json.dumps(status), encoding="utf-8")
+        manifest = load_json(run_dir / "run.json")
+        manifest["sessions"].append({"sessionId": second_id, "traceFile": f"{filename}.jsonl", "statusFile": f"{filename}.status.json"})
+        (run_dir / "run.json").write_text(json.dumps(manifest), encoding="utf-8")
         result = evaluate(self.case_path, self.evidence_path)
         self.assertEqual(result["recording"]["inspection"]["outcome"], "complete")
         self.assertEqual(result["recording"]["outcome"], "unverified")

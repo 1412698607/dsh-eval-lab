@@ -14,8 +14,36 @@
 - M3.2 已实现 Python 驱动单用例真实 headless 运行、独立文件环境和会话、实际路由采集、墙钟超时 / 取消及退出清理；证据 / 结果版本 2 兼容原版本 1。
 - M4.1 已在状态化工具与顺序批次上增加重复试验、配置 / 重复编号关联、明确分母和已观测指标；缺失用量与费用保持 null。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
+- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
+- M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
+- M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
+- M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
+
+## 浏览已有结果
+
+在项目根目录运行，需要 Python 3.12 或更高版本：
+
+```powershell
+python -m dsh_eval --browse
+```
+
+打开终端输出中的完整 `url`，即可查看本地结果，按名称、任务结论和来源声明筛选，再从逐次结果进入证据与事件轨迹。默认读取 `fixtures/evaluation` 和 `runs`，仅在本机提供只读页面，不调用模型、不重新评测、不改写历史文件；终端按 Ctrl+C 停止。保存结论可能已过时，复验仍使用原来的 `--report` 或 `--case ... --evidence ...`。
+
+目录、端口、读取限制及无模型 CI 范围见 [结果浏览](docs/result-browser.md)。[持续集成配置](.github/workflows/deterministic.yml) 将在 push、PR 和手动触发时运行确定性检查；真实模型任务仍需单独选择配置、预算并使用 `--run`。
+
+## 固定评测集
+
+固定评测集的无模型验收与显式真实运行：
+
+```powershell
+python -m unittest discover -s test -p test_core_suite.py -v
+# 以下命令会调用真实 deepseek-flash：10 个用例各一次
+python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --run
+```
+
+一次任务可能含多次模型请求；该清单没有 token 或费用硬上限。用例范围、真实验收结果和离线复验方法见 [M6.3 固定评测集](docs/core-evaluation.md)。
 
 ## 本地演示
 
@@ -39,7 +67,17 @@ npm.cmd run check:output
 
 脚本自动寻找 Windows npm 缓存里的匹配版本，加载真实 Cordis 和 SessionStore，挂载插件，创建会话并提交工具调用及结果，然后验证导出的事件与原事件一致。它不启动 Web 服务、不执行真实文件工具、不调用模型，也不修改已有 Harness profile。
 
-`check:output` 启动正常录制、真实磁盘写入失败、未关闭录制器直接退出三个独立子进程，核对输出通道及 `inspect` 的 0 / 1 / 2 结果。前两种场景加载真实宿主组件，第三种只运行独立录制器。父脚本的检查摘要正常写到 stdout。部分沙箱会以 `spawn EPERM` 禁止捕获子进程输出，此时需在获准环境或外部 PowerShell 执行同一命令，失败不能视为通过。
+`check:output` 启动正常录制、真实磁盘写入失败、未关闭录制器直接退出、单条事件超限四个独立子进程，分别核对 `inspect` 的 0 / 1 / 2 / 1 结果及输出通道。只有直接退出场景运行独立录制器，其他场景加载真实宿主组件。超限场景还检查已写前缀保持原样及健康会话封存。父脚本的检查摘要正常写到 stdout。部分沙箱会以 `spawn EPERM` 禁止捕获子进程输出，此时需在获准环境或外部 PowerShell 执行同一命令，失败不能视为通过。
+
+资源测量使用独立真实进程和文件，不调用模型，也不自动加入 CI：
+
+```powershell
+npm.cmd run measure:recorder
+# 默认 8 类场景各 3 次；可显式改为 1～10 次
+npm.cmd run measure:recorder -- --repeats 1
+```
+
+结果保存在新的 `runs/recorder-resources/<UUID>/summary.json`，包含输入、实际计数、错误、inspect、内存采样与清单写入量；运行需要子进程权限。测量方法、已测数据和局限见 [录制资源边界](docs/recorder-resources.md)。
 
 若 Harness 安装在其他位置，可以传入它的 `node_modules` 路径：
 
@@ -58,7 +96,22 @@ npm.cmd run check:output -- 'D:\your-harness\node_modules'
 
 显式配置和环境变量必须是非空绝对路径。选中的值无效时直接报错，不退回下一项。分发用 `cordis.patch.yml` 保持空配置，不再绑定开发机盘符；`demo` 与验证脚本仍显式写入项目内的 `runs/`。已有 profile 若保存了旧的显式 `outputDir`，它仍优先于环境变量，需要通过该 profile 的配置方式更改或移除。
 
-插件配置还支持 `maxPendingBytes`，默认 `16777216`（16 MiB），必须是正安全整数。它限制整个录制器尚未完成写入的 UTF-8 文本字节总量；超限会使受影响会话失败，其他会话可继续。该设置不是进程总内存上限，不通过环境变量配置。
+插件配置还支持两个独立的正安全整数，单位均为 UTF-8 字节，不通过环境变量配置：
+
+| 配置 | 默认值 | 计量范围 |
+| --- | --- | --- |
+| `maxEventBytes` | `1048576`（1 MiB） | 一整行 JSONL，包含包装字段、sessionId、序列化 event 及末尾换行；等于上限允许 |
+| `maxPendingBytes` | `16777216`（16 MiB） | 全录制器排队及正在追加的 Buffer 总字节数；完成或跳过后释放 |
+
+超限返回拒绝、上报 `EVENT_BYTES_LIMIT` 或 `PENDING_BYTES_LIMIT`，使受影响会话持续失败，flush / close 报错；其他健康会话可继续，但整个运行不能作为完整评测证据。不截断或另存大事件来伪装成功。M6.2 的新默认值可能拒绝以前能录制的大工具结果，需要时显式调高 `maxEventBytes`，同时考虑队列预算。例如插件的 config 对象可设为：
+
+```json
+{ "maxEventBytes": 4194304, "maxPendingBytes": 16777216 }
+```
+
+Python 的 `--case --run`、`--batch --run`、`--experiment --run` 会生成新的隔离 profile，不继承原用户 profile 的这些限制。请在所引用的用例顶层添加可选字段，例如 `"recorder": { "maxEventBytes": 4194304, "maxPendingBytes": 16777216 }`；允许省略或只设其中一项，未声明项仍用表中默认值。字段必须为正安全整数，不放入 configRef，没有新增 CLI 覆盖。完整用例在任务前冻结，实验只覆盖模型 configRef；准备阶段将有效录制配置写到隔离 eval-lab config 和 setup.json.recorder，可与实际 run.json 核对。详见 [用例格式](docs/evaluation-format.md) 与 [修复记录 026](docs/changes/2026-10-23-026-m6-2-recorder-config-propagation.md)。
+
+`run.json` 保存这两个实际配置；旧日志无需迁移，inspect 不按新默认值拒绝历史大行。单条限制在 JSON 序列化之后、Buffer 分配和反解析之前检查，不能限制原始输入、序列化临时字符串、会话成员表或总内存。细节见 [录制资源边界](docs/recorder-resources.md)。
 
 例如在启动 CLI 的同一个 PowerShell 窗口中，将真实任务日志写入本项目：
 
@@ -147,9 +200,11 @@ runs/
       abrupt-exit/<run-id>/...
 ```
 
-`run.json` 包含格式版本、插件版本、运行 ID 和启动时间。JSONL 每行包含 `formatVersion`、`runId`、`sessionId` 和完整 `event`。哈希文件名避免会话 ID 被当成路径，原始 ID 仍保存在每条记录中。
+新 `run.json` 使用 `formatVersion: 2`，包含原插件版本、运行 ID、启动时间及 `runManifestFormatVersion: 1` 的会话清单、运行状态。JSONL 每行仍使用 `formatVersion: 1`，包含 `runId`、`sessionId` 和完整 `event`。哈希文件名避免会话 ID 被当成路径，原始 ID 仍保存在每条记录和清单中。详细字段见 [运行会话清单](docs/run-manifest.md)。
 
-状态文件使用独立的 `statusFormatVersion: 1`，包含 `recording` / `sealed` / `failed`、接收与写入计数、UTF-8 字节数、首尾序号及 SHA-256。`flush()` 保存检查点但保持 `recording`；`close()` 停止接收、排空队列后封存。插件使用 Cordis 的 `ctx.effect()` 注册关闭清理。
+状态文件使用独立的 `statusFormatVersion: 1`，包含 `recording` / `sealed` / `failed`、接收与写入计数、UTF-8 字节数、首尾序号及 SHA-256。首次会话文件写入必须等待清单登记成功；`flush()` 保存选中检查点但不封存运行，`close()` 停止接收、排空会话队列，最后封存运行清单。插件使用 Cordis 的 `ctx.effect()` 注册关闭清理。
+
+新会话共用待执行登记批次，批次开始才生成完整清单，写入期间新增成员等待下一批。清单与状态替换只对 rename 的 EPERM / EACCES / EBUSY 最多尝试六次，计划退避合计 310 ms，不约束底层 I/O 耗时；持续错误仍使检查点 / 关闭失败。没有增加总内存硬上限，详见 [修复记录 024](docs/changes/2026-10-22-024-m6-1-registration-reliability.md)。
 
 ## 离线检查
 
@@ -166,6 +221,8 @@ npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<run-id>'
 | `0` | `complete` | 找到的会话片段均已封存，身份、结构、计数、字节数、序号与摘要一致 |
 | `1` | `invalid` | 存在明确失败或损坏，包括截断、空日志、摘要不匹配和非法序号 |
 | `2` | `unverified` | 仍开放、旧日志缺少状态、版本不支持、无片段或文件无法读取 |
+
+新格式还必须通过清单与目录对照；清单未封存时不能 complete，sealed 清单中登记的日志 / 状态缺失或出现未登记会话均为 invalid。旧版本 1 元信息仍按原片段规则检查，但报告新增 `runManifest.outcome=unverified`，明确其无法确认运行级会话覆盖。必须使用升级后的 inspect 读取新格式，旧 inspect 会拒绝版本 2。
 
 序号必须是严格递增的非负安全整数，允许从非零开始；缺口显示在 `gaps` 中（最多 100 项，完整数量在 `gapCount`），不补造历史。未知事件类型保留可读。旧 JSONL 可以诊断，但不能自动变成已封存片段。开放状态仅复核已保存的检查点前缀，后续完整追加不会被误判为摘要损坏。
 
@@ -240,12 +297,12 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 
 - 只录制插件观察到的新增事件；不会补齐加载前、恢复会话或 fork 继承的历史。`run.json` 明确标注 `live-events-only`，这些日志不能直接作为完整会话恢复文件。
 - 已完成异步写入和封存不代表断电时绝对可靠；没有 fsync、跨进程恢复或日志轮转。状态替换使用同目录临时文件与 rename，当前 Windows 本地文件系统检查通过。
-- SHA-256 用于一致性校验，不是签名；同时篡改日志与摘要、删除整对会话文件都不在检测保证内。没有运行级会话清单，不能由磁盘上剩余片段推断所有会话都曾被保存。
-- 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；M3.3 状态化工具、M3.4 顺序批次及 M4 重复试验 / 离线报告已完成当前范围。评测浏览界面尚未实现；配置差值由合成重复样本验证，历史真实任务只验证单配置报告，少量验收样本不构成模型表现或性能提升结论。
+- SHA-256 用于一致性校验，不是签名。新版本 2 元信息可发现保留的清单中登记的整对会话文件缺失；旧格式仍无法检测这类删除。清单、版本、日志与摘要同时被改写，或整个运行目录被删除，均不在检测保证内。
+- 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；M3.3 状态化工具、M3.4 顺序批次、M4 重复试验 / 离线报告及 M5 本地浏览已完成当前范围。Windows 无模型云端 CI 已通过；配置差值由合成重复样本验证，历史真实任务只验证单配置报告，少量验收样本不构成模型表现或性能提升结论。
 
 ## 下一阶段
 
-M2 基线、M3 与 M4 已完成当前范围，下一批为 M5 结果浏览与持续集成：
+M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无模型云端 CI 验收：
 
 后续语言分工：JavaScript 继续负责 Harness 插件、实时录制、宿主适配和现有 inspect；Python 已实现用例加载与离线断言、状态化环境、顺序批次、重复统计及配置报告。实时跨语言工具桥接已实现，具体边界见 [架构说明](docs/architecture.md) 与 [修改记录 007](docs/changes/2026-10-14-007-python-evaluation-plan.md)。
 
@@ -255,15 +312,16 @@ M2 基线、M3 与 M4 已完成当前范围，下一批为 M5 结果浏览与持
 4. M3.4 已完成：顺序批次、环境重置和逐项结果清单，真实恢复批次与异常策略验证通过。
 5. M4.1 已完成：实验清单、配置与重复编号、明确统计分母及已观测指标；95 项 Python 检查与新实验两个真实恢复任务通过。
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
-7. M5：结果浏览和持续集成。
+7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-主路线剩 M5 结果浏览与持续集成一批。渠道补充和录制加固按需求另计。具体交付与验收见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，本次只做无模型回归和历史录制的离线检查；首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。双配置与重复扩展仍待配置和预算，下一批为 M6.4 Web 页面取消 / 正常退出 / 处理中断；新模型任务另定规模。本次未运行云端 CI，不继承 M5 云端结果作为新修复验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
 - [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
+- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、单配置验收及后续 Web 范围。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
 - [评测格式](docs/evaluation-format.md)：版本 1 / 2 用例、证据与结果、离线命令。
 - [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。

@@ -1,0 +1,48 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "core-missing-file",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Use relative POSIX paths exactly. Attempt to read absent.md. If the tool reports NOT_FOUND, return only FILE_NOT_FOUND. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "available.md": "projectName: unrelated\n"
+    },
+    "stateful": {
+      "transientReadFailures": {}
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "absent.md"
+      },
+      "result": {
+        "isError": true,
+        "textContains": "NOT_FOUND"
+      },
+      "id": "tool-1"
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "FILE_NOT_FOUND"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

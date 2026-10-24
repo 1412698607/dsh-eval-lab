@@ -1,0 +1,59 @@
+{
+  "experimentFormatVersion": 1,
+  "experimentName": "m6-core-flash-10",
+  "repetitions": 1,
+  "failurePolicy": "continue",
+  "cases": [
+    {
+      "entryId": "direct-read",
+      "casePath": "direct-read.case.json"
+    },
+    {
+      "entryId": "nested-discovery",
+      "casePath": "nested-discovery.case.json"
+    },
+    {
+      "entryId": "reference-chain",
+      "casePath": "reference-chain.case.json"
+    },
+    {
+      "entryId": "current-over-archive",
+      "casePath": "current-over-archive.case.json"
+    },
+    {
+      "entryId": "missing-file",
+      "casePath": "missing-file.case.json"
+    },
+    {
+      "entryId": "empty-file",
+      "casePath": "empty-file.case.json"
+    },
+    {
+      "entryId": "unicode-path",
+      "casePath": "unicode-path.case.json"
+    },
+    {
+      "entryId": "retry-once",
+      "casePath": "retry-once.case.json"
+    },
+    {
+      "entryId": "independent-retries",
+      "casePath": "independent-retries.case.json"
+    },
+    {
+      "entryId": "stale-then-retry",
+      "casePath": "stale-then-retry.case.json"
+    }
+  ],
+  "configurations": [
+    {
+      "configurationId": "deepseek-flash",
+      "configRef": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "profile": "headless",
+        "pluginVersion": "0.1.2"
+      }
+    }
+  ]
+}

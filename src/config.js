@@ -2,6 +2,13 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 export const DEFAULT_MAX_PENDING_BYTES = 16 * 1024 * 1024;
+export const DEFAULT_MAX_EVENT_BYTES = 1024 * 1024;
+
+export function validateMaxEventBytes(value) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError("eval-lab: maxEventBytes 必须是正安全整数（UTF-8 字节）");
+  }
+}
 
 export function validateMaxPendingBytes(value) {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -31,5 +38,7 @@ export function resolveConfig(config = {}, { env = process.env, homeDir = homedi
   }
   const maxPendingBytes = config.maxPendingBytes === undefined ? DEFAULT_MAX_PENDING_BYTES : config.maxPendingBytes;
   validateMaxPendingBytes(maxPendingBytes);
-  return { outputDir, maxPendingBytes };
+  const maxEventBytes = config.maxEventBytes === undefined ? DEFAULT_MAX_EVENT_BYTES : config.maxEventBytes;
+  validateMaxEventBytes(maxEventBytes);
+  return { outputDir, maxPendingBytes, maxEventBytes };
 }

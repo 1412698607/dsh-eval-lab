@@ -10,7 +10,7 @@ import { inspectRun } from "../src/inspect.js";
 
 const modulesDir = await locateHost(process.argv[2]);
 const outputDir = resolve("runs", "output-check", randomUUID());
-for (const mode of ["normal", "write-error", "abrupt-exit"]) {
+for (const mode of ["normal", "write-error", "abrupt-exit", "event-limit"]) {
   let output;
   try {
     output = await promisify(execFile)(process.execPath, [
@@ -26,15 +26,16 @@ for (const mode of ["normal", "write-error", "abrupt-exit"]) {
   assert.equal(output.stdout, "", `${mode}: 子进程 stdout 必须保持为空`);
   const [runId] = await readdir(join(outputDir, mode));
   const inspection = await inspectRun(join(outputDir, mode, runId));
-  assert.equal(inspection.exitCode, { normal: 0, "write-error": 1, "abrupt-exit": 2 }[mode]);
+  assert.equal(inspection.exitCode, { normal: 0, "write-error": 1, "abrupt-exit": 2, "event-limit": 1 }[mode]);
   if (mode === "abrupt-exit") {
     assert.equal(output.stderr, "");
     console.info("abrupt-exit：独立子进程未关闭录制器就退出，inspect 返回 2（未封存）。");
     continue;
   }
   assert.match(output.stderr, /\[eval-lab\] 日志目录：/);
-  if (mode === "write-error") assert.match(output.stderr, /日志写入失败/);
+  if (mode === "write-error" || mode === "event-limit") assert.match(output.stderr, /日志写入失败/);
   else assert.doesNotMatch(output.stderr, /日志写入失败/);
+  if (mode === "event-limit") assert.match(output.stderr, /EVENT_BYTES_LIMIT/);
   console.info(`${mode}：真实组件子进程 stdout 为空，stderr 诊断检查通过。`);
 }
 console.info(`检查输出：${outputDir}`);

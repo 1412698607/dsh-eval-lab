@@ -1,22 +1,31 @@
 # dsh-eval-lab 架构与技术取舍
 
-当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次、M4.1 重复试验与指标汇总及 M4.2 独立配置报告。
+当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次、M4.1 重复试验与指标汇总、M4.2 独立配置报告及 M5 只读本机浏览服务。
+
+M6.1 已扩展运行级会话清单：新 run.json 为版本 2，会话写入以清单登记为前置依赖，close 最后保存运行终态；JSONL / status 仍为版本 1。Node inspect 对照应有成员与目录，Python 继续复用整体检查结果。格式与边界见 [会话清单](run-manifest.md)。
+
+M6.2 增加单条完整 JSONL 行的 maxEventBytes 限制，默认 1 MiB；运行元信息保存有效配置，不改变既有格式版本。超限进入原会话失败路径，Node inspect 和 Python 门禁继续拒绝不完整证据。资源实测见 [录制资源边界](recorder-resources.md)。
+
+M6.2 配置传递修复增加用例顶层可选 recorder 对象，由 Python 严格校验两项正安全整数，利用既有完整用例冻结 / 批次 / 实验展开链路传递。Node 准备从原 config 模块解析默认值，将两项有效限制写到新隔离 profile 的 eval-lab config 及 setup.json.recorder，再由插件写入 run.json。实验只覆盖 configRef，录制配置不进入 provider/model 实际路由语义；读取器不回填默认或重写历史快照。验证见 [记录 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md)。
 
 ## 执行流程与模块
 
 ```text
 apply(ctx, config)
-  → 路径优先级解析、maxPendingBytes 校验
-  → 创建 UUID 运行目录和 run.json
+  → 路径优先级解析、maxEventBytes / maxPendingBytes 校验
+  → 创建 UUID 运行目录与版本 2 run.json：recording、空清单
 session/event
-  → 接收时序列化、序号和容量校验
-  → 会话独立 Promise 队列：recording 状态 → JSONL 追加
+  → 新会话加入内存集合与共享待登记批次
+  → 接收时序列化、完整 UTF-8 行大小、序号和队列容量校验 → Buffer 入队
+  → 登记批次开始时生成完整成员快照并串行保存
+  → 会话独立队列：等待登记 → recording 状态 → JSONL 追加
 session/flush
   → 在选定会话队尾插入检查点状态更新 → 等待并报告错误
 ctx.effect 清理
-  → close 停止接收 → 排空所有队列 → 各正常会话 sealed
+  → close 停止接收 → 排空所有会话队列 → 各正常会话 sealed
+  → 最后保存运行清单 sealed / failed，失败则拒绝关闭 Promise
 inspect --run <目录>
-  → 元信息与状态校验 → 流式解析、原始字节摘要及前缀/最终比较
+  → 新旧元信息 / 应有会话与目录对照 → 状态校验与原始字节检查
 ```
 
 | 模块 | 职责 |
@@ -25,7 +34,7 @@ inspect --run <目录>
 | `src/config.js` | 显式目录 > 环境变量 > 主目录；选中值无效报错；容量正安全整数校验 |
 | `src/metadata.js` | 从 package.json 读取版本及支持的会话组件基线 |
 | `src/recorder.js` | 运行目录、会话队列、接收与写入统计、字节容量、检查点、错误和封存 |
-| `src/session-status.js` | 状态文件命名及同目录临时文件、rename 替换与临时文件清理 |
+| `src/session-status.js` | 状态文件命名、同目录临时文件、有限 rename 重试与临时文件清理 |
 | `src/inspect.js` | 只读磁盘检查，区分 complete / invalid / unverified |
 | `scripts/inspect.js` | 显式 --run 参数、JSON 报告及退出码 |
 | `scripts/demo.js` | 8 条模拟事件 |
@@ -37,17 +46,27 @@ inspect --run <目录>
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
-| `dsh_eval/__main__.py` | 评测 / 运行 / 报告互斥入口、UTF-8 JSON stdout 与新文件输出；报告成功 0、输入输出错误 2，原任务 0 / 1 / 2 不变 |
+| `dsh_eval/__main__.py` | 评测 / 运行 / 报告 / 浏览互斥入口、UTF-8 stdout；浏览阻止执行和写入选项，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
 | `dsh_eval/experiment.py` | 冻结实验输入、显式展开用例 / 配置 / 重复编号，复用顺序 batch，核对样本关联并汇总 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
+| `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
+| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`e47de36` 的语法 / Node / Python / compileall / 合成 demo 云端全部通过 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
 | `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
 | `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
 ## 输出与数据格式
+
+M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=...` 读取一个已保存 JSON / Markdown 或一页 JSONL。目录索引带 `browserFormatVersion: 1`，只是读取响应，没有新持久化结果格式；不会写入文件、刷新摘要或改变评测状态。浏览 API 不调用原 evaluate / inspect / runner，旧结果可过时，与 M4.2 的主动离线复验是两个入口。
+
+服务固定绑定 127.0.0.1，以启动时随机令牌、Host / Origin 检查及根目录解析限制访问，扫描不跟随符号目录 / junction。内容用文本节点呈现，默认排除独立 home / workspace 和私人目录。该方案复用现有 JSON 与原证据位置，无前端依赖和数据库；代价是没有实时一致快照、远程多用户访问或编辑 / 运行功能。容量、分页和已验证边界见 [结果浏览](result-browser.md)。
+
+关联路径先进行不跟随链接的文本范围与禁用目录检查，再解析真实路径并复核，根外引用不先做文件系统路径解析。浏览局部 JSON 包装限制对象 / 数组容器最多 128 层并隔离解析递归错误；超深文档单独报错，轨迹行保留预览及后续正常行，不改变原证据有效性。目录响应的 `sources` 以临时 `unknown` 保留缺失样本来源，供混合来源筛选使用，不回写持久化文件。修复与验证见 [记录 021](changes/2026-10-21-021-m5-review-fixes.md)。
+
+根目录预检同时登记显式配置的路径写法和对应真实根，兼容 Windows 短路径或目录别名；解析后的引用仍须落在相应真实根内。其他未配置前缀仍按原范围限制处理，不通过先解析外部位置来发现别名。云端差异与回归见 [记录 022](changes/2026-10-21-022-cloud-ci-path-aliases.md)。
 
 ```text
 <outputDir>/<runId>/
@@ -56,7 +75,11 @@ inspect --run <目录>
   <sha256(sessionId)>.status.json
 ```
 
-run.json 和 JSONL 的 `formatVersion: 1` 保持不变。run.json 新增 `statusFormatVersion: 1` 和 `maxPendingBytes`，保留插件版本、运行 ID、启动时间、捕获范围与命名规则。`captureScope` 始终为 `live-events-only`。
+M6.1 新 run.json 使用 `formatVersion: 2`、`runManifestFormatVersion: 1`、state 和 sessions，同时保留原 statusFormatVersion、maxPendingBytes、插件版本、运行 ID、启动时间与命名规则。M6.2 添加 maxEventBytes 配置元信息，旧运行缺少它仍可检查，不重写历史或推定旧上限。JSONL 的 `formatVersion: 1` 和状态版本 1 不变，`captureScope` 始终为 `live-events-only`。
+
+运行清单替换使用与状态相同的同目录临时文件 / rename，但有独立串行队列。尚未开始的登记批次只共享 Promise 屏障，在实际开始时从内存成员表生成完整快照；写入期间加入的成员共用下一批屏障。这样不再为每个排队成员保留完整快照，仍保留首次观察顺序。各会话等待自己的登记成功才创建日志或状态；关闭先等待所有会话，再写最终成员集合。清单错误通过 onError(error, null) 上报，停止接受后续输入，检查点 / 关闭拒绝；已登记健康会话仍排空，最终清单可能仍为 recording 或缺失，不补造 sealed。修复及测量范围见 [记录 024](changes/2026-10-22-024-m6-1-registration-reliability.md)，这里没有 fsync、断电恢复或总内存硬上限保证。
+
+inspect 新增 runManifest 摘要。版本 2 清单开放则运行 unverified，终态失败 / 应有文件缺失 / 未登记成员则 invalid；整体 complete 仍需片段、临时文件等所有检查通过。旧版本 1 保留原片段结果，单独标明会话覆盖未知，不能升级历史保证。旧 inspect 不认识版本 2，会拒绝它；浏览器已允许只读查看两个元信息版本。
 
 每条 JSONL 为 `{ formatVersion: 1, runId, sessionId, event }`，event 保留序列化的原始内容。记录器要求序列化后的 `event.seq` 是严格递增非负安全整数；不排序、不去重、不解析工具参数，不校验业务事件 schema。未知事件类型仍可记录和检查，非零起点及序号缺口不代表自动补齐历史。
 
@@ -78,11 +101,11 @@ recording 的统计只保证状态保存时的检查点前缀，可能落后于 
 
 ## 队列、检查点与容量
 
-各会话在 Map 中保存队尾 Promise、错误、计数、序号及增量哈希。首次观察建立状态任务，首条 JSONL 追加前必须完成 recording 状态写入。记录在入队前转成 UTF-8 Buffer，以固定观察时内容并按真实字节记账；同步序列化仍消耗 CPU 与临时内存。
+各会话在 Map 中保存队尾 Promise、错误、计数、序号及增量哈希。首次观察建立状态任务，首条 JSONL 追加前必须完成 recording 状态写入。接收时先 JSON.stringify 整个包装并加换行，Buffer.byteLength 计量；超过 maxEventBytes（默认 1 MiB）即以 EVENT_BYTES_LIMIT 拒绝。通过后反解析同一字符串校验序号，再检查队列容量，最后分配 UTF-8 Buffer 固定观察时内容。自定义 toJSON 的实际输出参与计量且只调用一次。同步序列化仍消耗 CPU 与临时内存，过大的原始输入不能靠这个检查得到内存硬保护。
 
 每次追加成功后更新写入统计和哈希。失败保存首次错误，后续该会话停止接收，已排队但尚未开始的写入被跳过；其他会话继续。队列捕获错误并尽力保存 failed 状态，检查点和关闭通过 AggregateError 报告。报告回调抛错不会替换原错误。
 
-`maxPendingBytes` 是录制器级上限，默认 16 MiB。包括所有会话排队及正在追加的 Buffer；追加完成或跳过时在 finally 释放。超限的那条不入队，受影响会话失败。没有阻塞宿主等待容量的背压接口，没有进程内存总量保证。
+`maxPendingBytes` 是录制器级上限，默认 16 MiB。包括所有会话排队及正在追加的 Buffer；追加完成或跳过时在 finally 释放。两个上限相互独立，都必须是正安全整数，等于上限允许；同时超限先报单条错误，队列超限为 PENDING_BYTES_LIMIT。超限的那条不入队，受影响会话失败，不截断证据；已在进行的 append 仍可能完成，尚未开始的该会话事件跳过。没有阻塞宿主等待容量的背压接口，没有进程内存总量保证。计数、错误封存与运行清单规则保持不变；单条上限不是文件总长度、会话总量或离线 inspect 的限制。
 
 flush 在调用时选定会话队尾插入状态写入任务，并捕获该检查点的 received / accepted 计数。状态任务在此前追加之后、此后追加之前执行，所以统计及哈希都属于同一个前缀。后续事件不属于此次等待范围；错误仍是会话级持续状态，检查点不是独立错误版本。flush 不封存，也不执行 fsync。
 
@@ -90,7 +113,7 @@ close 先禁止接收，然后为每个会话排队 sealed 更新；一个失败
 
 ## 状态替换与宿主生命周期
 
-状态更新先写同目录 UUID 临时文件，再 rename 到固定状态路径，最后清理临时文件。Windows 本地测试覆盖多次替换与目录占用导致的真实失败。此流程没有 fsync，也不承诺所有文件系统的原子持久性。写入 failed 本身可能失败；残留 recording、缺失或损坏状态都不能被视为完整。
+状态更新先写同目录 UUID 临时文件，再 rename 到固定状态路径，最后清理临时文件。只对 rename 的 EPERM / EACCES / EBUSY 使用同一临时文件有限重试：最多六次尝试，10 / 20 / 40 / 80 / 160 ms 退避合计 310 ms，不约束单次底层 I/O 耗时。临时文件写入、其他替换错误及 JSONL append 不重试。Windows 本地测试覆盖多次替换与目录占用导致的真实失败，受控故障注入覆盖暂时恢复与持续失败，不把错误码解释为已定位的占用原因。此流程没有 fsync，也不承诺所有文件系统的原子持久性。写入 failed 本身可能失败；残留 recording、缺失或损坏状态都不能被视为完整。
 
 2026 年 10 月 12 日真实卸载检查发现旧 `ctx.on("dispose")` 在 Cordis 4.0.4 没有执行关闭，旧测试只证明 flush 后内容一致。本批改用 `ctx.effect(() => () => recorder.close())` 显式注册所属 fiber 的清理，并验证卸载后 sealed 和 inspect 通过。普通函数 apply 还可能被该版本按构造函数执行，因此不能只依赖它返回的函数作为清理。
 
@@ -212,6 +235,10 @@ batch.py 在调用模型前校验并保存全部输入，逐项分配 caseRunId�
 batch-result.json 是本批唯一活动进度快照，以同目录临时 JSON + replace 更新；已有单项结果不覆写。每个新批次使用新 UUID 目录，冻结后的 batch.json 可重新执行新任务，不是重放或恢复。普通失败 / 无法评测、调度中断 / 异常和 skipped 分开；其精确定义、字段和退出码见 [批次运行](batch-runner.md)。没有并发批次调度、崩溃续跑或性能 / 成本统计。
 
 ## M4.1 实验与指标边界
+
+M6.3 固定评测集直接复用下述实验 / 批次 / 单用例链路，不新增调度器或格式编号。10 个版本 2 用例使用 Python 虚拟文件和既有 eval_read / eval_list 桥接；独立参考轨迹的无模型测试与实际模型执行证据分层保存。验收范围见 [固定评测集](core-evaluation.md)。
+
+审查修复 028 为两个用例版本增加可选工具结果约束。formats 校验 after 只引用前面工具结果断言，避免循环与含糊的依赖；evaluate 的 check_assertions 按声明顺序求值，选择最早完成的合格结果，要求后继 callSeq 大于先行 resultSeq。不同路径可保持交错；textEquals 则按文本块拼接结果精确比较，空白不被当作空文件。JavaScript 录制 / inspect 和环境核心不变，不从声明顺序推定实际执行顺序。历史 report 继续读取原冻结断言，当前更严格的断言对历史录制另行离线检查；旧快照不改写。协议和分类见 [评测格式](evaluation-format.md) 与 [记录 028](changes/2026-10-24-028-m6-3-assertion-constraints.md)。
 
 `experiment.py` 严格加载版本 1 清单，校验全部用例与配置组合，冻结原输入，再按重复 / 用例 / 配置顺序生成标准 batch；没有另写一套调度和清理逻辑。sampleId 对应 batch entryId，以 caseEntryId + configurationId + repeatIndex 表示计划位置，再关联实际 caseRunId / runId / sessionId。configuration 保留真实观察，requestedConfiguration 和匹配分布另列。结束后核对样本关联并生成总表及分组 JSON，不提供配置优劣判断。
 

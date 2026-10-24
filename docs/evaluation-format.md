@@ -1,6 +1,6 @@
 # 用例、证据与评测结果格式
 
-更新：2026 年 10 月 18 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例，插件仍为 `0.1.2`，既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
+更新：2026 年 10 月 24 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
 
 ## 运行入口
 
@@ -16,7 +16,7 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 
 ## 用例：caseFormatVersion 1
 
-参考 [读取用例](../fixtures/evaluation/read-project.case.json) 与 [缺失文件用例](../fixtures/evaluation/missing-file.case.json)。字段均必需；未知字段、未知版本 / 断言、重复断言 ID、重复 JSON 键和非有限数字会被拒绝。
+参考 [读取用例](../fixtures/evaluation/read-project.case.json) 与 [缺失文件用例](../fixtures/evaluation/missing-file.case.json)。下表除 recorder 外均必需；未知字段、未知版本 / 断言、重复断言 ID、重复 JSON 键和非有限数字会被拒绝。
 
 | 字段 | 约定 |
 | --- | --- |
@@ -24,6 +24,7 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | input | 非空任务文本，与 user/message 的文本块拼接结果精确相等 |
 | environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象；拒绝绝对路径、冒号、反斜杠、空 / 点 / 上级分量和文件目录冲突；离线仅保留声明，M3.2 实际写入独立 workspace 并补查 Windows 名称 / 大小写冲突 |
 | configRef | provider / model / profile / pluginVersion 四个非空字符串；不得内嵌凭据 |
+| recorder | 可选对象，仅允许 maxEventBytes / maxPendingBytes 两个独立正安全整数，范围 1～9007199254740991；不属于模型路由配置，详见下节 |
 | budget.timeoutSeconds | 正整数，声明预算；离线评测不会实施它，不支持 token / 步骤上限 |
 | assertions | 非空数组，每条有唯一 id 和已支持的 type；所有断言均为必需 |
 
@@ -32,10 +33,10 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | type | 必需参数与行为 |
 | --- | --- |
 | final_text | equals；最后一个非空 assistant/message 的文本块拼接后 strip，再精确比较 equals |
-| tool_result | tool、arguments、result；工具名精确匹配，arguments 为非空对象，按顶层键比较所声明参数（允许额外实际参数）；嵌套值完整比较且区分布尔和数字。result.isError 必须是布尔值，可加非空 textContains |
+| tool_result | tool、arguments、result；工具名精确匹配，arguments 为非空对象，按顶层键比较所声明参数（允许额外实际参数）；嵌套值完整比较且区分布尔和数字。result.isError 必须是布尔值，可择一添加非空 textContains 或字符串 textEquals；可选 after 引用前面的工具结果断言 |
 | turn_end | reason 对象，含非空 kind；与实际结束原因完整比较 |
 
-tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；本版本没有跨断言顺序、调用次数或负向行为断言。
+tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；声明 after 时还必须满足下节的先后关系。没有调用次数或负向行为断言。
 
 匹配调用及实际结果存在但值不符为 failed；无匹配参数、缺结果、结果晚于答案等不能证明所需事实时为 insufficient_evidence。最终文本不符为 failed。任一必需断言证据不足时总体无法评测，即使另一条已经失败，也保留各条结果。
 
@@ -43,7 +44,45 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 
 版本 2 保留版本 1 的必需字段和断言，允许 environment 增加 stateful 对象，其唯一必需字段 transientReadFailures 为“已有文件路径 → 非负整数次数”的映射，拒绝布尔值。没有 stateful 时仍使用实际文件环境；声明 stateful 后 files 只保存在 Python 内存，workspace 不写入这些文件。版本 1 不接受 stateful。证据和结果仍为版本 2，录制格式不变。示例见 [路径过时](../fixtures/evaluation/stale-path.case.json)、[失败恢复](../fixtures/evaluation/retry-read.case.json)；协议和取消语义见 [状态化工具](stateful-tools.md)。
 
-版本 2 允许 tool_result 的 `arguments` 为 `{}`，表示不限制调用参数值，仍必须有正确工具名、合法对象形式的实际参数、按 callId 关联的结果、预期 isError / textContains 和正确的任务顺序。非空对象仍逐键精确匹配；版本 1 继续要求非空对象。路径过时用例的发现断言使用空对象，并要求 eval_list 成功返回包含 docs/current.md 的列表，因此根目录 `.` 和 `docs` 都可通过，旧路径失败、读取新文件及答案断言保持原要求。此兼容扩展不增加新版本编号；旧快照中的非空参数约束仍按原语义检查。修复依据见 [记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
+版本 2 允许 tool_result 的 `arguments` 为 `{}`，表示不限制调用参数值，仍必须有正确工具名、合法对象形式的实际参数、按 callId 关联的结果、预期 isError / 文本约束和正确的任务顺序。非空对象仍逐键精确匹配；版本 1 继续要求非空对象。路径过时用例的发现断言使用空对象，并要求 eval_list 成功返回包含 docs/current.md 的列表，因此根目录 `.` 和 `docs` 都可通过，旧路径失败、读取新文件及答案断言保持原要求。此兼容扩展不增加新版本编号；旧快照中的非空参数约束仍按原语义检查。修复依据见 [记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
+
+## 可选工具结果约束：两个用例版本通用
+
+下面两条断言要求先取得 README 的结果，再发起空文件读取，并检查返回文本确实为空：
+
+```json
+[
+  {"id":"reference","type":"tool_result","tool":"eval_read","arguments":{"path":"README.md"},"result":{"isError":false,"textContains":"empty.md"}},
+  {"id":"empty","type":"tool_result","tool":"eval_read","arguments":{"path":"empty.md"},"result":{"isError":false,"textEquals":""},"after":"reference"}
+]
+```
+
+`after` 必须是 assertions 数组中前面某条 tool_result 的非空 ID。拒绝未知、自身、向后引用、循环、非字符串和指向其他断言类型的引用；final_text / turn_end 不接受 after。后继调用的 callSeq 必须严格大于先行匹配结果的 resultSeq，同批并发发出后继、稍后才收到先行结果也不能通过。只限制声明的依赖，不要求两条独立路径按同一全序执行。
+
+评测按声明顺序计算，选择满足内容和依赖、且 resultSeq 最早的匹配结果，供后继引用。这样既允许并发调用乱序返回，也允许额外调用之后出现完整合法链。结果 evidence 在声明 after 时增加 afterResultSeq，便于核对。已有匹配结果但顺序错误为 failed；先行断言 failed 时后继 failed，先行证据缺失时后继 insufficient_evidence。缺少上下文的单条 after 检查不能通过。
+
+`result.textEquals` 接受任意字符串，包括 `""`，与工具返回的全部文本块拼接结果精确比较，不做 strip；空白或后续非空文本块均不等于空字符串。textEquals 与 textContains 不可同时声明，textContains 仍必须非空。未声明新字段的用例保留原有存在性匹配语义，输入不会自动补字段。
+
+这是可选字段扩展，格式编号不变；新字段需要升级后的读取器，旧严格读取器会拒绝。历史实验仍按原冻结用例复验；当前更严格的用例属于新的完整输入，不能通过改写旧快照补造历史验收。修复与回归见 [记录 028](changes/2026-10-24-028-m6-3-assertion-constraints.md)。
+
+## 可选录制配置：两个用例版本通用
+
+在 caseFormatVersion 1 / 2 的用例顶层添加以下字段，可由原 `--case --run`、`--batch --run`、`--experiment --run` 入口传入：
+
+```json
+"recorder": {
+  "maxEventBytes": 4194304,
+  "maxPendingBytes": 16777216
+}
+```
+
+两个值单位为 UTF-8 字节，分别覆盖整行事件上限和全录制器待写 Buffer 上限；各自省略时使用当前内置默认值 1048576 / 16777216。允许省略 recorder、空对象或只设置其中一项。拒绝 null、布尔、字符串、非正数、小数、超安全范围数字和未知键；outputDir 由 runner 固定为该执行目录的 traces，不接受用例覆盖。configRef 仍只允许原四字段，不能放入录制限制。
+
+配置优先级为用例显式字段 > 内置默认值；不继承原用户 profile 的录制配置，没有新增 CLI 覆盖或限制环境变量。单用例、批次和实验均保存原样声明的完整用例，不补默认、不归一化历史输入；实验只完整替换 configRef，保留每个用例的 recorder。准备阶段将解析后的两值写到隔离 profile 的 eval-lab config 及 setup.json.recorder，实际记录器再写入 run.json，可沿输入 / 准备 / 运行三层核对。
+
+省略与显式填写当前默认值具有相同的当前运行限制，但仍是不同的冻结输入；报告继续逐字段比较完整快照和计算非 configRef 任务指纹，不能静默互换。录制限制不进入 evidence.configuration、requestedConfiguration 或 provider/model 实际路由匹配；离线评测不会把 recorder 声明重新应用于历史日志，也没有新增录制配置的自动匹配结论。
+
+这是可选字段的兼容扩展，未改变格式编号；旧用例和证据无需迁移，新用例含 recorder 时需要升级后的读取器，旧严格读取器会拒绝该字段。实现与验证见 [记录 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md)，大小与失败语义见 [资源边界](recorder-resources.md)。
 
 ## 证据清单：evidenceFormatVersion 1
 
@@ -100,9 +139,9 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 
 ## 当前限制与下一步
 
-M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。缺少运行级会话清单、日志与摘要同时重写等限制沿用 [架构](architecture.md)。
+M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。M6.1 新运行已增加 [会话清单](run-manifest.md)，旧格式仍缺少运行级成员覆盖；清单 / 日志 / 摘要同时重写等限制沿用 [架构](architecture.md)。
 
-M3.1 至 M3.4 已完成当前范围，M4 已增加重复试验、指标与离线配置报告；下一批为 M5 结果浏览与持续集成。合成样例不代替真实模型验收，各层验证分别保留。历史离线与单用例依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)，当前扩展见文末。
+M3.1 至 M3.4 已完成当前范围，M4 已增加重复试验、指标与离线配置报告；M5 已提供 [本地只读浏览](result-browser.md) 并完成无模型云端 CI 验收。M6.1 为 Node inspect 增加 `recording.inspection.runManifest` 摘要；新运行清单 invalid / unverified 会阻止任务断言，旧日志保留原任务结果并明确覆盖未知，已有评测持久化版本不变。本批 M6.1 云端未运行。浏览不重跑断言或 Node inspect，也不改变任何已保存格式。合成样例不代替真实模型验收，各层验证分别保留。历史离线与单用例依据见 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)，当前扩展见文末。
 
 ## M3.4 批次扩展
 
@@ -119,6 +158,10 @@ evaluationFormatVersion 1 / 2 新增可选 metrics（内部 metricsFormatVersion
 modelCalls 统计已结算 assistant/message / assistant/attempt，toolCalls 统计 tool/call；先 fresh inspect、身份关联和闭合任务边界检查。token 逐字段读取 assistant/message.data.usage，缺失 / 未结算 / 失败尝试用量不推算。elapsedSeconds 独立来自匹配 caseRunId 的单调时钟运行报告，包含准备 / 执行 / 清理，不含离线评测。费用仍为 null。所有字段、分母、样本路径和汇总覆盖率见 [重复试验](experiments.md)。
 
 同日审查修复明确有限数值范围：无法表示为有限浮点数的指标单值或 token 字段和保持 null。实验每项指标汇总若求和超出范围，保留观测 / 缺失样本数，总和与均值为 null，并增加可选 reason；不产生 Infinity / NaN，不改变任务结论或样本分母。实验与 metrics 格式仍为版本 1，历史结果不覆写。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
+
+## M6.2 单条超限的门禁
+
+单条事件超过配置上限时，录制器以 EVENT_BYTES_LIMIT 标记会话失败，整体 inspect 为 invalid；即使已写前缀包含完整工具结果和正确答案，Python 仍返回 unevaluable / assertions not_run。该门禁继续复用原 inspect 结果，没有改变任务断言或结果格式。新增真实 Node 录制 / Python 离线集成回归通过，配置与资源边界见 [录制资源说明](recorder-resources.md)。
 
 ## M4.2 独立比较报告
 

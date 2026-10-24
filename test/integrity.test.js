@@ -212,10 +212,16 @@ test("status counts, sequence bounds, digest, identity and format are checked", 
 
 test("legacy, missing, open, empty runs and unsupported status versions stay unverified", async (t) => {
   const recorder = await sealed(t);
-  await unlink(statusPath(recorder));
-  assert.equal((await inspectRun(recorder.runDir)).exitCode, 2);
   const manifestPath = join(recorder.runDir, "run.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  // Old runs have no expected membership; missing status retains its old classification.
+  delete manifest.runManifestFormatVersion;
+  delete manifest.state;
+  delete manifest.sessions;
+  manifest.formatVersion = 1;
+  await writeFile(manifestPath, JSON.stringify(manifest));
+  await unlink(statusPath(recorder));
+  assert.equal((await inspectRun(recorder.runDir)).exitCode, 2);
   delete manifest.statusFormatVersion;
   await writeFile(manifestPath, JSON.stringify(manifest));
   assert.equal((await inspectRun(recorder.runDir)).exitCode, 2);

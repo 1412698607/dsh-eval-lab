@@ -8,7 +8,8 @@ export function apply(ctx, config = {}) {
   const recorder = createRecorder({
     ...resolveConfig(config),
     onError(error, sessionId) {
-      console.error(`[eval-lab] 会话 ${sessionId} 的日志写入失败：`, error);
+      const scope = sessionId === null ? "运行会话清单" : `会话 ${sessionId} 的日志`;
+      console.error(`[eval-lab] ${scope}写入失败：`, error);
     },
   });
 

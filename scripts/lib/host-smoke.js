@@ -10,7 +10,7 @@ import { inspectRun } from "../../src/inspect.js";
 import { HOST_FIBER_ACTIVE, loadHost } from "./host.js";
 
 // outputDir must be unique to this check; never select a previous run's trace.
-export async function runHostSmoke({ modulesDir, outputDir, failWrite = false }) {
+export async function runHostSmoke({ modulesDir, outputDir, failWrite = false, eventLimit = false }) {
   const { Context, SessionStore, SessionId, versions } = await loadHost(modulesDir);
   await mkdir(outputDir, { recursive: true });
   assert.deepEqual(await readdir(outputDir), [], "检查目录必须为空");
@@ -19,7 +19,7 @@ export async function runHostSmoke({ modulesDir, outputDir, failWrite = false })
   let fiber;
   try {
     assert.equal(sessionFiber.state, HOST_FIBER_ACTIVE, "会话服务必须完成启动");
-    fiber = await ctx.plugin(plugin, { outputDir });
+    fiber = await ctx.plugin(plugin, { outputDir, ...(eventLimit ? { maxEventBytes: 1024 } : {}) });
     assert.equal(fiber.state, HOST_FIBER_ACTIVE, "插件必须完成启动后才能接收会话事件");
     const runs = await readdir(outputDir);
     assert.equal(runs.length, 1, "本次挂载应只产生一个运行目录");
@@ -55,11 +55,33 @@ export async function runHostSmoke({ modulesDir, outputDir, failWrite = false })
     }
     assert.equal(JSON.parse(await readFile(join(runDir, statusFilename(traceFilename(session.id))), "utf8")).state,
       failWrite ? "failed" : "recording");
+    if (eventLimit) {
+      assert.equal(manifest.maxEventBytes, 1024);
+      const prefix = await readFile(tracePath);
+      session.append("tool/result", { ...expected[3].data, message: { ...expected[3].data.message,
+        id: "oversized-result", content: [{ type: "text", text: "x".repeat(2048) }],
+      } }, { surfaceOp: "append" });
+      await assert.rejects(ctx.sessions.flush(session), AggregateError);
+      const failed = JSON.parse(await readFile(join(runDir, statusFilename(traceFilename(session.id))), "utf8"));
+      assert.equal(failed.error.code, "EVENT_BYTES_LIMIT");
+      assert.equal(failed.state, "failed");
+      assert.equal(failed.receivedCount, 7);
+      assert.equal(failed.writtenCount, 6);
+      assert.deepEqual(await readFile(tracePath), prefix);
+      const healthy = ctx.sessions.create(SessionId(`eval-lab-healthy-${randomUUID()}`));
+      healthy.append("turn/start", { turn: 1 });
+      assert.equal(await ctx.sessions.flush(healthy), true);
+    }
     // Cordis may swallow disposer errors. Validate persisted evidence after unloading.
     await fiber.dispose();
     fiber = undefined;
     const inspection = await inspectRun(runDir);
-    assert.equal(inspection.exitCode, failWrite ? 1 : 0);
+    assert.equal(inspection.exitCode, failWrite || eventLimit ? 1 : 0);
+    if (eventLimit) {
+      const finalManifest = JSON.parse(await readFile(join(runDir, "run.json"), "utf8"));
+      const healthy = finalManifest.sessions.find((member) => member.sessionId !== session.id);
+      assert.equal(JSON.parse(await readFile(join(runDir, healthy.statusFile), "utf8")).state, "sealed");
+    }
     return { tracePath, eventCount: expected.length, versions };
   } finally {
     try {
