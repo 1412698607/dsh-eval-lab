@@ -20,7 +20,7 @@
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
 - M6.4 已增加独立真实 Web 采集与验收：Windows / deepseek-flash 累计五次任务，保留首次正常失败和旧取消样本；最新取消补验已核对实际工作区与 README 读取，三个最终场景均有工作区匹配的生命周期样本，取消 / 中断任务仍 unevaluable。
 - M6.4 [审查 035](docs/changes/2026-10-24-035-m6-4-status-review.md) 的异常启动清理与普通退出时间关联两项 P2 已由 [修复 036](docs/changes/2026-10-24-036-m6-4-startup-cleanup-timeline.md) 处理；新增无模型回归及原生 ConPTY 复验，历史样本与原始证据保留。
-- [复审 037](docs/changes/2026-10-24-037-m6-4-final-review-ci-status.md) 保留原云端失败与当时日志不可读的边界；[038](docs/changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 登录读取堆栈后修复共享验证函数的父目录规范化缺口，补真实目录别名与越界回归。本地修复仍未提交，不把本地通过当作新云端验收。
+- [复审 037](docs/changes/2026-10-24-037-m6-4-final-review-ci-status.md) 保留原云端失败与当时日志不可读的边界；[038](docs/changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 修复共享验证函数的父目录规范化缺口并补真实别名 / 越界回归。035 至 038 已提交并推送为 `4b97120`，其云端 202 Python、85 Node、41 JS 语法、compileall 和无模型合成示例全部通过，见 [验收 039](docs/changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -341,7 +341,7 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。已核实提交 `103c090` 包含 030 至 034，035 同步提交状态，036 已修复两项审查问题并补无模型回归。双配置与重复扩展、其他平台 / CLI / desktop / SDK 仍待确定范围；本轮没有新增模型任务或云端 CI，不继承 M5 云端结果作为本轮验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。`103c090` 包含 030 至 034，`4b97120` 包含 035 至 038 及三项修复，并已通过新的无模型云端验收。双配置与重复扩展、其他平台 / CLI / desktop / SDK 仍待确定范围；本轮没有新增模型任务。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 

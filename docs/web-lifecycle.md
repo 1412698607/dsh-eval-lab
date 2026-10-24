@@ -8,7 +8,7 @@
 
 普通退出要求 task turn/end ≤ Ctrl+C 操作 ≤ SIGINT ≤ 唯一 observer/disposed；取消仍要求首流 ≤ 取消标记 ≤ 页面停止 ≤ turn/end ≤ SIGINT ≤ 唯一卸载，时间允许相等。035 的两份矛盾时间副本现已拒绝，五个原始真实任务的门禁结论保留，旧取消工作区仍未知。
 
-[038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 根据实际云端失败堆栈，在共享 verify_recorded_task 内统一解析采集父目录，再保留真实子目录包含关系检查，避免直接调用遇到 junction / 非规范化路径时误报越界。新增真实别名和逃逸回归；CLI / 协议不变，不增加模型任务，新提交的云端复验仍待执行。
+[038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 根据实际云端失败堆栈，在共享 verify_recorded_task 内统一解析采集父目录，再保留真实子目录包含关系检查，避免直接调用遇到 junction / 非规范化路径时误报越界。036 / 038 及相关文档已提交并推送为 `4b97120`，其 202 Python / 85 Node / 41 JS 语法、compileall 和合成 demo 云端全部通过，见 [039](changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。本批没有新的真实模型任务，CLI / 协议和旧样本结论不变。
 
 ## 无模型运行入口
 

@@ -56,7 +56,7 @@ inspect --run <目录>
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
-| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`e47de36` 的语法 / Node / Python / compileall / 合成 demo 云端全部通过 |
+| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`4b97120` 的 41 JS 语法 / 85 Node / 202 Python / compileall / 合成 demo 云端全部通过，旧 M5 验收保留 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
 | `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
@@ -157,7 +157,7 @@ Python 先验证 live 清单、观察区间 / PID、实际模型流和 CUA 动�
 
 普通退出校验 turn/end ≤ console-ctrl-c 操作 ≤ SIGINT ≤ 唯一卸载；取消操作仍是取消前检查点，保留首流 / 标记 / 点击 / 结束的原顺序，再接 SIGINT / 唯一卸载。所有时间允许相等。协议版本、录制器、inspect 与原始样本不变，历史成功 / 失败和旧取消工作区未知继续保留。
 
-[038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 修复共享任务门禁的父目录表示：verify_recorded_task 自身先 Path(directory).resolve()，再将解析后的 runDir 与同样解析的采集根比较，不依赖外层入口预先处理。合法 junction / 非规范化父路径可用，真实 traces 别名逃逸仍在 inspect 前拒绝；strict / live-tail、状态版本和检查点门禁不变。旧云端失败堆栈已核对，新提交的云端验收尚未执行。
+[038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 修复共享任务门禁的父目录表示：verify_recorded_task 自身先 Path(directory).resolve()，再将解析后的 runDir 与同样解析的采集根比较，不依赖外层入口预先处理。合法 junction / 非规范化父路径可用，真实 traces 别名逃逸仍在 inspect 前拒绝；strict / live-tail、状态版本和检查点门禁不变。036 / 038 已随 `4b97120` 推送并通过新云端验收，原失败记录保留，见 [039](changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。
 
 ## M3.1 用例与离线断言
 
@@ -242,7 +242,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；双配置 / 重复及其他渠道扩展仍待确定。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。038 当前完整无模型 Python 回归为 202 项；036 的 85 项 Node / 199 项 Python、033 的 82 / 196 与 034 的 3 / 9 定向结果保留为各批历史，本轮未重跑 Node。真实组件、模型和子进程检查范围见 [进度](progress.md)，少量验收样本不构成模型表现或性能改善结论。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。039 的修复提交云端实际通过 202 Python / 85 Node / 41 JS 语法、compileall 和合成 demo；038 的本地 202 Python 及 036 / 033 / 034 各批结果单独保留。真实组件、模型和子进程检查范围见 [进度](progress.md)，少量验收样本不构成模型表现或性能改善结论。
 
 ## M3.3 实时状态化工具边界
 
