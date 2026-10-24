@@ -46,7 +46,8 @@
         "isError": false,
         "textContains": "ALPHA"
       },
-      "id": "tool-2"
+      "id": "tool-2",
+      "after": "tool-1"
     },
     {
       "type": "tool_result",
@@ -70,7 +71,8 @@
         "isError": false,
         "textContains": "BETA"
       },
-      "id": "tool-4"
+      "id": "tool-4",
+      "after": "tool-3"
     },
     {
       "id": "answer",

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from dsh_eval.environment import StatefulEnvironment
-from dsh_eval.evaluate import check_assertion, evaluate, task_view
+from dsh_eval.evaluate import check_assertions, evaluate, task_view
 from dsh_eval.formats import load_json, validate_experiment
 from dsh_eval.runner import validate_live_case
 
@@ -111,6 +111,61 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
                 self.assertEqual(result['recording']['outcome'], 'complete')
                 self.assertEqual(result['outcome'], 'failed', result)
 
+    def test_required_step_order_is_enforced(self):
+        variants = {
+            'nested-discovery': [('read', 'docs/releases/current.md'), ('list', 'docs')],
+            'reference-chain': [('read', 'data/project.md'), ('read', 'docs/index.md'), ('read', 'README.md')],
+            'current-over-archive': [('read', 'releases/current.md'), ('read', 'README.md')],
+            'stale-then-retry': [('read', 'docs/current.md'), ('read', 'docs/current.md'),
+                                 ('list', 'docs'), ('read', 'docs/old.md'), ('read', 'README.md')],
+        }
+        for name, actions in variants.items():
+            with self.subTest(case=name):
+                case = load_json(SUITE / f'{name}.case.json')
+                result = self.record_and_evaluate(name, reference_events(case, actions, REFERENCES[name][1]))
+                self.assertEqual(result['recording']['outcome'], 'complete')
+                self.assertEqual(result['outcome'], 'failed', result)
+
+    def test_followup_call_must_wait_for_prerequisite_result(self):
+        for name in ('nested-discovery', 'retry-once'):
+            with self.subTest(case=name):
+                case = load_json(SUITE / f'{name}.case.json')
+                events = reference_events(case, *REFERENCES[name])
+                events[3], events[4] = events[4], events[3]
+                for seq, event in enumerate(events):
+                    event['seq'] = seq
+                result = self.record_and_evaluate(name, events)
+                self.assertEqual(result['recording']['outcome'], 'complete')
+                self.assertEqual(result['outcome'], 'failed', result)
+
+    def test_empty_file_requires_exact_empty_tool_text(self):
+        name = 'empty-file'
+        case = load_json(SUITE / f'{name}.case.json')
+        for texts in (['This file is NOT empty.'], [' \n'], ['', 'nonempty']):
+            with self.subTest(texts=texts):
+                events = reference_events(case, *REFERENCES[name])
+                events[3]['data']['message']['content'] = [{'type': 'text', 'text': text} for text in texts]
+                result = self.record_and_evaluate(name, events)
+                self.assertEqual(result['recording']['outcome'], 'complete')
+                self.assertEqual(result['outcome'], 'failed', result)
+
+    def test_independent_retry_paths_can_interleave(self):
+        name = 'independent-retries'
+        case = load_json(SUITE / f'{name}.case.json')
+        for paths in (['alpha.md', 'beta.md', 'alpha.md', 'beta.md'],
+                      ['beta.md', 'beta.md', 'alpha.md', 'alpha.md']):
+            with self.subTest(paths=paths):
+                actions = [('read', path) for path in paths]
+                result = self.record_and_evaluate(name, reference_events(case, actions, REFERENCES[name][1]))
+                self.assertEqual(result['outcome'], 'passed', result)
+
+    def test_later_valid_chain_can_pass_after_extra_calls(self):
+        name = 'nested-discovery'
+        case = load_json(SUITE / f'{name}.case.json')
+        actions = [('read', 'docs/releases/current.md'), *REFERENCES[name][0]]
+        result = self.record_and_evaluate(name, reference_events(case, actions, REFERENCES[name][1]))
+        self.assertEqual(result['outcome'], 'passed', result)
+
     def test_each_required_tool_result_is_necessary(self):
         for name, (actions, answer) in REFERENCES.items():
             case = load_json(SUITE / f'{name}.case.json')
@@ -121,7 +176,8 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
                     del variant[2 + index * 2:4 + index * 2]
                     for seq, event in enumerate(variant):
                         event['seq'] = seq
-                    result = check_assertion(assertion, task_view(variant, case['input']))
+                    results = check_assertions(case['assertions'], task_view(variant, case['input']))
+                    result = next(row for row in results if row['id'] == assertion['id'])
                     self.assertNotEqual(result['outcome'], 'passed', result)
 
     def test_root_listing_is_also_valid_and_retry_state_resets(self):
@@ -133,7 +189,7 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
                 first = reference_events(case, actions, answer)
                 self.assertEqual(first, reference_events(case, actions, answer))
                 view = task_view(first, case['input'])
-                self.assertTrue(all(check_assertion(item, view)['outcome'] == 'passed' for item in case['assertions']))
+                self.assertTrue(all(row['outcome'] == 'passed' for row in check_assertions(case['assertions'], view)))
 
 
 if __name__ == '__main__':

@@ -81,7 +81,7 @@ def _same(left, right):
     return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(right, sort_keys=True, ensure_ascii=False)
 
 
-def check_assertion(assertion, view):
+def check_assertion(assertion, view, previous=None):
     base = {"id": assertion["id"], "type": assertion["type"]}
     kind = assertion["type"]
     if kind == "final_text":
@@ -92,7 +92,14 @@ def check_assertion(assertion, view):
         actual = view["end"]["data"].get("reason")
         return {**base, "outcome": "passed" if _same(actual, assertion["reason"]) else "failed",
                 "actual": actual, "evidence": {"endSeq": view["end"]["seq"]}}
-    mismatches = []
+    after_seq = None
+    if "after" in assertion:
+        predecessor = (previous or {}).get(assertion["after"])
+        if predecessor is None or predecessor["outcome"] != "passed":
+            return {**base, "outcome": "failed" if predecessor and predecessor["outcome"] == "failed" else "insufficient_evidence",
+                    "reason": f"Required earlier tool result assertion {assertion['after']} did not pass"}
+        after_seq = predecessor["evidence"]["resultSeq"]
+    matches, mismatches = [], []
     for call_id, (call, arguments) in view["calls"].items():
         if call["data"]["name"] != assertion["tool"] or not all(
                 key in arguments and _same(arguments[key], value) for key, value in assertion["arguments"].items()):
@@ -102,13 +109,29 @@ def check_assertion(assertion, view):
             continue
         message = result["data"]["message"]
         evidence = {"callId": call_id, "callSeq": call["seq"], "resultSeq": result["seq"], "answerSeq": view["final"]["seq"]}
+        if after_seq is not None:
+            evidence["afterResultSeq"] = after_seq
         expected = assertion["result"]
-        if message["isError"] is expected["isError"] and ("textContains" not in expected or expected["textContains"] in text_of(message)):
-            return {**base, "outcome": "passed", "evidence": evidence}
-        mismatches.append(evidence)
+        if (message["isError"] is expected["isError"]
+                and ("textContains" not in expected or expected["textContains"] in text_of(message))
+                and ("textEquals" not in expected or expected["textEquals"] == text_of(message))
+                and (after_seq is None or call["seq"] > after_seq)):
+            matches.append(evidence)
+        else:
+            mismatches.append(evidence)
+    if matches:
+        # Earliest completion leaves every possible successor available, even if calls finish out of order.
+        return {**base, "outcome": "passed", "evidence": min(matches, key=lambda match: match["resultSeq"])}
     if mismatches:
-        return {**base, "outcome": "failed", "reason": "Linked tool results did not match", "evidence": mismatches}
+        return {**base, "outcome": "failed", "reason": "Linked tool results did not match content or required order", "evidence": mismatches}
     return {**base, "outcome": "insufficient_evidence", "reason": "No matching call/result before final answer"}
+
+
+def check_assertions(assertions, view):
+    results = {}
+    for assertion in assertions:
+        results[assertion["id"]] = check_assertion(assertion, view, results)
+    return list(results.values())
 
 
 def evaluate(case_path, evidence_path):
@@ -181,7 +204,7 @@ def evaluate(case_path, evidence_path):
             require(headers and all(header.get("provider") == evidence["configuration"]["provider"]
                                     and header.get("model") == evidence["configuration"]["model"] for header in headers),
                     "Actual request routes do not match the evidence configuration")
-        rows[:] = [check_assertion(item, view) for item in case["assertions"]]
+        rows[:] = check_assertions(case["assertions"], view)
         outcomes = {row["outcome"] for row in rows}
         assertions["outcome"] = ("insufficient_evidence" if "insufficient_evidence" in outcomes
                                  else "failed" if "failed" in outcomes else "passed")

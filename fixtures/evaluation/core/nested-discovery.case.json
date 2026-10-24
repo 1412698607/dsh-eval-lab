@@ -40,7 +40,8 @@
         "isError": false,
         "textContains": "core-nested"
       },
-      "id": "tool-2"
+      "id": "tool-2",
+      "after": "tool-1"
     },
     {
       "id": "answer",

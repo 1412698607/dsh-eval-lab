@@ -17,7 +17,7 @@
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
-- M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复，复用既有实验、隔离环境及离线报告入口。
+- M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -314,14 +314,14 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。新增 [M6 扩展](docs/plans/m6-reliability-validation.md) 分四批，当前已完成 M6.1 / M6.2 的本地实现与验证；剩 M6.3 真实评测集和 M6.4 Web 生命周期两批。M6.3 开始前需确定实际配置与模型调用预算。本批没有触发新的云端 CI 或模型调用，不把 M5 云端通过作为新改动的验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，本次只做无模型回归和历史录制的离线检查；首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。双配置与重复扩展仍待配置和预算，下一批为 M6.4 Web 页面取消 / 正常退出 / 处理中断；新模型任务另定规模。本次未运行云端 CI，不继承 M5 云端结果作为新修复验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
 - [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
-- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、实测范围和剩余两批。
+- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、单配置验收及后续 Web 范围。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
 - [评测格式](docs/evaluation-format.md)：版本 1 / 2 用例、证据与结果、离线命令。
 - [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。

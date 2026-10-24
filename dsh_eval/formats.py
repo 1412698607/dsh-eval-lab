@@ -122,6 +122,7 @@ def validate_case(case):
     assertions = case["assertions"]
     require(isinstance(assertions, list) and assertions, "At least one assertion is required")
     ids = set()
+    tool_ids = set()
     for assertion in assertions:
         require(isinstance(assertion, dict), "Assertion must be an object")
         kind = assertion.get("type")
@@ -129,15 +130,22 @@ def validate_case(case):
             fields(assertion, ("id", "type", "equals"))
             require(nonempty(assertion["equals"]), "Final text must be nonempty")
         elif kind == "tool_result":
-            fields(assertion, ("id", "type", "tool", "arguments", "result"))
+            fields(assertion, ("id", "type", "tool", "arguments", "result"), ("after",))
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
+            if "after" in assertion:
+                require(nonempty(assertion["after"]) and assertion["after"] in tool_ids,
+                        "after must name an earlier tool_result assertion")
             require(isinstance(assertion["arguments"], dict)
                     and (case["caseFormatVersion"] == 2 or assertion["arguments"]),
                     "Expected tool arguments must be an object (nonempty in case version 1)")
-            fields(assertion["result"], ("isError",), ("textContains",))
+            fields(assertion["result"], ("isError",), ("textContains", "textEquals"))
             require(type(assertion["result"]["isError"]) is bool, "isError must be boolean")
+            require(not {"textContains", "textEquals"} <= assertion["result"].keys(),
+                    "Choose textContains or textEquals")
             if "textContains" in assertion["result"]:
                 require(nonempty(assertion["result"]["textContains"]), "textContains must be nonempty")
+            if "textEquals" in assertion["result"]:
+                require(isinstance(assertion["result"]["textEquals"], str), "textEquals must be text")
         elif kind == "turn_end":
             fields(assertion, ("id", "type", "reason"))
             require(isinstance(assertion["reason"], dict) and nonempty(assertion["reason"].get("kind")), "Expected end reason is required")
@@ -145,6 +153,8 @@ def validate_case(case):
             raise ValueError(f"Unsupported assertion type: {kind}")
         require(nonempty(assertion["id"]) and assertion["id"] not in ids, "Assertion IDs must be nonempty and unique")
         ids.add(assertion["id"])
+        if kind == "tool_result":
+            tool_ids.add(assertion["id"])
     return case
 
 

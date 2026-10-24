@@ -1,6 +1,6 @@
 # M6.3 固定评测集与真实验收
 
-更新：2026 年 10 月 24 日，Asia/Shanghai。插件版本 `0.1.2`，沿用用例 2、实验 1、证据 / 评测 2；没有新增格式或调度器。
+更新：2026 年 10 月 24 日，Asia/Shanghai。插件版本 `0.1.2`，沿用用例 2、实验 1、证据 / 评测 2；没有新增格式编号或调度器。审查修复 028 增加可选工具结果约束，旧输入仍可读取，新字段需要升级后的读取器。
 
 ## 本批范围
 
@@ -27,9 +27,11 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 
 报告重新 inspect，核对完整冻结输入、身份、来源和全部请求路由，列出 planned / attempted / finished / skipped / errors、三维分类和指标覆盖；缺失保留 null。仅一个配置时 comparisons 为空。观测 modelCalls 来自已结算事件，不等于供应商账单请求数；elapsedSeconds 包含准备 / 执行 / 清理，费用缺失不补零。原始证据保存在被忽略的 runs，公开文档不依赖私人日志才能理解协议或重跑。
 
-## 验证结果
+## 027 首次真实验收与原冻结输入
 
 2026 年 10 月 24 日在 Windows、Node.js v24.14.0 / Python 3.12.0、CLI / SessionStore 0.2.0-rc.2、Cordis 4.0.4 执行。实验 ID 为 `6530df76-86e2-4ea1-80a9-86ca71e74e4e`，独立复验报告 ID 为 `2a3253d3-69b8-49e9-9c09-51cd01baae7b`。两者文件分别位于上述默认 experiments / reports 目录，不把原始日志加入公开仓库。
+
+本节保留记录 027 的历史命令、计数和原冻结断言结果。后续修复只对已有录制做离线检查，没有新增模型任务，也不改写本节的历史验证。
 
 | 用例 | 执行 / 录制 / 断言 | 已结算模型调用 | 工具调用 | 已报告 totalTokens |
 | --- | --- | ---: | ---: | ---: |
@@ -61,8 +63,34 @@ planned=10、attempted=10、finished=10、skipped=0、errors=0，passed / failed
 
 本轮未运行云端 CI，未重跑早期模型任务、smoke:host、check:output 或资源测量；历史结果单独保留。修改范围及取舍见 [记录 027](changes/2026-10-24-027-m6-3-core-evaluation.md)。
 
+## 028 审查修复与无模型复验
+
+审查发现两种误通过：发现 / 引用 / 恢复的步骤反序时，原断言只确认必要调用存在；空文件的工具返回非空、最终答案仍为 EMPTY_FILE 时，原断言只确认读取成功。README 当前里程碑状态也未同步。本次修复六个顺序用例及一个空文件用例的断言，任务文本、环境、配置和预算保持。
+
+tool_result.after 引用前面的工具结果断言，要求先行结果返回后才发出后继调用；匹配多组调用时选最早完成的合格结果。nested-discovery 检查 list → read，reference-chain 和 current-over-archive 检查引用后读取；stale-then-retry 检查 README → 旧路径缺失 → 列表 → 当前路径暂时失败 → 重试。retry-once 及 independent-retries 也要求先收到各路径的失败结果再重试，独立路径可交错。empty-file 用 result.textEquals="" 精确检查全部文本块的拼接结果，空白不算空。协议及失败分类见 [评测格式](evaluation-format.md)。
+
+新增 5 项固定集回归先在旧实现出现 9 个反例 subTest 失败，修复后固定集 11 项全过；另有 8 项格式 / 断言边界测试，覆盖无效引用、文本类型、空白与多块文本、并发结果乱序、先行缺失或失败及合法替代匹配。原 30 份合成轨迹保留，新加 12 份录制轨迹检查 9 个反例及 3 个合法路径。
+
+| 检查 | 结果 | 范围 |
+| --- | --- | --- |
+| `python -m unittest discover -s test -p test_core_suite.py -v` | 11 项通过 | 42 份合成录制 / fresh inspect，原 22 项必要证据删除和 4 组列表 / 状态重置继续通过 |
+| `python -m unittest discover -s test -p test_assertion_constraints.py -v` | 8 项通过 | 两个用例版本的可选字段、依赖和精确文本边界 |
+| `python -m unittest discover -s test -p test_evaluation.py` | 36 项通过 | 原离线评测兼容回归 |
+| `npm.cmd run test:python` | 163 项通过，45.800 秒 | 获准环境，包含真实子进程清理；无模型调用 |
+| `npm.cmd test` / `npm.cmd run check` / `python -m compileall -q dsh_eval test` | 79 Node / 36 文件语法及 Python 编译检查通过 | 不启动模型任务 |
+| 当前 10 个用例对已有录制调用 evaluate | 10 项 passed | 七个用例仅断言变化，来源是已有真实录制，不是新的模型执行 |
+| 原冻结实验重新 generate_report | 10 项 verified / matched / passed，changedFields 全空 | 新报告 ID `c1a95bab-f3c9-4f1c-9dcd-2a33bd98ef36`，另存本机验证目录；原 125 份证据摘要不变 |
+
+标准 `--report` 始终使用原冻结断言。需要对保存的录制检查当前更严格的断言时，可在项目根目录使用另一入口，路径从该实验样本的 caseDirectory 取得：
+
+```powershell
+python -m dsh_eval --case 'fixtures/evaluation/core/<name>.case.json' --evidence 'runs/experiments/<experimentId>/batches/<batchId>/cases/<caseRunId>/evidence.json'
+```
+
+此命令只输出新的离线结论。当前七个用例的完整输入已不同于旧快照，后续新实验会冻结新版；旧报告不会自动替换断言。本次没有新模型任务、云端 CI、真实宿主重跑或新增成本 / 稳定性结论。实现与取舍见 [记录 028](changes/2026-10-24-028-m6-3-assertion-constraints.md)。
+
 ## 边界与下一批
 
-每项只执行一次，来源均单一配置，不能作重复稳定性或显著性结论。断言检查必要工具结果和精确答案，不禁止全部额外行为，也不提供通用调用顺序 / 次数断言。目录发现接受合理列表范围，暂时故障的实际先后由状态化环境限定。
+首次真实验收每项只执行一次，来源均单一配置，不能作重复稳定性或显著性结论。当前断言检查必要工具结果、声明的 after 关系及精确答案；没有指定次数或禁止全部额外行为的断言，允许额外调用之后出现合法匹配链。目录发现接受合理列表范围，独立路径之间没有额外顺序要求。
 
 双配置真实比较仍待选择第二套配置与预算，M6.4 页面点击取消、正常退出及处理中断仍未验收。当前方案见 [M6 计划](plans/m6-reliability-validation.md)。

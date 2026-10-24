@@ -45,7 +45,8 @@
         "isError": true,
         "textContains": "NOT_FOUND"
       },
-      "id": "tool-2"
+      "id": "tool-2",
+      "after": "tool-1"
     },
     {
       "type": "tool_result",
@@ -55,7 +56,8 @@
         "isError": false,
         "textContains": "docs/current.md"
       },
-      "id": "tool-3"
+      "id": "tool-3",
+      "after": "tool-2"
     },
     {
       "type": "tool_result",
@@ -67,7 +69,8 @@
         "isError": true,
         "textContains": "TEMPORARY_READ_FAILURE"
       },
-      "id": "tool-4"
+      "id": "tool-4",
+      "after": "tool-3"
     },
     {
       "type": "tool_result",
@@ -79,7 +82,8 @@
         "isError": false,
         "textContains": "core-recovered"
       },
-      "id": "tool-5"
+      "id": "tool-5",
+      "after": "tool-4"
     },
     {
       "id": "answer",

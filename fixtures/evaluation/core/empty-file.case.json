@@ -27,7 +27,8 @@
         "path": "empty.md"
       },
       "result": {
-        "isError": false
+        "isError": false,
+        "textEquals": ""
       },
       "id": "tool-1"
     },

@@ -1,6 +1,6 @@
 # 用例、证据与评测结果格式
 
-更新：2026 年 10 月 23 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复为两个用例版本增加可选 recorder 配置。插件仍为 `0.1.2`，既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
+更新：2026 年 10 月 24 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
 
 ## 运行入口
 
@@ -33,10 +33,10 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | type | 必需参数与行为 |
 | --- | --- |
 | final_text | equals；最后一个非空 assistant/message 的文本块拼接后 strip，再精确比较 equals |
-| tool_result | tool、arguments、result；工具名精确匹配，arguments 为非空对象，按顶层键比较所声明参数（允许额外实际参数）；嵌套值完整比较且区分布尔和数字。result.isError 必须是布尔值，可加非空 textContains |
+| tool_result | tool、arguments、result；工具名精确匹配，arguments 为非空对象，按顶层键比较所声明参数（允许额外实际参数）；嵌套值完整比较且区分布尔和数字。result.isError 必须是布尔值，可择一添加非空 textContains 或字符串 textEquals；可选 after 引用前面的工具结果断言 |
 | turn_end | reason 对象，含非空 kind；与实际结束原因完整比较 |
 
-tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；本版本没有跨断言顺序、调用次数或负向行为断言。
+tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；声明 after 时还必须满足下节的先后关系。没有调用次数或负向行为断言。
 
 匹配调用及实际结果存在但值不符为 failed；无匹配参数、缺结果、结果晚于答案等不能证明所需事实时为 insufficient_evidence。最终文本不符为 failed。任一必需断言证据不足时总体无法评测，即使另一条已经失败，也保留各条结果。
 
@@ -44,7 +44,26 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 
 版本 2 保留版本 1 的必需字段和断言，允许 environment 增加 stateful 对象，其唯一必需字段 transientReadFailures 为“已有文件路径 → 非负整数次数”的映射，拒绝布尔值。没有 stateful 时仍使用实际文件环境；声明 stateful 后 files 只保存在 Python 内存，workspace 不写入这些文件。版本 1 不接受 stateful。证据和结果仍为版本 2，录制格式不变。示例见 [路径过时](../fixtures/evaluation/stale-path.case.json)、[失败恢复](../fixtures/evaluation/retry-read.case.json)；协议和取消语义见 [状态化工具](stateful-tools.md)。
 
-版本 2 允许 tool_result 的 `arguments` 为 `{}`，表示不限制调用参数值，仍必须有正确工具名、合法对象形式的实际参数、按 callId 关联的结果、预期 isError / textContains 和正确的任务顺序。非空对象仍逐键精确匹配；版本 1 继续要求非空对象。路径过时用例的发现断言使用空对象，并要求 eval_list 成功返回包含 docs/current.md 的列表，因此根目录 `.` 和 `docs` 都可通过，旧路径失败、读取新文件及答案断言保持原要求。此兼容扩展不增加新版本编号；旧快照中的非空参数约束仍按原语义检查。修复依据见 [记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
+版本 2 允许 tool_result 的 `arguments` 为 `{}`，表示不限制调用参数值，仍必须有正确工具名、合法对象形式的实际参数、按 callId 关联的结果、预期 isError / 文本约束和正确的任务顺序。非空对象仍逐键精确匹配；版本 1 继续要求非空对象。路径过时用例的发现断言使用空对象，并要求 eval_list 成功返回包含 docs/current.md 的列表，因此根目录 `.` 和 `docs` 都可通过，旧路径失败、读取新文件及答案断言保持原要求。此兼容扩展不增加新版本编号；旧快照中的非空参数约束仍按原语义检查。修复依据见 [记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
+
+## 可选工具结果约束：两个用例版本通用
+
+下面两条断言要求先取得 README 的结果，再发起空文件读取，并检查返回文本确实为空：
+
+```json
+[
+  {"id":"reference","type":"tool_result","tool":"eval_read","arguments":{"path":"README.md"},"result":{"isError":false,"textContains":"empty.md"}},
+  {"id":"empty","type":"tool_result","tool":"eval_read","arguments":{"path":"empty.md"},"result":{"isError":false,"textEquals":""},"after":"reference"}
+]
+```
+
+`after` 必须是 assertions 数组中前面某条 tool_result 的非空 ID。拒绝未知、自身、向后引用、循环、非字符串和指向其他断言类型的引用；final_text / turn_end 不接受 after。后继调用的 callSeq 必须严格大于先行匹配结果的 resultSeq，同批并发发出后继、稍后才收到先行结果也不能通过。只限制声明的依赖，不要求两条独立路径按同一全序执行。
+
+评测按声明顺序计算，选择满足内容和依赖、且 resultSeq 最早的匹配结果，供后继引用。这样既允许并发调用乱序返回，也允许额外调用之后出现完整合法链。结果 evidence 在声明 after 时增加 afterResultSeq，便于核对。已有匹配结果但顺序错误为 failed；先行断言 failed 时后继 failed，先行证据缺失时后继 insufficient_evidence。缺少上下文的单条 after 检查不能通过。
+
+`result.textEquals` 接受任意字符串，包括 `""`，与工具返回的全部文本块拼接结果精确比较，不做 strip；空白或后续非空文本块均不等于空字符串。textEquals 与 textContains 不可同时声明，textContains 仍必须非空。未声明新字段的用例保留原有存在性匹配语义，输入不会自动补字段。
+
+这是可选字段扩展，格式编号不变；新字段需要升级后的读取器，旧严格读取器会拒绝。历史实验仍按原冻结用例复验；当前更严格的用例属于新的完整输入，不能通过改写旧快照补造历史验收。修复与回归见 [记录 028](changes/2026-10-24-028-m6-3-assertion-constraints.md)。
 
 ## 可选录制配置：两个用例版本通用
 

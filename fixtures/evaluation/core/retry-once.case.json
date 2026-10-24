@@ -44,7 +44,8 @@
         "isError": false,
         "textContains": "core-retry"
       },
-      "id": "tool-2"
+      "id": "tool-2",
+      "after": "tool-1"
     },
     {
       "id": "answer",
