@@ -13,6 +13,7 @@
 - M3.1 已实现 Python 版本化用例加载、离线证据断言及执行 / 录制 / 断言三维结果；两个公开合成用例通过，插件版本仍为 `0.1.2`。
 - M3.2 已实现 Python 驱动单用例真实 headless 运行、独立文件环境和会话、实际路由采集、墙钟超时 / 取消及退出清理；证据 / 结果版本 2 兼容原版本 1。
 - M4.1 已在状态化工具与顺序批次上增加重复试验、配置 / 重复编号关联、明确分母和已观测指标；缺失用量与费用保持 null。
+- 实验支持独立 `--plan` 无模型预检与任务矩阵预览；与实际执行共用展开逻辑，调用数 / token / 费用未知保留 null，见 [实验说明](docs/experiments.md)。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
@@ -38,7 +39,15 @@ python -m dsh_eval --browse
 
 ## 固定评测集
 
-固定评测集的无模型验收与显式真实运行：
+先预览固定评测集，不调用模型、不创建运行目录：
+
+```powershell
+python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --plan
+```
+
+输出 10 个用例条目、1 个配置、10 个计划任务，以及逐项请求配置 / 超时 / 录制覆盖。预览检查结构和 headless / 插件兼容性，不验证模型可用或任务成功，也不冻结后续执行输入。仅输出 JSON；参数与字段见 [实验预检](docs/experiments.md)。
+
+固定评测集的无模型测试与显式真实运行：
 
 ```powershell
 python -m unittest discover -s test -p test_core_suite.py -v

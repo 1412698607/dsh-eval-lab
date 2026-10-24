@@ -1,6 +1,31 @@
 # M4.1 重复试验与指标口径
 
-更新：2026 年 10 月 21 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1。Python 将用例、配置、重复次数展开为已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
+更新：2026 年 10 月 24 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
+
+## 无模型预检与计划预览
+
+在仓库根目录运行，只需 Python，不安装 Harness 或读取模型凭据：
+
+```powershell
+python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --plan
+```
+
+读取清单、全部用例及本项目 package.json，校验输入结构、用例预算 / 录制声明和全部实验配置组合的 headless / 当前插件版本。成功向 stdout 输出缩进 UTF-8 JSON，退出码 0；输入、文件或兼容性错误返回版本 1 的计划错误 JSON（valid=false、modelCalled=false、error），退出码 2。参数冲突由命令行解析器向 stderr 报错并返回 2。valid=true 只表示这些静态检查通过，不代表宿主安装、凭据、provider / model 可用、运行时环境创建或任务答案已经验证。
+
+| 字段 | 含义 |
+| --- | --- |
+| experimentPlanFormatVersion / valid / modelCalled | 独立版本 1 预览，静态预检通过，当前预览未调用模型 |
+| experimentName / sourceManifest / configurations | 清单名称、解析后的来源路径及请求配置声明 |
+| repetitions / failurePolicy / order | 重复次数、continue / stop 策略与 repeat-case-configuration 固定顺序 |
+| counts.cases / configurations / samples | 用例条目数、配置条目数、计划任务数；不同条目可引用同一用例或配置 |
+| estimates.modelCalls / totalTokens / cost | 未来执行的调用数、token 和费用未知，均为 null；任务数不等于调用数 |
+| samples | 按执行顺序列出 sampleId、caseEntryId、caseId、configurationId、repeatIndex、requestedConfiguration、budget、recorderOverrides |
+
+10 个用例条目 × 2 个配置条目 × 3 轮会列出 60 个任务，而不是声明 60 次模型调用。每项 budget 保留原 timeoutSeconds，它不是总退出硬期限或费用上限。recorderOverrides 只展示用例原始录制覆盖：未声明为 null，空对象为 {}，部分 / 完整覆盖保留声明值；不在 Python 预览中复制 Node 默认值或将原始输入补齐。实际录制有效值仍由宿主配置解析并写入 run.json。
+
+`--plan` 只用于 `--experiment`，与 `--run` 互斥；拒绝 --evidence、--output、--runs-root、--host-modules、--cancel-after-stream 及浏览 / 报告参数，包括空字符串选项值。预览只打印 JSON，不创建实验 / batch / workspace 目录，不安装宿主、调用 inspect、启动任务或生成执行 UUID、状态和 outcome。需要保存输出时由调用方处理 stdout；它不是可执行的冻结清单。
+
+预览和 --run 共用同一套加载 / 预检及样本展开逻辑。预览不锁定源文件；后续 --run 仍会重新读取、校验并冻结当时输入，期间修改文件可能改变计划。超大清单会完整展开到内存和 stdout，当前没有新增样本数上限或 token / 费用预算。实现与无模型验证见 [记录 040](changes/2026-10-24-040-experiment-plan-preview.md)。
 
 ## 运行与输入
 
@@ -12,7 +37,7 @@ M6.3 的 [固定评测集](core-evaluation.md) 另提供 10 个用例各一次�
 python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --run
 ```
 
-`--experiment` 必须搭配 `--run`，不能与 `--case`、`--batch`、`--evidence`、`--output` 组合。`--runs-root` 是新实验目录的父目录，默认 `runs/experiments`；`--host-modules`、`--cancel-after-stream` 继续传给每次实际运行。退出码沿用 0 passed、1 failed、2 unevaluable / 输入或输出错误。宿主、凭据引用与预算范围见 [单用例运行](single-case-runner.md)。
+`--experiment` 必须搭配互斥的 `--run` 或 `--plan`，不能与 `--case`、`--batch`、`--evidence`、`--output` 组合。以下是 --run 的执行约定：`--runs-root` 是新实验目录的父目录，默认 `runs/experiments`；`--host-modules`、`--cancel-after-stream` 继续传给每次实际运行。执行退出码沿用 0 passed、1 failed、2 unevaluable / 输入或输出错误。宿主、凭据引用与预算范围见 [单用例运行](single-case-runner.md)。
 
 ```json
 {

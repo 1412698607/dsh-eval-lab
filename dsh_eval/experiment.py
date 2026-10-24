@@ -9,6 +9,8 @@ from .formats import load_json, require, validate_case, validate_experiment
 from .metrics import summarize
 from .runner import ROOT, save_json, validate_live_case
 
+ORDER = "repeat-case-configuration"
+
 
 def _checkpoint(directory, report):
     temporary = directory / f".experiment-result-{uuid4()}.tmp"
@@ -16,7 +18,7 @@ def _checkpoint(directory, report):
     temporary.replace(directory / "experiment-result.json")
 
 
-def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_after_stream=False):
+def _load_experiment(experiment_path):
     source = Path(experiment_path).resolve()
     manifest = validate_experiment(load_json(source))
     inputs = [validate_case(load_json(source.parent / entry["casePath"])) for entry in manifest["cases"]]
@@ -24,6 +26,36 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     for case in inputs:
         for config in manifest["configurations"]:
             validate_live_case({**case, "configRef": config["configRef"]})
+    return source, manifest, inputs
+
+
+def _expand_samples(manifest, inputs):
+    # Repeat blocks keep different configurations close in time; no randomization claim.
+    index = 0
+    for repeat in range(1, manifest["repetitions"] + 1):
+        for entry, case in zip(manifest["cases"], inputs):
+            for config in manifest["configurations"]:
+                index += 1
+                yield ({"sampleId": f"sample-{index:06}", "caseEntryId": entry["entryId"], "caseId": case["caseId"],
+                        "configurationId": config["configurationId"], "repeatIndex": repeat},
+                       {**case, "configRef": config["configRef"]})
+
+
+def plan_experiment(experiment_path):
+    source, manifest, inputs = _load_experiment(experiment_path)
+    samples = [deepcopy({**sample, "requestedConfiguration": case["configRef"], "budget": case["budget"],
+                         "recorderOverrides": case.get("recorder")})
+               for sample, case in _expand_samples(manifest, inputs)]
+    return {"experimentPlanFormatVersion": 1, "valid": True, "modelCalled": False,
+            "experimentName": manifest["experimentName"], "sourceManifest": str(source),
+            "repetitions": manifest["repetitions"], "failurePolicy": manifest["failurePolicy"], "order": ORDER,
+            "configurations": deepcopy(manifest["configurations"]),
+            "counts": {"cases": len(inputs), "configurations": len(manifest["configurations"]), "samples": len(samples)},
+            "estimates": {"modelCalls": None, "totalTokens": None, "cost": None}, "samples": samples}
+
+
+def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_after_stream=False):
+    source, manifest, inputs = _load_experiment(experiment_path)
     experiment_id = str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "experiments").resolve() / experiment_id
     (directory / "inputs").mkdir(parents=True, exist_ok=False)
@@ -36,22 +68,17 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     batch = {"batchFormatVersion": 1, "batchName": manifest["experimentName"],
              "failurePolicy": manifest["failurePolicy"], "cases": []}
     samples = []
-    # Repeat blocks keep different configurations close in time; no randomization claim.
-    for repeat in range(1, manifest["repetitions"] + 1):
-        for entry, case in zip(manifest["cases"], inputs):
-            for config in manifest["configurations"]:
-                sample_id = f"sample-{len(samples) + 1:06}"
-                path = f"expanded/{sample_id}.case.json"
-                save_json(directory / path, {**case, "configRef": config["configRef"]})
-                batch["cases"].append({"entryId": sample_id, "casePath": path})
-                samples.append({"sampleId": sample_id, "caseEntryId": entry["entryId"], "caseId": case["caseId"],
-                                "configurationId": config["configurationId"], "repeatIndex": repeat})
+    for sample, case in _expand_samples(manifest, inputs):
+        path = f"expanded/{sample['sampleId']}.case.json"
+        save_json(directory / path, case)
+        batch["cases"].append({"entryId": sample["sampleId"], "casePath": path})
+        samples.append(sample)
     save_json(directory / "expanded.batch.json", batch)
     report = {"experimentResultFormatVersion": 1, "experimentId": experiment_id,
               "experimentName": manifest["experimentName"], "experimentDirectory": str(directory),
               "sourceManifest": str(source), "manifestPath": "experiment.json", "repetitions": manifest["repetitions"],
               "configurations": manifest["configurations"], "failurePolicy": manifest["failurePolicy"],
-              "order": "repeat-case-configuration", "startedAt": datetime.now(timezone.utc).isoformat(),
+              "order": ORDER, "startedAt": datetime.now(timezone.utc).isoformat(),
               "finishedAt": None, "status": "running", "outcome": None, "batchId": None, "batchResultPath": None,
               "samples": samples, "summary": None, "groups": []}
     _checkpoint(directory, report)

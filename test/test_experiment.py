@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from dsh_eval.__main__ import main
 from dsh_eval.batch import run_batch
-from dsh_eval.experiment import run_experiment
+from dsh_eval.experiment import plan_experiment, run_experiment
 from dsh_eval.formats import load_json, validate_experiment
 from dsh_eval.runner import ROOT
 
@@ -73,6 +73,9 @@ class ExperimentTests(unittest.TestCase):
         config["configurationId"] = "second"
         config["configRef"]["model"] = "second"
         self.manifest["configurations"].append(config)
+        self.case["recorder"] = {"maxPendingBytes": 4194304}
+        self.save("case.json", self.case)
+        preview = plan_experiment(self.save("experiment.json", self.manifest))
         report = self.run_experiment()
         self.assertEqual((report["status"], report["outcome"]), ("completed", "passed"))
         rows = report["samples"]
@@ -81,6 +84,14 @@ class ExperimentTests(unittest.TestCase):
         for key in ("caseRunId", "runId", "sessionId"):
             self.assertEqual(len({row[key] for row in rows}), 4)
         base = Path(report["experimentDirectory"])
+        self.assertEqual(preview["counts"]["samples"], len(rows))
+        for planned, row in zip(preview["samples"], rows):
+            for key in ("sampleId", "caseEntryId", "caseId", "configurationId", "repeatIndex", "requestedConfiguration"):
+                self.assertEqual(planned[key], row[key])
+            expanded = load_json(base / f"expanded/{row['sampleId']}.case.json")
+            self.assertEqual(expanded["configRef"], planned["requestedConfiguration"])
+            self.assertEqual(expanded["budget"], planned["budget"])
+            self.assertEqual(expanded["recorder"], planned["recorderOverrides"])
         self.assertEqual(load_json(base / "experiment-result.json"), report)
         self.assertTrue((base / report["batchResultPath"]).is_file())
         for row in rows:

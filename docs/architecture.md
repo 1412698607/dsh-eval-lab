@@ -50,9 +50,9 @@ inspect --run <目录>
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
-| `dsh_eval/__main__.py` | 评测 / 运行 / 报告 / 浏览互斥入口、UTF-8 stdout；浏览阻止执行和写入选项，原任务 0 / 1 / 2 不变 |
+| `dsh_eval/__main__.py` | 评测 / 实验预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 仅用于实验且与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
-| `dsh_eval/experiment.py` | 冻结实验输入、显式展开用例 / 配置 / 重复编号，复用顺序 batch，核对样本关联并汇总 |
+| `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
@@ -271,6 +271,8 @@ M6.3 固定评测集直接复用下述实验 / 批次 / 单用例链路，不新
 审查修复 028 为两个用例版本增加可选工具结果约束。formats 校验 after 只引用前面工具结果断言，避免循环与含糊的依赖；evaluate 的 check_assertions 按声明顺序求值，选择最早完成的合格结果，要求后继 callSeq 大于先行 resultSeq。不同路径可保持交错；textEquals 则按文本块拼接结果精确比较，空白不被当作空文件。JavaScript 录制 / inspect 和环境核心不变，不从声明顺序推定实际执行顺序。历史 report 继续读取原冻结断言，当前更严格的断言对历史录制另行离线检查；旧快照不改写。协议和分类见 [评测格式](evaluation-format.md) 与 [记录 028](changes/2026-10-24-028-m6-3-assertion-constraints.md)。
 
 `experiment.py` 严格加载版本 1 清单，校验全部用例与配置组合，冻结原输入，再按重复 / 用例 / 配置顺序生成标准 batch；没有另写一套调度和清理逻辑。sampleId 对应 batch entryId，以 caseEntryId + configurationId + repeatIndex 表示计划位置，再关联实际 caseRunId / runId / sessionId。configuration 保留真实观察，requestedConfiguration 和匹配分布另列。结束后核对样本关联并生成总表及分组 JSON，不提供配置优劣判断。
+
+[040](changes/2026-10-24-040-experiment-plan-preview.md) 将原加载 / 全组合预检与样本展开提取为共用函数。`--experiment … --plan` 在生成执行 UUID / 目录之前返回独立 experimentPlanFormatVersion=1 JSON；--run 继续使用相同加载和展开逻辑后冻结输入，原输入 / 结果 / evidence / 录制格式不变。计划包含数量、顺序、请求配置、用例 budget 及原始 recorderOverrides，不生成 outcome 或实际运行身份；未来执行的 modelCalls / totalTokens / cost 保留 null。预览不探测宿主 / 凭据 / 网络、不调用 inspect，也不承诺未来实际路由或任务结果。源文件未锁定，下一次执行仍重读；录制默认值仍由 Node 解析，Python 不复制另一份默认配置。
 
 `metrics.py` 在 evaluate 重新 inspect 和核对身份后，从连续闭合任务片段提取已结算 assistant/message / assistant/attempt 和 tool/call 数量；request/header 是配置段事件，不能用作调用次数。step/start 可以早于 user/message，不能把生命周期开放事件当作任务输出越界。usage 逐字段检查覆盖，失败尝试或任一步缺失则 token 保持 null，不由 input / output 补造 total。任务失败与取消不抹掉合法观测；指标缺失不改变三维结论。
 

@@ -7,7 +7,7 @@ from .evaluate import evaluate
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Evaluate evidence, run tasks, report experiments, or browse saved results")
+    parser = argparse.ArgumentParser(description="Evaluate evidence, plan or run experiments, report results, or browse saved results")
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--case", help="Version 1 or 2 case JSON")
     selection.add_argument("--batch", help="Version 1 sequential batch manifest")
@@ -15,7 +15,9 @@ def main(argv=None):
     selection.add_argument("--report", help="Recheck a saved terminal experiment-result.json without model calls")
     selection.add_argument("--browse", action="store_true", help="Serve a read-only local viewer; never executes tasks")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")
-    parser.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
+    mode.add_argument("--plan", action="store_true", help="Preflight --experiment and print its plan without executing tasks")
     parser.add_argument("--runs-root", help="Run output parent; --browse reads existing results from this directory")
     parser.add_argument("--reports-root", help="Parent directory for new JSON/Markdown comparison reports")
     parser.add_argument("--cases-root", help="Case library directory for --browse")
@@ -24,6 +26,11 @@ def main(argv=None):
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
+    if args.plan and not args.experiment:
+        parser.error("--plan requires --experiment")
+    if args.plan and (args.cancel_after_stream or any(value is not None for value in
+                     (args.evidence, args.output, args.runs_root, args.host_modules, args.reports_root, args.cases_root, args.port))):
+        parser.error("--plan cannot use execution, evidence, browse, report, or output controls; the plan is printed to stdout")
     if args.browse and (args.run or args.evidence or args.output or args.reports_root or args.host_modules or args.cancel_after_stream):
         parser.error("--browse is read-only and cannot use execution, evidence, report, or output controls")
     if not args.browse and (args.cases_root or args.port is not None):
@@ -32,8 +39,8 @@ def main(argv=None):
         parser.error("--report cannot use execution, evidence, or output controls; use --reports-root")
     if args.reports_root and not args.report:
         parser.error("--reports-root requires --report")
-    if (args.batch or args.experiment) and (not args.run or args.evidence or args.output):
-        parser.error("--batch / --experiment requires --run and cannot use --evidence or --output")
+    if (args.batch or args.experiment) and (not (args.run or args.plan) or args.evidence or args.output):
+        parser.error("--batch requires --run; --experiment requires --run or --plan; neither accepts --evidence or --output")
     if not (args.batch or args.experiment or args.report or args.browse) and args.run == bool(args.evidence):
         parser.error("Choose --run or --evidence")
     if args.run and args.output:
@@ -51,8 +58,9 @@ def main(argv=None):
             from .report import generate_report
             result = generate_report(args.report, args.reports_root)
         elif args.experiment:
-            from .experiment import run_experiment
-            result = run_experiment(args.experiment, args.runs_root, args.host_modules, args.cancel_after_stream)
+            from .experiment import plan_experiment, run_experiment
+            result = (plan_experiment(args.experiment) if args.plan else
+                      run_experiment(args.experiment, args.runs_root, args.host_modules, args.cancel_after_stream))
         elif args.batch:
             from .batch import run_batch
             result = run_batch(args.batch, args.runs_root, args.host_modules, args.cancel_after_stream)
@@ -66,11 +74,12 @@ def main(argv=None):
             with Path(args.output).open("x", encoding="utf-8", newline="\n") as stream:
                 stream.write(text)
         print(text, end="")
-        return 0 if args.report else {"passed": 0, "failed": 1, "unevaluable": 2}[result["outcome"]]
+        return 0 if args.report or args.plan else {"passed": 0, "failed": 1, "unevaluable": 2}[result["outcome"]]
     except (OSError, ValueError, KeyError, TypeError) as error:
-        version_key = ("browserFormatVersion" if args.browse else "comparisonReportFormatVersion" if args.report else "experimentResultFormatVersion" if args.experiment else
+        version_key = ("experimentPlanFormatVersion" if args.plan else "browserFormatVersion" if args.browse else "comparisonReportFormatVersion" if args.report else "experimentResultFormatVersion" if args.experiment else
                        "batchResultFormatVersion" if args.batch else "evaluationFormatVersion")
-        print(json.dumps({version_key: 1, "outcome": "unevaluable", "error": str(error)}, ensure_ascii=False))
+        state = {"valid": False, "modelCalled": False} if args.plan else {"outcome": "unevaluable"}
+        print(json.dumps({version_key: 1, **state, "error": str(error)}, ensure_ascii=False))
         return 2
 
 
