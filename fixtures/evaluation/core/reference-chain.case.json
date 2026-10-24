@@ -1,0 +1,74 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "core-reference-chain",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Use relative POSIX paths exactly. Read README.md, follow its reference to the index, then read the file named by that index. Return only the final projectName value. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "README.md": "Read docs/index.md for the active project file.\n",
+      "docs/index.md": "Active project file: data/project.md\n",
+      "data/project.md": "projectName: core-chain\n"
+    },
+    "stateful": {
+      "transientReadFailures": {}
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "README.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "docs/index.md"
+      },
+      "id": "tool-1"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "docs/index.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "data/project.md"
+      },
+      "id": "tool-2"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "data/project.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "core-chain"
+      },
+      "id": "tool-3"
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "core-chain"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

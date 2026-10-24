@@ -17,6 +17,7 @@
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
+- M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复，复用既有实验、隔离环境及离线报告入口。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -31,6 +32,18 @@ python -m dsh_eval --browse
 打开终端输出中的完整 `url`，即可查看本地结果，按名称、任务结论和来源声明筛选，再从逐次结果进入证据与事件轨迹。默认读取 `fixtures/evaluation` 和 `runs`，仅在本机提供只读页面，不调用模型、不重新评测、不改写历史文件；终端按 Ctrl+C 停止。保存结论可能已过时，复验仍使用原来的 `--report` 或 `--case ... --evidence ...`。
 
 目录、端口、读取限制及无模型 CI 范围见 [结果浏览](docs/result-browser.md)。[持续集成配置](.github/workflows/deterministic.yml) 将在 push、PR 和手动触发时运行确定性检查；真实模型任务仍需单独选择配置、预算并使用 `--run`。
+
+## 固定评测集
+
+固定评测集的无模型验收与显式真实运行：
+
+```powershell
+python -m unittest discover -s test -p test_core_suite.py -v
+# 以下命令会调用真实 deepseek-flash：10 个用例各一次
+python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --run
+```
+
+一次任务可能含多次模型请求；该清单没有 token 或费用硬上限。用例范围、真实验收结果和离线复验方法见 [M6.3 固定评测集](docs/core-evaluation.md)。
 
 ## 本地演示
 
@@ -95,6 +108,8 @@ npm.cmd run check:output -- 'D:\your-harness\node_modules'
 ```json
 { "maxEventBytes": 4194304, "maxPendingBytes": 16777216 }
 ```
+
+Python 的 `--case --run`、`--batch --run`、`--experiment --run` 会生成新的隔离 profile，不继承原用户 profile 的这些限制。请在所引用的用例顶层添加可选字段，例如 `"recorder": { "maxEventBytes": 4194304, "maxPendingBytes": 16777216 }`；允许省略或只设其中一项，未声明项仍用表中默认值。字段必须为正安全整数，不放入 configRef，没有新增 CLI 覆盖。完整用例在任务前冻结，实验只覆盖模型 configRef；准备阶段将有效录制配置写到隔离 eval-lab config 和 setup.json.recorder，可与实际 run.json 核对。详见 [用例格式](docs/evaluation-format.md) 与 [修复记录 026](docs/changes/2026-10-23-026-m6-2-recorder-config-propagation.md)。
 
 `run.json` 保存这两个实际配置；旧日志无需迁移，inspect 不按新默认值拒绝历史大行。单条限制在 JSON 序列化之后、Buffer 分配和反解析之前检查，不能限制原始输入、序列化临时字符串、会话成员表或总内存。细节见 [录制资源边界](docs/recorder-resources.md)。
 

@@ -6,6 +6,8 @@ M6.1 已扩展运行级会话清单：新 run.json 为版本 2，会话写入以
 
 M6.2 增加单条完整 JSONL 行的 maxEventBytes 限制，默认 1 MiB；运行元信息保存有效配置，不改变既有格式版本。超限进入原会话失败路径，Node inspect 和 Python 门禁继续拒绝不完整证据。资源实测见 [录制资源边界](recorder-resources.md)。
 
+M6.2 配置传递修复增加用例顶层可选 recorder 对象，由 Python 严格校验两项正安全整数，利用既有完整用例冻结 / 批次 / 实验展开链路传递。Node 准备从原 config 模块解析默认值，将两项有效限制写到新隔离 profile 的 eval-lab config 及 setup.json.recorder，再由插件写入 run.json。实验只覆盖 configRef，录制配置不进入 provider/model 实际路由语义；读取器不回填默认或重写历史快照。验证见 [记录 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md)。
+
 ## 执行流程与模块
 
 ```text
@@ -233,6 +235,8 @@ batch.py 在调用模型前校验并保存全部输入，逐项分配 caseRunId�
 batch-result.json 是本批唯一活动进度快照，以同目录临时 JSON + replace 更新；已有单项结果不覆写。每个新批次使用新 UUID 目录，冻结后的 batch.json 可重新执行新任务，不是重放或恢复。普通失败 / 无法评测、调度中断 / 异常和 skipped 分开；其精确定义、字段和退出码见 [批次运行](batch-runner.md)。没有并发批次调度、崩溃续跑或性能 / 成本统计。
 
 ## M4.1 实验与指标边界
+
+M6.3 固定评测集直接复用下述实验 / 批次 / 单用例链路，不新增调度器或数据格式。10 个版本 2 用例使用 Python 虚拟文件和既有 eval_read / eval_list 桥接；独立参考轨迹的无模型测试与实际模型执行证据分层保存。验收范围见 [固定评测集](core-evaluation.md)。
 
 `experiment.py` 严格加载版本 1 清单，校验全部用例与配置组合，冻结原输入，再按重复 / 用例 / 配置顺序生成标准 batch；没有另写一套调度和清理逻辑。sampleId 对应 batch entryId，以 caseEntryId + configurationId + repeatIndex 表示计划位置，再关联实际 caseRunId / runId / sessionId。configuration 保留真实观察，requestedConfiguration 和匹配分布另列。结束后核对样本关联并生成总表及分组 JSON，不提供配置优劣判断。
 

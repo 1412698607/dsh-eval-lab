@@ -1,0 +1,47 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "core-empty-file",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Use relative POSIX paths exactly. Read empty.md. If it exists and is empty, return only EMPTY_FILE. If it does not exist, return only FILE_NOT_FOUND. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "empty.md": ""
+    },
+    "stateful": {
+      "transientReadFailures": {}
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "empty.md"
+      },
+      "result": {
+        "isError": false
+      },
+      "id": "tool-1"
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "EMPTY_FILE"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

@@ -90,7 +90,7 @@ def validate_experiment(experiment):
 
 
 def validate_case(case):
-    fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"))
+    fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"), ("recorder",))
     require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] in (1, 2), "Unsupported case format")
     require(nonempty(case["caseId"]) and nonempty(case["input"]), "caseId and input must be nonempty strings")
     fields(case["environment"], ("files",), ("stateful",) if case["caseFormatVersion"] == 2 else ())
@@ -111,6 +111,11 @@ def validate_case(case):
         require(all(path in files and type(count) is int and count >= 0 for path, count in failures.items()),
                 "Transient failures require an existing file and a nonnegative integer")
     configuration(case["configRef"])
+    if "recorder" in case:
+        fields(case["recorder"], (), ("maxEventBytes", "maxPendingBytes"))
+        for name, value in case["recorder"].items():
+            require(type(value) is int and 0 < value <= 9007199254740991,
+                    f"recorder.{name} must be a positive safe integer (UTF-8 bytes)")
     fields(case["budget"], ("timeoutSeconds",))
     require(type(case["budget"]["timeoutSeconds"]) is int and case["budget"]["timeoutSeconds"] > 0,
             "timeoutSeconds must be a positive integer")

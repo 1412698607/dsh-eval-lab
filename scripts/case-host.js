@@ -7,6 +7,7 @@ import { createInterface } from "node:readline";
 import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { locateHost, validateHost } from "./lib/host.js";
+import { resolveConfig } from "../src/config.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
@@ -14,6 +15,13 @@ const emit = (event) => process.stdout.write(JSON.stringify(event) + "\n");
 export async function prepareCase(directory, modulesDirectory) {
   const caseData = JSON.parse(await readFile(join(directory, "case.json"), "utf8"));
   if (caseData.configRef.profile !== "headless") throw new Error("M3.2 only supports the headless profile");
+  const declaredRecorder = caseData.recorder === undefined ? {} : caseData.recorder;
+  if (declaredRecorder === null || typeof declaredRecorder !== "object" || Array.isArray(declaredRecorder)
+      || Object.keys(declaredRecorder).some((key) => !["maxEventBytes", "maxPendingBytes"].includes(key))) {
+    throw new TypeError("case.recorder must contain only maxEventBytes / maxPendingBytes");
+  }
+  const { maxEventBytes, maxPendingBytes } = resolveConfig({ ...declaredRecorder, outputDir: join(directory, "traces") });
+  const recorder = { maxEventBytes, maxPendingBytes };
   const modulesDir = await locateHost(modulesDirectory);
   const versions = await validateHost(modulesDir);
   const cli = join(modulesDir, "@deepseek-ai", "dsh", "lib", "bin.js");
@@ -33,12 +41,13 @@ export async function prepareCase(directory, modulesDirectory) {
     { id: "sandbox-policy", config: { mode: "read-only", workspaceRoot: workspace } },
     { id: "session-title-llm", disabled: true },
     { id: "agent-default-model", config: { provider: caseData.configRef.provider, model: caseData.configRef.model } },
+    { id: "eval-lab", config: recorder },
   ], null, 2) + "\n", { flag: "w" });
   const controlPatch = join(directory, "control.patch.yml");
   await writeFile(controlPatch, JSON.stringify([{ insert: [{
     id: "eval-case-control", name: fileURLToPath(new URL("./fixtures/case-control.js", import.meta.url)),
   }] }], null, 2) + "\n", { flag: "wx" });
-  const setup = { setupFormatVersion: 1, cli, cliVersion, modulesDir, versions, home, workspace, controlPatch };
+  const setup = { setupFormatVersion: 1, cli, cliVersion, modulesDir, versions, home, workspace, controlPatch, recorder };
   await writeFile(join(directory, "setup.json"), JSON.stringify(setup, null, 2) + "\n", { flag: "wx" });
   return setup;
 }

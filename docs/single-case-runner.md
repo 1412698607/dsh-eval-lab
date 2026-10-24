@@ -12,6 +12,8 @@ python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run
 
 使用已安装的匹配版本宿主，默认在 Windows npm 缓存查找，也可用 `--host-modules '<已安装宿主的node_modules>'` 明确指定。不会自动下载或更新宿主。每次通过实际 CLI 的 `plugin add link: --offline --ignore-scripts` 安装本地插件到新 home，独立 pnpm store；凭据只引用原 `DSH_HOME`（未设置时为用户 `.dsh`）下的凭据文件路径，不复制密钥或改动原 profile。只支持 headless，默认公开用例为 `deepseek-official / deepseek-flash`。
 
+录制限制由用例顶层可选 `recorder: { maxEventBytes, maxPendingBytes }` 声明，各自省略默认 1 MiB / 16 MiB；例如 `"recorder": { "maxEventBytes": 4194304 }` 将单条上限调为 4 MiB，队列仍为 16 MiB。它不属于 configRef，不继承用户原 profile，不增加 CLI 覆盖；只接受正安全整数。完整用例原样冻结，隔离 profile 的 eval-lab config 与 setup.json.recorder 保存解析后的有效值，实际值也保存在 traces 下的 run.json。详见 [用例格式](evaluation-format.md) 与 [资源边界](recorder-resources.md)。
+
 Python 生成新 caseRunId，保存用例快照、在独立 workspace 写入初始文件，校验 Windows 保留文件名、大小写和文件目录冲突，再调用 Node 准备及运行。宿主使用 read-only 策略，测试用例要求实际 read，参数键为该版本的 `file_path`。不注入答案，不重写 Agent 循环；任意其他工具名 / 参数仍须由相应用例正确声明。
 
 默认输出为 `runs/evaluation/<caseRunId>/`，可用 `--runs-root <父目录>` 改变父目录；运行内部只创建新的 UUID 子目录，不复用工作区或覆盖旧结果。
@@ -22,7 +24,7 @@ Python 生成新 caseRunId，保存用例快照、在独立 workspace 写入初�
   workspace/                 实际初始文件；状态化环境下为空
   home/                      独立 headless profile / session 存储
   pnpm-store/                独立离线安装 store
-  setup.json                 本次 CLI / 组件与路径
+  setup.json                 本次 CLI / 组件、路径与有效 recorder 配置
   control.patch.yml          专用控制插件
   prepare.stdout.log / prepare.stderr.log
   adapter.stdout.jsonl / adapter.stderr.log

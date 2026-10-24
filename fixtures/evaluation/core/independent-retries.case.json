@@ -1,0 +1,88 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "core-independent-retries",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Use relative POSIX paths exactly. Read alpha.md and beta.md to find each code. Retry each path if it has a temporary read failure. Return only the two codes joined by +, alpha first. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "alpha.md": "code: ALPHA\n",
+      "beta.md": "code: BETA\n"
+    },
+    "stateful": {
+      "transientReadFailures": {
+        "alpha.md": 1,
+        "beta.md": 1
+      }
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "alpha.md"
+      },
+      "result": {
+        "isError": true,
+        "textContains": "TEMPORARY_READ_FAILURE"
+      },
+      "id": "tool-1"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "alpha.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "ALPHA"
+      },
+      "id": "tool-2"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "beta.md"
+      },
+      "result": {
+        "isError": true,
+        "textContains": "TEMPORARY_READ_FAILURE"
+      },
+      "id": "tool-3"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "beta.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "BETA"
+      },
+      "id": "tool-4"
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "ALPHA+BETA"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 # dsh-eval-lab 开发进度
 
-截至 2026 年 10 月 22 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 M6.1 主体提交 `52cfbca`、登记可靠性修复提交 `2a22894`，023 / 024 的“尚未提交”为当时状态。本批 M6.2 单条事件限制与资源基线已完成，详见 [记录 025](changes/2026-10-22-025-m6-2-event-resource-limits.md)；本批尚未提交或推送。运行元信息版本 2、清单 / JSONL / 状态版本保持不变，run.json 新增 maxEventBytes 配置元信息。
+截至 2026 年 10 月 24 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 M6.2 提交为 `5777f2d`，025 的“尚未提交”为当时状态。工作区保留尚未提交的 [M6.2 配置传递修复 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md)，本批继续完成 [M6.3 单配置固定评测集 027](changes/2026-10-24-027-m6-3-core-evaluation.md)，同样未提交或推送。数据格式及生产执行代码未在本批改变。
 
-既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。用户已同意新增 [M6 可靠性与真实验收](plans/m6-reliability-validation.md)，当前 M6.1 / M6.2 已完成本地验证，剩 M6.3 真实评测集与 M6.4 Web 生命周期两批。M6.3 开始前需确定真实配置和模型调用预算；本批没有新云端运行或模型调用。
+既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；本批用户选择先用现有 deepseek-flash 执行 10 个固定用例各一次，首次真实任务和独立离线复验均 10 / 10 通过。原建议双配置 / 重复扩展仍未执行，M6.4 Web 生命周期仍计划；本批未运行云端 CI。
 
 ## 项目目标
 
@@ -14,12 +14,12 @@
 | --- | --- |
 | 插件版本 | `0.1.2`；M6.1 新 run.json 版本 2 / 清单版本 1，JSONL / status 仍为版本 1 |
 | 当前开发分支 | `20261011/feat/results-browser-ci` |
-| 当前文档基线 | `2a22894` 为已提交的 M6.1 登记可靠性修复；本批 M6.2 尚未提交 |
+| 当前文档基线 | `5777f2d` 为已提交的 M6.2；026 配置传递修复与 027 固定评测集尚未提交 |
 | 已核实基线提交 | `e47de36` 为云端路径兼容修复；`db6d572` 为 M5 审查修复；`36b4e1b` 为 M5 主体；`b0de80c` 为 M4.2；`a39e43c` 为 M4.1 指标溢出修复，`1a6cf69` 为主体；`5cdd803` 为 M3.4 启动失败修复；`bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
 | 开发语言 | JavaScript 宿主接入和生命周期及浏览交互；Python 已实现离线断言、状态化环境、真实单用例 / 批次、重复统计、离线报告及只读浏览服务 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 10 月 22 日，Asia/Shanghai |
+| 最新复核日期 | 2026 年 10 月 24 日，Asia/Shanghai |
 | 真实模型基线 | CLI `0.2.0-rc.2`；`deepseek-official / deepseek-flash`；独立 Web / headless profile |
 
 ## 功能状态
@@ -45,14 +45,34 @@
 | 固定 fixture 证据检查 | Python 先重新 inspect，再核对工具结果、答案及结束事实；6 项测试通过 | `scripts/verify_live.py` |
 | desktop / SDK、Web 页面手动取消及普通进程信号关闭 | 尚未验证 | 后续按渠道需求验证 |
 | 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；三种断言和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
-| 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消、清理与新建结果；受控真实任务及异常通过 | `dsh_eval/runner.py`、`scripts/case-host.js` |
+| 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消和清理；可选用例 recorder 经冻结后传入隔离插件配置，批次 / 实验保留 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
 | 顺序批次、重置和结果清单 | 版本 1 批次 / 结果与历史真实恢复批次已验证；启动失败策略及 source / metrics 可选输出已实现 | `dsh_eval/batch.py`、[批次运行](batch-runner.md) |
 | 重复试验与观测统计 | 版本 1 实验、三种分母、缺失覆盖及异常单值 / 求和保护已实现；本批历史样本复验保持原分类 | `dsh_eval/experiment.py`、`dsh_eval/metrics.py`、[重复试验](experiments.md)、修复记录 018 |
 | 配置比较报告与不确定性边界 | 已实现版本 1 离线 JSON / Markdown；核对输入 / 身份 / 路由 / 来源，同用例和重复编号配对，公开范围、分母与排除；多配置验证为合成样本 | `dsh_eval/report.py`、[配置报告](configuration-reports.md)、记录 019 |
+| 固定真实评测集 | 10 个用例已实现，单配置各一次真实执行与独立复验均通过；双配置比较尚未执行 | [固定评测集](core-evaluation.md)、`fixtures/evaluation/core/` |
 | 结果浏览与持续集成 | 本地只读浏览及审查修复已实现；云端路径问题已修，Windows CI 的 134 Python / 44 Node / 31 文件语法、compileall 和 demo 全部通过 | [结果浏览](result-browser.md)、记录 020 / 021 / 022 |
 
-## 最新验证：M6.2 单条事件限制与资源基线（2026 年 10 月 22 日）
+## 最新验证：M6.3 单配置固定评测集（2026 年 10 月 24 日）
+
+- 新增 10 个版本 2 固定用例、一个单配置单轮实验清单和 6 项无模型回归。30 份参考正例 / 无工具 / 错误答案轨迹经过真实录制与 fresh inspect，另验证 22 项必要工具证据删除以及 4 组替代目录 / 状态重置。
+- 完整 150 Python（获准环境，44.706 秒）、79 Node、36 文件 JS 语法及 compileall 通过。本批未修改生产执行代码，保留上一批未提交配置修复，没有运行云端 CI、资源基线或旧模型任务。
+- 经用户明确选择，现有 deepseek-official / deepseek-flash 顺序执行 10 个用例各一次。planned / attempted / finished 为 10 / 10 / 10，skipped / errors 为 0 / 0，10 项均 completed / complete / passed。独立离线报告均 verified / matched、source=live、changedFields 为空，单配置 comparisons 为空。
+- 32 次已结算模型调用、24 次工具调用、已报告 totalTokens 合计 242085，数值指标覆盖 10 / 10，费用 10 项均缺失。耗时合计约 56.795 秒包含准备 / 执行 / 清理，不是整个命令墙钟或纯模型延迟；缓存用量字段与 totalTokens 边界见 [固定评测集](core-evaluation.md)。
+- 原实验 125 份 JSON / JSONL 摘要复验前后不变，10 个录制 run 均 sealed；10 项 childClosed=true、准备进程退出、stdinWriterStopped=true，10 个保存的专用 CLI PID 再查均不存在。没有将这些事实扩张为任意进程树保证。
+
+本批按用户选择完成单配置范围，未追加任何模型重跑；原建议的第二配置与重复扩展仍待预算，下一批入口为 M6.4 实际页面取消 / 退出 / 中断。详细证据、可复现命令及局限见 [记录 027](changes/2026-10-24-027-m6-3-core-evaluation.md)。
+
+## 历史验证：M6.2 录制配置传递（2026 年 10 月 23 日）
+
+- 新增四项 Node 回归在旧实现全部失败，修复后全部通过；最初五项 Python 回归中四项因 recorder 被拒失败，修复后通过，再补一项省略 / 显式默认冻结回归，最终新增六项通过。
+- 完整 79 Node、获准环境完整 144 Python、36 文件 JS 语法及 compileall 通过；离线评测单独 36 项通过。没有重跑八类资源基线、旧输出四场景或历史模型样本，不继承历史结果作为本次实测。
+- 真实 CLI 离线安装生成隔离 profile，由真实 --dump-config 合并安装 bundle / profile，再从合并后的 eval-lab 条目挂载真实 Cordis / SessionStore。同一 1.25 MiB 正文：默认 1 / 16 MiB 报 EVENT_BYTES_LIMIT、inspect / 1；4 / 8 MiB sealed / complete / 0；4 / 1 MiB 报 PENDING_BYTES_LIMIT、inspect / 1。输入 / setup / 合并树 / run.json 的两值一致，没有模型调用。
+- 配置合并子进程首次沙箱 spawnSync EPERM 未计通过，获准环境重跑原验收通过。Python冻结测试明确在准备阶段停止，单元安装边界替身只验证生成文件；真实安装、配置合并和组件验证另行记录，未冒充模型端到端。
+
+默认值不变，不在 configRef / 实际路由中混入录制设置，不修改历史快照；独立 case.recorder 是用例属性，没有 CLI 或实验 configurations 覆盖。原格式、上限和测量局限保持，详见 [记录 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md)。本批未提交 / 推送 / 运行云端 CI。
+
+## 历史验证：M6.2 单条事件限制与资源基线（2026 年 10 月 22 日）
 
 - 新增 10 项 Node 回归，改动前 8 失败 / 2 通过，最终全部通过；覆盖 UTF-8 等号边界、换行和包装、配置、toJSON、错误状态、健康会话、队列释放和重入关闭。新增 1 项 Node 录制 / Python 集成回归，正确任务前缀也不能掩盖后来超限；离线评测 36 项通过。
 - 完整 75 Node、获准环境完整 138 Python（39.524 秒）、35 文件 JS 语法及 Python compileall 通过；demo 8 条模拟事件，真实 Cordis / SessionStore 6 条人工事件通过。
@@ -284,16 +304,18 @@
 | M4.2 | 已完成当前范围：单实验离线复验、配置配对与 JSON / Markdown，公开不确定性边界 | 17 项新增 / 全量 117 Python；合成双配置重复与历史四真实样本报告通过，原证据摘要不变 |
 | M5 | 当前范围已实现；审查及云端路径兼容修复已完成验收 | `e47de36` 的 Windows CI 全部通过：134 Python / 44 Node / 31 文件语法、compileall 和 demo；历史页面验证保留 |
 | M6.1 | 当前范围完成，登记可靠性两项审查问题已修复 | 原 14 新 Node / 3 新 Python 与历史验证保留；修复新增七 Node、完整 65 Node / 137 Python、33 文件语法、真实组件与获准子进程 / 五轮 600 会话通过；本批云端未运行 |
-| M6.2 | 当前范围完成：单条事件上限与资源基线 | 10 新 Node / 1 新 Python、完整 75 Node / 138 Python、四种真实输出子进程、24 个资源样本符合预期；本批云端未运行 |
-| M6.3～M6.4 | 计划：真实评测集、Web 生命周期验收 | 剩两批；下一批先确定真实配置与模型调用预算 |
+| M6.2 | 当前范围完成，任务入口录制配置传递已修复 | 原资源 / 输出验收保留；配置修复新增四 Node / 六 Python、完整 79 Node / 144 Python、真实配置合并和三组无模型组件验证通过；本批云端未运行 |
+| M6.3 | 本轮单配置范围完成；原建议的双配置 / 重复扩展待定 | 10 个固定用例各一次真实任务与独立复验均通过，150 Python / 79 Node / 36 文件语法；单配置不推断比较结论 |
+| M6.4 | 计划：Web 生命周期验收 | 下一批验证实际页面点击取消、正常退出与处理中断，新模型任务另定规模 |
 
 ## 文档导航
 
 - [M3 与后续计划](plans/m3-regression-evaluation.md)：M3 至 M5 已实现范围、云端验收和按需后续事项。
-- [M6 方案](plans/m6-reliability-validation.md)、[运行会话清单](run-manifest.md) 与 [录制资源边界](recorder-resources.md)：当前格式、写入 / 检查顺序、字节限制和后续两批。
+- [M6 方案](plans/m6-reliability-validation.md)、[运行会话清单](run-manifest.md) 与 [录制资源边界](recorder-resources.md)：当前格式、写入 / 检查顺序、字节限制、单配置验收和后续 Web 范围。
 - [结果浏览](result-browser.md)：本地入口、保存结论的边界、文件范围、分页和无模型 CI。
 - [重复试验](experiments.md)：显式配置、重复编号、分母与指标覆盖及运行入口。
 - [配置报告](configuration-reports.md)：冻结输入与来源 / 实际路由核对、独立复验、配对差值和不确定性。
+- [固定评测集](core-evaluation.md)：10 个用例、显式模型规模、单配置首次验收、分母 / 用量和复验结果。
 - [单用例运行](single-case-runner.md) 与 [修改记录 011](changes/2026-10-17-011-m3-2-single-case-runner.md)：当前真实执行入口与验证依据。
 - [M3.1 评测格式](evaluation-format.md) 与 [修改记录 010](changes/2026-10-16-010-m3-1-offline-evaluation.md)：当前离线入口与验证依据。
 - [M2.3 真实任务联调](changes/2026-10-15-008-m2-3-live-integration.md)：本批安装、真实模型和生命周期证据，以及固定 Python 检查范围。

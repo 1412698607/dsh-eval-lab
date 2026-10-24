@@ -41,6 +41,8 @@ stdout 输出批次 JSON。退出码：0 表示整批 passed；1 表示已明确
 
 批次开始前读完并校验所有用例的格式、headless 和插件版本，失败时不启动模型。实际文件名和环境准备等运行期检查仍由单用例 runner 执行。所有输入在首次任务前保存快照，后续修改原始用例不会改变本批剩余项；每项自己的 configRef 决定请求配置，没有隐式全局配置覆盖。
 
+每个用例可以独立声明可选 recorder.maxEventBytes / recorder.maxPendingBytes，批次预检同样拒绝非法值，并原样保存在 inputs 与各执行 case.json 中；不是 batch 清单的顶层字段。后续原文件修改不改变已冻结的录制配置；省略时各自使用内置默认值。准备阶段和实际 run.json 的核对方式见 [单用例运行](single-case-runner.md)。
+
 ## 隔离、关联与进度文件
 
 ```text

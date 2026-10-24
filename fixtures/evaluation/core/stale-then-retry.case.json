@@ -1,0 +1,97 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "core-stale-then-retry",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Use relative POSIX paths exactly. Read README.md and attempt to read its referenced file before choosing an alternative. If it is missing, discover the current file using eval_list and read it. Retry the current file if a temporary failure occurs. Return only the projectName value. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "README.md": "Project file: docs/old.md\n",
+      "docs/current.md": "projectName: core-recovered\n"
+    },
+    "stateful": {
+      "transientReadFailures": {
+        "docs/current.md": 1
+      }
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "README.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "docs/old.md"
+      },
+      "id": "tool-1"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "docs/old.md"
+      },
+      "result": {
+        "isError": true,
+        "textContains": "NOT_FOUND"
+      },
+      "id": "tool-2"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_list",
+      "arguments": {},
+      "result": {
+        "isError": false,
+        "textContains": "docs/current.md"
+      },
+      "id": "tool-3"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "docs/current.md"
+      },
+      "result": {
+        "isError": true,
+        "textContains": "TEMPORARY_READ_FAILURE"
+      },
+      "id": "tool-4"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "docs/current.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "core-recovered"
+      },
+      "id": "tool-5"
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "core-recovered"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "core-nested-discovery",
+  "input": "Use only eval_read and eval_list to inspect virtual fixture files. Use relative POSIX paths exactly. Find the file under docs/ using eval_list, then read it and return only its projectName value. Do not use native file tools, shell commands, or delegation.",
+  "environment": {
+    "files": {
+      "docs/releases/current.md": "projectName: core-nested\n"
+    },
+    "stateful": {
+      "transientReadFailures": {}
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "type": "tool_result",
+      "tool": "eval_list",
+      "arguments": {},
+      "result": {
+        "isError": false,
+        "textContains": "docs/releases/current.md"
+      },
+      "id": "tool-1"
+    },
+    {
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "docs/releases/current.md"
+      },
+      "result": {
+        "isError": false,
+        "textContains": "core-nested"
+      },
+      "id": "tool-2"
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "core-nested"
+    },
+    {
+      "id": "completed",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

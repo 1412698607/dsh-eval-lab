@@ -1,6 +1,6 @@
 # M6.2 录制资源边界与测量
 
-更新：2026 年 10 月 22 日，Asia/Shanghai。实现和验证记录见 [025](changes/2026-10-22-025-m6-2-event-resource-limits.md)。插件仍为 `0.1.2`，运行元信息为版本 2，清单 / JSONL / 状态仍为版本 1。
+更新：2026 年 10 月 23 日，Asia/Shanghai。原实现和资源验证见 [025](changes/2026-10-22-025-m6-2-event-resource-limits.md)，任务入口配置传递修复见 [026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md)。插件仍为 `0.1.2`，运行元信息为版本 2，清单 / JSONL / 状态仍为版本 1。
 
 ## 两个字节限制
 
@@ -9,6 +9,18 @@
 `maxPendingBytes` 默认 16777216（16 MiB），计量所有会话排队和正在追加的 Buffer。它与单条限制独立，均要求正安全整数，非法配置在创建运行目录前报错。可以让单条上限大于队列上限，此时符合单条要求的事件仍可能因队列容量被拒绝。两个配置通过插件 config 或独立 createRecorder 参数设置，实际值保存进 run.json。
 
 默认单条 1 MiB 是本批的可配置保护策略，不是通过真实任务统计得到的最佳阈值。它会改变旧版对大工具结果的接收行为，需要大事件时显式提高上限并同时检查队列预算。没有新增环境变量、自动截断、外置正文或日志轮转。
+
+## Python 任务入口的录制配置
+
+`--case --run`、`--batch --run`、`--experiment --run` 会新建隔离 profile，原用户 profile 的录制设置不会被继承。需要调整时，在所引用用例的顶层设置可选 recorder 对象，例如：
+
+```json
+"recorder": { "maxEventBytes": 4194304, "maxPendingBytes": 16777216 }
+```
+
+声明字段分别覆盖对应默认值，允许空对象或只设一项；两值仍独立且必须为正安全整数，不能放进 configRef。没有新增 CLI 覆盖。输入完整冻结，实验的 configRef 替换不会覆盖 recorder；准备阶段生成的隔离 eval-lab config 和 setup.json.recorder 保存有效值，再与新 run.json 两值核对。省略配置仍用默认值且不改写原用例；显式默认与省略保留不同快照，不参与模型实际路由配置。完整校验和历史兼容见 [用例格式](evaluation-format.md)。
+
+2026 年 10 月 23 日无模型复验使用真实离线安装生成 profile，再由真实 CLI --dump-config 合并 bundle / profile 层，使用合并后的插件配置挂载真实 Cordis / SessionStore。同一 1.25 MiB 正文在默认 1 / 16 MiB 下报 EVENT_BYTES_LIMIT、inspect / 1；4 / 8 MiB 下 sealed / complete / 0；4 / 1 MiB 下报 PENDING_BYTES_LIMIT、inspect / 1。各组输入、setup、合并配置树与 run.json 一致；没有改变默认策略、截断正文或新增模型调用。下列 2026 年 10 月 22 日资源基线保留，本次未重跑资源测量。
 
 ## 接收与失败顺序
 

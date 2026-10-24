@@ -4,6 +4,8 @@
 
 ## 运行与输入
 
+M6.3 的 [固定评测集](core-evaluation.md) 另提供 10 个用例各一次的单配置清单：`python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --run`。同样会调用真实模型；它验证任务覆盖，没有重复样本或双配置配对，不能据此推断配置提升。
+
 在仓库根目录执行，以下命令会执行两个真实模型任务，每个任务可能包含多次模型调用：
 
 ```powershell
@@ -32,6 +34,8 @@ python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --r
 严格拒绝未知字段。experimentName 为非空名称；repetitions 为正整数，拒绝布尔值。cases 沿用 batch 的唯一 entryId 和相对清单解析的 POSIX casePath；允许同一 caseId 用多个 entryId 表示不同计划项。configurations 是非空数组，configurationId 在实验内唯一；configRef 四字段同 [评测格式](evaluation-format.md)。不同 configurationId 可以引用同一配置，但不会被自动视为不同模型。
 
 读取并校验全部原始用例，再以每个实验 configRef **完整替换**用例原 configRef，预检全部组合的 headless / 插件版本；失败时不启动模型。输入与配置全部冻结后才运行。配置只包含现有 provider / model / profile / pluginVersion，不支持温度、系统提示词或任意宿主配置覆盖。
+
+用例顶层可选 recorder.maxEventBytes / recorder.maxPendingBytes 沿原始输入、展开用例、批次输入和逐次执行快照完整保留；实验的 configRef 覆盖不会改动它。录制限制属于用例，不是实验 configurations 的维度，也不进入 requestedConfiguration / 实际路由匹配。若需比较不同录制限制，应使用各自明确声明的用例；报告的完整快照校验和非 configRef 任务指纹包含 recorder，省略与显式默认不会被静默归一化。字段约束见 [用例格式](evaluation-format.md)。
 
 样本数 = cases 数 × configurations 数 × repetitions。顺序固定为重复轮次、用例顺序、配置顺序；repeatIndex 从 1 开始。没有随机化、并发或跨轮状态复用，每次都新建 home / workspace / store / session 与工具故障状态。
 
