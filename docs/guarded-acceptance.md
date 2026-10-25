@@ -62,4 +62,6 @@ inputTokens=29027、outputTokens=397、cacheReadTokens=53248、cacheWriteTokens=
 
 044 新增可复用清单和测试，生产执行代码没有改动；其完成时尚未提交 / 推送或验收新云端。随后 [045](changes/2026-10-25-045-plan-review-fixes.md) 复审补齐报告数量检查与正式测试入口范围，独立进行无模型验证和交付。原 M6 十用例和 Web 历史不变。当前只验证现有单配置的两个用例各两次，未扩大到全部十用例重复或第二配置；没有性能 / 费用改善、显著性或模型优胜结论。
 
+041–045 已提交推送为 dffac4c，其新的 Windows CI 实际 243 Python / 85 Node / 41 JS、compileall 与无模型示例通过，见 [交付验收 046](changes/2026-10-25-046-plan-guard-delivery-ci.md)。这次交付没有追加模型任务，不扩大本节四任务真实范围。
+
 原始日志、模型内容、安装缓存和本机路径保存在忽略的 runs 中，公开文档不链接私人证据。修改范围、环境失败与完整验证见 [记录 044](changes/2026-10-25-044-guarded-live-acceptance.md)。

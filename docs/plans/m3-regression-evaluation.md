@@ -18,6 +18,8 @@ M6.4 收尾后的第一批按用户选择实现无模型实验预检：`--experi
 
 用户授权先复审并交付 041–044，暂不追加真实模型。[045](../changes/2026-10-25-045-plan-review-fixes.md) 修复报告在数量核对前展开矩阵及 Node 测试递归发现历史副本两项问题；本地完整 243 Python / 正式 85 Node / 41 JS 语法、compileall 与无模型示例通过，随后按最新提交验收 CI，真实任务历史不重跑。
 
+[046](../changes/2026-10-25-046-plan-guard-delivery-ci.md) 已核实 041–045 提交推送为 dffac4c，精确匹配的 run 40167590361 / job 121091692849 全部成功，实际云端 243 Python / 85 Node / 41 JS、compileall 与无模型 demo 通过。当前计划约束交付完成，后续真实比较仍需另定第二配置和规模，不追加当前模型任务。
+
 ## 起点与阶段目标
 
 M2.3 已验证独立 Web / headless profile 的真实任务与生命周期，固定检查器保持原范围。M3.1 新增通用离线断言；M3.2 已能自动准备独立文件环境并驱动一条真实 headless 用例。事实与范围以 [开发进度](../progress.md)、[修改记录 010](../changes/2026-10-16-010-m3-1-offline-evaluation.md) 和 [修改记录 011](../changes/2026-10-17-011-m3-2-single-case-runner.md) 为准。

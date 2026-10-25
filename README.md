@@ -99,7 +99,7 @@ npm.cmd test
 npm.cmd run demo
 ```
 
-`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及本地验证见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md)。
+`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md)；实现已提交并推送为 `dffac4c`，最新实现 CI 的 243 Python / 85 Node / 41 JS、compileall 和无模型示例通过，见 [交付验收 046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。
 
 真实组件接入检查：
 
