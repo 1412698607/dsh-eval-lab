@@ -13,7 +13,10 @@
 - M3.1 已实现 Python 版本化用例加载、离线证据断言及执行 / 录制 / 断言三维结果；两个公开合成用例通过，插件版本仍为 `0.1.2`。
 - M3.2 已实现 Python 驱动单用例真实 headless 运行、独立文件环境和会话、实际路由采集、墙钟超时 / 取消及退出清理；证据 / 结果版本 2 兼容原版本 1。
 - M4.1 已在状态化工具与顺序批次上增加重复试验、配置 / 重复编号关联、明确分母和已观测指标；缺失用量与费用保持 null。
-- 实验支持独立 `--plan` 无模型预检与任务矩阵预览；与实际执行共用展开逻辑，调用数 / token / 费用未知保留 null，见 [实验说明](docs/experiments.md)。
+- 实验支持独立 `--plan` 无模型预检与任务矩阵预览；预览 / 执行均可用 `--max-samples N` 限制任务总数，调用数 / token / 费用未知保留 null，见 [实验说明](docs/experiments.md)。
+- 预览输出版本化计划指纹；实际执行可带 `--expected-plan-sha256` 重新检查清单、全部用例和任务上限，输入变化时在创建目录或启动任务前拒绝。
+- 新实验保存参与指纹计算的原始计划输入快照，离线 JSON / Markdown 报告核对其与冻结用例、保存摘要的一致性；旧实验缺少快照时明确标为 unverified，见 [配置报告](docs/configuration-reports.md)。
+- [四任务真实验收](docs/guarded-acceptance.md) 已验证现有 deepseek-flash 的读取 / 恢复各两次，以及上限、预期指纹、保存快照和离线报告链路；首轮深目录准备失败保留，短目录下 4 个真实任务均通过。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
@@ -42,10 +45,14 @@ python -m dsh_eval --browse
 先预览固定评测集，不调用模型、不创建运行目录：
 
 ```powershell
-python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --plan
+python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --plan --max-samples 10
 ```
 
 输出 10 个用例条目、1 个配置、10 个计划任务，以及逐项请求配置 / 超时 / 录制覆盖。预览检查结构和 headless / 插件兼容性，不验证模型可用或任务成功，也不冻结后续执行输入。仅输出 JSON；参数与字段见 [实验预检](docs/experiments.md)。
+
+`--max-samples` 是可选正整数，预览和实际 `--run` 都在读取用例、展开任务及创建目录前检查总数；等于上限允许，超过时返回 2。省略则保持无任务数上限，实际运行时需再次传入；该限制不约束模型调用数、token 或费用。
+
+计划中的 `planFingerprint.sha256` 可作为实际 `--run --expected-plan-sha256 <指纹>` 的预期值。运行会重新读取 / 校验全部输入及上限，匹配后冻结同一组输入再执行；未传该参数保持原行为。指纹不包含文件空白、对象字段顺序或清单绝对路径；具体覆盖和运行示例见 [计划一致性检查](docs/experiments.md#计划指纹与执行前一致性检查)。
 
 固定评测集的无模型测试与显式真实运行：
 
@@ -92,7 +99,7 @@ npm.cmd test
 npm.cmd run demo
 ```
 
-`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，避免部分 Windows 沙箱对测试子进程的限制。
+`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及本地验证见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md)。
 
 真实组件接入检查：
 

@@ -274,6 +274,12 @@ M6.3 固定评测集直接复用下述实验 / 批次 / 单用例链路，不新
 
 [040](changes/2026-10-24-040-experiment-plan-preview.md) 将原加载 / 全组合预检与样本展开提取为共用函数。`--experiment … --plan` 在生成执行 UUID / 目录之前返回独立 experimentPlanFormatVersion=1 JSON；--run 继续使用相同加载和展开逻辑后冻结输入，原输入 / 结果 / evidence / 录制格式不变。计划包含数量、顺序、请求配置、用例 budget 及原始 recorderOverrides，不生成 outcome 或实际运行身份；未来执行的 modelCalls / totalTokens / cost 保留 null。预览不探测宿主 / 凭据 / 网络、不调用 inspect，也不承诺未来实际路由或任务结果。源文件未锁定，下一次执行仍重读；录制默认值仍由 Node 解析，Python 不复制另一份默认配置。
 
+[041](changes/2026-10-25-041-experiment-sample-limit.md) 在共用加载入口增加可选 max_samples：先校验正整数参数与清单，再以 cases × configurations × repetitions 检查任务数，超限在用例读取、组合校验、矩阵展开、UUID 和目录创建之前拒绝。允许范围内继续全部原预检与执行流程，CLI 仅接受 --experiment 的 --plan / --run。默认 None 保持旧行为，新计划 / 实验结果新增 maxSamples（省略参数为 null）；旧版本 1 结果没有此字段仍可读取。该参数不进入 experiment.json，也不传给单用例宿主，不改变录制、证据或批次协议；它约束本次计划规模，不能充当模型请求数或费用限制。
+
+[042](changes/2026-10-25-042-experiment-plan-fingerprint.md) 增加共用 _plan_fingerprint：版本 1 载荷包含完整已校验 manifest、按条目加载的原始 cases、order 和 maxSamples，使用排序键、紧凑且保留非 ASCII 字符的 JSON UTF-8 SHA-256。预览与运行保存 planFingerprint={version,sha256}，运行可用 expected_plan_sha256 在 UUID / 目录 / 展开之前比对，之后冻结同一组内存输入。结果另保存 expectedPlanSha256，原输入及批次 / 证据 / 录制格式不变，旧结果无需新字段。默认不启用比对，CLI 参数仅用于实验 --run；不匹配是启动前错误，不伪造任务结果。绝对来源路径和 JSON 书写形式不参与摘要，清单相对 casePath、原始声明和数组顺序参与；宿主 / 凭据 / 代码 / 运行控制不在摘要内，多文件读取也没有事务锁。它与离线报告按非 configRef 用例内容计算的 taskFingerprint 用途和载荷不同，不可互换。
+
+[043](changes/2026-10-25-043-plan-snapshot-report-verification.md) 将同一版本 1 载荷保存为 plan-input.json，结果新增 planInputPath；_plan_input 与 _plan_fingerprint 共享定义，摘要算法不变。report 在样本复验前核对原始清单（只允许 casePath 的冻结重写）、完整原始用例与冻结输入对应关系，再核对摘要 / 上限 / 可选预期值。新 JSON / Markdown 显示 planVerification，未声明快照的旧结果 unverified，已声明快照丢失 / 冲突则先于 inspect 和报告输出拒绝。路径使用原包含关系守卫，报告不依赖原来源路径；这个计划状态不覆盖执行 / 录制 / 断言或样本复验结论。
+
 `metrics.py` 在 evaluate 重新 inspect 和核对身份后，从连续闭合任务片段提取已结算 assistant/message / assistant/attempt 和 tool/call 数量；request/header 是配置段事件，不能用作调用次数。step/start 可以早于 user/message，不能把生命周期开放事件当作任务输出越界。usage 逐字段检查覆盖，失败尝试或任一步缺失则 token 保持 null，不由 input / output 补造 total。任务失败与取消不抹掉合法观测；指标缺失不改变三维结论。
 
 同日审查修复为指标单值和求和增加有限范围检查，超大数值视为缺失，不将有效整数转成浮点数。token 某字段的单值或总和超范围仅使该字段缺失；实验汇总溢出时保留观测 / 缺失数量，总和与均值为 null，并给出可选 reason。该处理在指标层完成，不使异常 runtime 计时中断任务，也不输出 Infinity / NaN。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
@@ -285,6 +291,8 @@ runner 在保存 case 快照后启动单调时钟，到保存 runtime 前记 ela
 ## M4.2 离线报告边界
 
 `report.py` 只读一个已结束实验，从传入结果旁定位冻结清单及批次，不信任旧绝对目录。核对计划展开、样本数、批次关联和执行 / 录制身份唯一性，路径保持在实验 / 批次目录内。每项以原用例加实验配置构造完整期望输入，比较批次及执行快照，覆盖任务、环境声明、预算、断言和版本；除 configRef 外规范 JSON 的 SHA-256 作为 taskFingerprint，不能代替签名或证明实际环境创建过程。
+
+[045](changes/2026-10-25-045-plan-review-fixes.md) 将数量检查前移：直接乘法计算计划总数，先比较保存的样本 / 批次项数，再用惰性位置迭代器核对顺序，避免损坏重复次数在校验前引发大矩阵分配。原分母、逐项关联、摘要与结果格式不变，旧格式同样执行这一数量门禁。
 
 逐项核对 evidence 身份、来源、实际配置及路径，复用原 evaluate 的 fresh inspect / 三维断言与指标采集。Windows 原生证据路径兼容后再核对；新报告各自保存复验结果，原实验和旧评测不覆写。旧 summary / 样本字段只作为 savedSummary / saved 留存，changedFields 解释新旧结果差异。样本快照或证据冲突降为 rejected / unevaluable 并留在原计划分母；全局计划 / 关联冲突拒绝整份输入。
 

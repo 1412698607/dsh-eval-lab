@@ -18,6 +18,8 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
     mode.add_argument("--plan", action="store_true", help="Preflight --experiment and print its plan without executing tasks")
+    parser.add_argument("--max-samples", type=int, help="Optional positive task-count cap for --experiment --plan or --run")
+    parser.add_argument("--expected-plan-sha256", help="Require a matching preview fingerprint before --experiment --run")
     parser.add_argument("--runs-root", help="Run output parent; --browse reads existing results from this directory")
     parser.add_argument("--reports-root", help="Parent directory for new JSON/Markdown comparison reports")
     parser.add_argument("--cases-root", help="Case library directory for --browse")
@@ -26,6 +28,13 @@ def main(argv=None):
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
+    if args.expected_plan_sha256 is not None and not (args.experiment and args.run):
+        parser.error("--expected-plan-sha256 requires --experiment with --run")
+    if args.max_samples is not None:
+        if not args.experiment or not (args.plan or args.run):
+            parser.error("--max-samples requires --experiment with --plan or --run")
+        if args.max_samples <= 0:
+            parser.error("--max-samples must be a positive integer")
     if args.plan and not args.experiment:
         parser.error("--plan requires --experiment")
     if args.plan and (args.cancel_after_stream or any(value is not None for value in
@@ -59,8 +68,9 @@ def main(argv=None):
             result = generate_report(args.report, args.reports_root)
         elif args.experiment:
             from .experiment import plan_experiment, run_experiment
-            result = (plan_experiment(args.experiment) if args.plan else
-                      run_experiment(args.experiment, args.runs_root, args.host_modules, args.cancel_after_stream))
+            result = (plan_experiment(args.experiment, max_samples=args.max_samples) if args.plan else
+                      run_experiment(args.experiment, args.runs_root, args.host_modules, args.cancel_after_stream,
+                                     max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256))
         elif args.batch:
             from .batch import run_batch
             result = run_batch(args.batch, args.runs_root, args.host_modules, args.cancel_after_stream)

@@ -1,0 +1,21 @@
+{
+  "experimentFormatVersion": 1,
+  "experimentName": "guarded-flash-read-retry-2x2",
+  "repetitions": 2,
+  "failurePolicy": "stop",
+  "cases": [
+    { "entryId": "direct-read", "casePath": "direct-read.case.json" },
+    { "entryId": "retry-once", "casePath": "retry-once.case.json" }
+  ],
+  "configurations": [
+    {
+      "configurationId": "deepseek-flash",
+      "configRef": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "profile": "headless",
+        "pluginVersion": "0.1.2"
+      }
+    }
+  ]
+}

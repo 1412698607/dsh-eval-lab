@@ -75,8 +75,12 @@ class ExperimentTests(unittest.TestCase):
         self.manifest["configurations"].append(config)
         self.case["recorder"] = {"maxPendingBytes": 4194304}
         self.save("case.json", self.case)
-        preview = plan_experiment(self.save("experiment.json", self.manifest))
-        report = self.run_experiment()
+        preview = plan_experiment(self.save("experiment.json", self.manifest), max_samples=4)
+        expected_hash = preview["planFingerprint"]["sha256"]
+        report = self.run_experiment(max_samples=4, expected_plan_sha256=expected_hash.upper())
+        self.assertEqual((preview["maxSamples"], report["maxSamples"]), (4, 4))
+        self.assertEqual(report["planFingerprint"], preview["planFingerprint"])
+        self.assertEqual(report["expectedPlanSha256"], expected_hash)
         self.assertEqual((report["status"], report["outcome"]), ("completed", "passed"))
         rows = report["samples"]
         self.assertEqual([(row["repeatIndex"], row["configurationId"]) for row in rows],
@@ -107,18 +111,22 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(report["summary"]["metrics"]["inputTokens"]["missingSamples"], 4)
         original = (base / "experiment-result.json").read_bytes()
         repeated = run_experiment(base / "experiment.json", self.outputs)
+        self.assertIsNone(repeated["maxSamples"])
+        self.assertIsNone(repeated["expectedPlanSha256"])
         self.assertNotEqual(report["experimentId"], repeated["experimentId"])
         self.assertEqual(repeated["outcome"], "passed")
         self.assertEqual((base / "experiment-result.json").read_bytes(), original)
 
     def test_original_inputs_are_frozen_before_batch_starts(self):
+        preview = plan_experiment(self.save("experiment.json", self.manifest))
         def edit_original(*args, **kwargs):
             self.save("case.json", {"invalid": True})
             self.save("experiment.json", {"invalid": True})
             return run_batch(*args, **kwargs)
         with patch("dsh_eval.experiment.run_batch", side_effect=edit_original):
-            report = self.run_experiment()
+            report = self.run_experiment(expected_plan_sha256=preview["planFingerprint"]["sha256"])
         self.assertEqual(report["outcome"], "passed")
+        self.assertEqual(report["planFingerprint"], preview["planFingerprint"])
 
     def test_failed_and_skipped_trials_keep_explicit_denominators(self):
         next(item for item in self.case["assertions"] if item["type"] == "final_text")["equals"] = "wrong"

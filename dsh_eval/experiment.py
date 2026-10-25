@@ -1,7 +1,10 @@
 """Expand explicit repeated trials into the existing isolated sequential batch runner."""
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
+import json
 from pathlib import Path
+import re
 from uuid import uuid4
 
 from .batch import run_batch
@@ -18,9 +21,14 @@ def _checkpoint(directory, report):
     temporary.replace(directory / "experiment-result.json")
 
 
-def _load_experiment(experiment_path):
+def _load_experiment(experiment_path, max_samples=None):
+    require(max_samples is None or type(max_samples) is int and max_samples > 0,
+            "max_samples must be a positive integer")
     source = Path(experiment_path).resolve()
     manifest = validate_experiment(load_json(source))
+    count = len(manifest["cases"]) * len(manifest["configurations"]) * manifest["repetitions"]
+    require(max_samples is None or count <= max_samples,
+            f"Planned sample count {count} exceeds max_samples {max_samples}")
     inputs = [validate_case(load_json(source.parent / entry["casePath"])) for entry in manifest["cases"]]
     # Check every case/configuration combination before creating output or starting a model.
     for case in inputs:
@@ -41,25 +49,45 @@ def _expand_samples(manifest, inputs):
                        {**case, "configRef": config["configRef"]})
 
 
-def plan_experiment(experiment_path):
-    source, manifest, inputs = _load_experiment(experiment_path)
+def _plan_input(manifest, inputs, max_samples):
+    return {"version": 1, "manifest": manifest, "cases": inputs, "maxSamples": max_samples, "order": ORDER}
+
+
+def _plan_fingerprint(manifest, inputs, max_samples):
+    payload = _plan_input(manifest, inputs, max_samples)
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return {"version": 1, "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
+
+
+def plan_experiment(experiment_path, *, max_samples=None):
+    source, manifest, inputs = _load_experiment(experiment_path, max_samples)
     samples = [deepcopy({**sample, "requestedConfiguration": case["configRef"], "budget": case["budget"],
                          "recorderOverrides": case.get("recorder")})
                for sample, case in _expand_samples(manifest, inputs)]
     return {"experimentPlanFormatVersion": 1, "valid": True, "modelCalled": False,
-            "experimentName": manifest["experimentName"], "sourceManifest": str(source),
+            "experimentName": manifest["experimentName"], "sourceManifest": str(source), "maxSamples": max_samples,
+            "planFingerprint": _plan_fingerprint(manifest, inputs, max_samples),
             "repetitions": manifest["repetitions"], "failurePolicy": manifest["failurePolicy"], "order": ORDER,
             "configurations": deepcopy(manifest["configurations"]),
             "counts": {"cases": len(inputs), "configurations": len(manifest["configurations"]), "samples": len(samples)},
             "estimates": {"modelCalls": None, "totalTokens": None, "cost": None}, "samples": samples}
 
 
-def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_after_stream=False):
-    source, manifest, inputs = _load_experiment(experiment_path)
+def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
+                   expected_plan_sha256=None):
+    require(expected_plan_sha256 is None or isinstance(expected_plan_sha256, str)
+            and re.fullmatch(r"[0-9a-fA-F]{64}", expected_plan_sha256) is not None,
+            "expected_plan_sha256 must contain exactly 64 hexadecimal characters")
+    expected = expected_plan_sha256.lower() if expected_plan_sha256 is not None else None
+    source, manifest, inputs = _load_experiment(experiment_path, max_samples)
+    fingerprint = _plan_fingerprint(manifest, inputs, max_samples)
+    require(expected is None or expected == fingerprint["sha256"],
+            f"Experiment plan fingerprint mismatch: expected {expected}, actual {fingerprint['sha256']}")
     experiment_id = str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "experiments").resolve() / experiment_id
     (directory / "inputs").mkdir(parents=True, exist_ok=False)
     (directory / "expanded").mkdir()
+    save_json(directory / "plan-input.json", _plan_input(manifest, inputs, max_samples))
     frozen = deepcopy(manifest)
     for index, (entry, case) in enumerate(zip(frozen["cases"], inputs), 1):
         entry["casePath"] = f"inputs/{index:04}.case.json"
@@ -77,6 +105,9 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     report = {"experimentResultFormatVersion": 1, "experimentId": experiment_id,
               "experimentName": manifest["experimentName"], "experimentDirectory": str(directory),
               "sourceManifest": str(source), "manifestPath": "experiment.json", "repetitions": manifest["repetitions"],
+              "maxSamples": max_samples,
+              "planFingerprint": fingerprint, "expectedPlanSha256": expected,
+              "planInputPath": "plan-input.json",
               "configurations": manifest["configurations"], "failurePolicy": manifest["failurePolicy"],
               "order": ORDER, "startedAt": datetime.now(timezone.utc).isoformat(),
               "finishedAt": None, "status": "running", "outcome": None, "batchId": None, "batchResultPath": None,
