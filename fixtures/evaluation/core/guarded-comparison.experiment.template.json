@@ -1,0 +1,30 @@
+{
+  "experimentFormatVersion": 1,
+  "experimentName": "guarded-two-config-read-retry-2x2x2",
+  "repetitions": 2,
+  "failurePolicy": "stop",
+  "cases": [
+    { "entryId": "direct-read", "casePath": "direct-read.case.json" },
+    { "entryId": "retry-once", "casePath": "retry-once.case.json" }
+  ],
+  "configurations": [
+    {
+      "configurationId": "baseline",
+      "configRef": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "profile": "headless",
+        "pluginVersion": "0.1.2"
+      }
+    },
+    {
+      "configurationId": "candidate",
+      "configRef": {
+        "provider": null,
+        "model": null,
+        "profile": "headless",
+        "pluginVersion": "0.1.2"
+      }
+    }
+  ]
+}

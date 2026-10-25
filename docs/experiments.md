@@ -2,6 +2,8 @@
 
 更新：2026 年 10 月 25 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
 
+[双配置八任务准备](guarded-comparison.md) 固定两用例、两配置、两轮，提供第二配置为空的待填写模板；原模板校验拒绝，填妥后使用既有 --plan / cap / 指纹链路。该准备批次只有合成回归，没有真实双配置执行。
+
 ## 无模型预检与计划预览
 
 在仓库根目录运行，只需 Python，不安装 Harness 或读取模型凭据：
