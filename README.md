@@ -13,11 +13,19 @@
 - M3.1 已实现 Python 版本化用例加载、离线证据断言及执行 / 录制 / 断言三维结果；两个公开合成用例通过，插件版本仍为 `0.1.2`。
 - M3.2 已实现 Python 驱动单用例真实 headless 运行、独立文件环境和会话、实际路由采集、墙钟超时 / 取消及退出清理；证据 / 结果版本 2 兼容原版本 1。
 - M4.1 已在状态化工具与顺序批次上增加重复试验、配置 / 重复编号关联、明确分母和已观测指标；缺失用量与费用保持 null。
+- 实验支持独立 `--plan` 无模型预检与任务矩阵预览；预览 / 执行均可用 `--max-samples N` 限制任务总数，调用数 / token / 费用未知保留 null，见 [实验说明](docs/experiments.md)。
+- 预览输出版本化计划指纹；实际执行可带 `--expected-plan-sha256` 重新检查清单、全部用例和任务上限，输入变化时在创建目录或启动任务前拒绝。
+- 新实验保存参与指纹计算的原始计划输入快照，离线 JSON / Markdown 报告核对其与冻结用例、保存摘要的一致性；旧实验缺少快照时明确标为 unverified，见 [配置报告](docs/configuration-reports.md)。
+- [四任务真实验收](docs/guarded-acceptance.md) 已验证现有 deepseek-flash 的读取 / 恢复各两次，以及上限、预期指纹、保存快照和离线报告链路；首轮深目录准备失败保留，短目录下 4 个真实任务均通过。
+- [双配置八任务准备](docs/guarded-comparison.md) 提供待填写模板和无模型配对回归；第二配置尚未选择，空模板会在启动前拒绝，本批未执行真实比较。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
+- M6.4 已增加独立真实 Web 采集与验收：Windows / deepseek-flash 累计五次任务，保留首次正常失败和旧取消样本；最新取消补验已核对实际工作区与 README 读取，三个最终场景均有工作区匹配的生命周期样本，取消 / 中断任务仍 unevaluable。
+- M6.4 [审查 035](docs/changes/2026-10-24-035-m6-4-status-review.md) 的异常启动清理与普通退出时间关联两项 P2 已由 [修复 036](docs/changes/2026-10-24-036-m6-4-startup-cleanup-timeline.md) 处理；新增无模型回归及原生 ConPTY 复验，历史样本与原始证据保留。
+- [复审 037](docs/changes/2026-10-24-037-m6-4-final-review-ci-status.md) 保留原云端失败与当时日志不可读的边界；[038](docs/changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 修复共享验证函数的父目录规范化缺口并补真实别名 / 越界回归。035 至 038 已提交并推送为 `4b97120`，其云端 202 Python、85 Node、41 JS 语法、compileall 和无模型合成示例全部通过，见 [验收 039](docs/changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。
 
 接入验证使用本机安装缓存中的 **DSH 0.2.0-rc.2 / Cordis 4.0.4**。插件声明对应的可选 peer，以供 Harness 检查版本兼容性。无需构建，也无需安装依赖即可运行模拟演示和单元测试。
 
@@ -35,7 +43,19 @@ python -m dsh_eval --browse
 
 ## 固定评测集
 
-固定评测集的无模型验收与显式真实运行：
+先预览固定评测集，不调用模型、不创建运行目录：
+
+```powershell
+python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --plan --max-samples 10
+```
+
+输出 10 个用例条目、1 个配置、10 个计划任务，以及逐项请求配置 / 超时 / 录制覆盖。预览检查结构和 headless / 插件兼容性，不验证模型可用或任务成功，也不冻结后续执行输入。仅输出 JSON；参数与字段见 [实验预检](docs/experiments.md)。
+
+`--max-samples` 是可选正整数，预览和实际 `--run` 都在读取用例、展开任务及创建目录前检查总数；等于上限允许，超过时返回 2。省略则保持无任务数上限，实际运行时需再次传入；该限制不约束模型调用数、token 或费用。
+
+计划中的 `planFingerprint.sha256` 可作为实际 `--run --expected-plan-sha256 <指纹>` 的预期值。运行会重新读取 / 校验全部输入及上限，匹配后冻结同一组输入再执行；未传该参数保持原行为。指纹不包含文件空白、对象字段顺序或清单绝对路径；具体覆盖和运行示例见 [计划一致性检查](docs/experiments.md#计划指纹与执行前一致性检查)。
+
+固定评测集的无模型测试与显式真实运行：
 
 ```powershell
 python -m unittest discover -s test -p test_core_suite.py -v
@@ -44,6 +64,30 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 ```
 
 一次任务可能含多次模型请求；该清单没有 token 或费用硬上限。用例范围、真实验收结果和离线复验方法见 [M6.3 固定评测集](docs/core-evaluation.md)。
+
+## Web 生命周期检查
+
+```powershell
+npm.cmd run check:web-lifecycle
+```
+
+此无模型命令无需安装 Harness 或配置凭据，三个场景使用合成事件、真实子进程和原录制器；取消 / 中断保持任务 unevaluable。每次保存独立证据并重新 inspect，source 固定为 synthetic；其通过不表示真实 Web 验收。
+
+中断验收明确核对受支持的录制版本和非空磁盘检查点；合成 fixture 在 flush 后停止追加，要求覆盖整个前缀。真实 Web 允许检查点之后的有效未确认尾部，但仍须覆盖操作序号，未知版本、空 / 落后检查点和未完成状态替换均拒绝通过。原修复见 [记录 032](docs/changes/2026-10-24-032-m6-4-interruption-gates.md)。
+
+真实 Web 使用另一个显式入口，需要已有 CLI `0.2.0-rc.2`、宿主 `node-pty` 与模型配置：
+
+```powershell
+New-Item -ItemType Directory -Force runs/web-lifecycle-live | Out-Null
+npm.cmd run live:web-lifecycle -- prepare runs/web-lifecycle-live/normal-new normal-exit
+npm.cmd run live:web-lifecycle -- run runs/web-lifecycle-live/normal-new
+# 只读复验，不调用模型
+python -m scripts.verify_web_live runs/web-lifecycle-live/normal-new --output runs/web-lifecycle-live/normal-new/fresh.json
+```
+
+prepare 仅冻结环境并离线安装本地插件；run 启动独立 Web，CUA 在页面提交任务时才调用模型。仓库命令不自动完成浏览器步骤。正常任务完成后输入 `{"type":"shutdown"}` 经真实 ConPTY Ctrl+C 清理；取消必须实际点击页面按钮，中断由监督器终止自己的 PID。完整操作、采集协议、四次尝试及取消样本的覆盖局限见 [Web 生命周期](docs/web-lifecycle.md) 和 [记录 033](docs/changes/2026-10-24-033-m6-4-live-web-validation.md)。
+
+[记录 034](docs/changes/2026-10-24-034-m6-4-cancel-workspace-validation.md) 另获授权只追加一个 deepseek-flash 取消任务：提交前注册表 / 原生 cwd 与隔离 fixture 一致，实际 README 读取成功后点击停止，结果 cancelled / complete / unevaluable，工作区两项观测均为 true。旧取消样本不改写，仍保留工作区未知；034 未改生产代码、协议或运行方式。
 
 ## 本地演示
 
@@ -56,7 +100,7 @@ npm.cmd test
 npm.cmd run demo
 ```
 
-`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，避免部分 Windows 沙箱对测试子进程的限制。
+`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md)；实现已提交并推送为 `dffac4c`，最新实现 CI 的 243 Python / 85 Node / 41 JS、compileall 和无模型示例通过，见 [交付验收 046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。
 
 真实组件接入检查：
 
@@ -314,15 +358,16 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，本次只做无模型回归和历史录制的离线检查；首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。双配置与重复扩展仍待配置和预算，下一批为 M6.4 Web 页面取消 / 正常退出 / 处理中断；新模型任务另定规模。本次未运行云端 CI，不继承 M5 云端结果作为新修复验证。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。`103c090` 包含 030 至 034，`4b97120` 包含 035 至 038 及三项修复，并已通过新的无模型云端验收。双配置与重复扩展、其他平台 / CLI / desktop / SDK 仍待确定范围；本轮没有新增模型任务。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
 - [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
-- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、单配置验收及后续 Web 范围。
+- [M6 方案](docs/plans/m6-reliability-validation.md)、[运行会话清单](docs/run-manifest.md) 与 [录制资源边界](docs/recorder-resources.md)：运行级成员、单条限制、单配置与 Web 当前验收范围。
 - [架构与技术取舍](docs/architecture.md)：插件接入、日志格式、Promise 队列、错误和关闭逻辑。
+- [Web 生命周期](docs/web-lifecycle.md)：M6.4 合成与真实采集、进程与操作事实、工作区核对及覆盖局限。
 - [评测格式](docs/evaluation-format.md)：版本 1 / 2 用例、证据与结果、离线命令。
 - [单用例运行](docs/single-case-runner.md)：真实 headless 入口、环境、预算、退出事实和验证边界。
 - [批次运行](docs/batch-runner.md)：顺序执行、输入快照、状态重置、失败策略与结果清单。
@@ -331,7 +376,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 21 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 24 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

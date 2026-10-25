@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from dsh_eval.__main__ import main
 from dsh_eval.batch import run_batch
-from dsh_eval.experiment import run_experiment
+from dsh_eval.experiment import plan_experiment, run_experiment
 from dsh_eval.formats import load_json, validate_experiment
 from dsh_eval.runner import ROOT
 
@@ -73,7 +73,14 @@ class ExperimentTests(unittest.TestCase):
         config["configurationId"] = "second"
         config["configRef"]["model"] = "second"
         self.manifest["configurations"].append(config)
-        report = self.run_experiment()
+        self.case["recorder"] = {"maxPendingBytes": 4194304}
+        self.save("case.json", self.case)
+        preview = plan_experiment(self.save("experiment.json", self.manifest), max_samples=4)
+        expected_hash = preview["planFingerprint"]["sha256"]
+        report = self.run_experiment(max_samples=4, expected_plan_sha256=expected_hash.upper())
+        self.assertEqual((preview["maxSamples"], report["maxSamples"]), (4, 4))
+        self.assertEqual(report["planFingerprint"], preview["planFingerprint"])
+        self.assertEqual(report["expectedPlanSha256"], expected_hash)
         self.assertEqual((report["status"], report["outcome"]), ("completed", "passed"))
         rows = report["samples"]
         self.assertEqual([(row["repeatIndex"], row["configurationId"]) for row in rows],
@@ -81,6 +88,14 @@ class ExperimentTests(unittest.TestCase):
         for key in ("caseRunId", "runId", "sessionId"):
             self.assertEqual(len({row[key] for row in rows}), 4)
         base = Path(report["experimentDirectory"])
+        self.assertEqual(preview["counts"]["samples"], len(rows))
+        for planned, row in zip(preview["samples"], rows):
+            for key in ("sampleId", "caseEntryId", "caseId", "configurationId", "repeatIndex", "requestedConfiguration"):
+                self.assertEqual(planned[key], row[key])
+            expanded = load_json(base / f"expanded/{row['sampleId']}.case.json")
+            self.assertEqual(expanded["configRef"], planned["requestedConfiguration"])
+            self.assertEqual(expanded["budget"], planned["budget"])
+            self.assertEqual(expanded["recorder"], planned["recorderOverrides"])
         self.assertEqual(load_json(base / "experiment-result.json"), report)
         self.assertTrue((base / report["batchResultPath"]).is_file())
         for row in rows:
@@ -96,18 +111,22 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(report["summary"]["metrics"]["inputTokens"]["missingSamples"], 4)
         original = (base / "experiment-result.json").read_bytes()
         repeated = run_experiment(base / "experiment.json", self.outputs)
+        self.assertIsNone(repeated["maxSamples"])
+        self.assertIsNone(repeated["expectedPlanSha256"])
         self.assertNotEqual(report["experimentId"], repeated["experimentId"])
         self.assertEqual(repeated["outcome"], "passed")
         self.assertEqual((base / "experiment-result.json").read_bytes(), original)
 
     def test_original_inputs_are_frozen_before_batch_starts(self):
+        preview = plan_experiment(self.save("experiment.json", self.manifest))
         def edit_original(*args, **kwargs):
             self.save("case.json", {"invalid": True})
             self.save("experiment.json", {"invalid": True})
             return run_batch(*args, **kwargs)
         with patch("dsh_eval.experiment.run_batch", side_effect=edit_original):
-            report = self.run_experiment()
+            report = self.run_experiment(expected_plan_sha256=preview["planFingerprint"]["sha256"])
         self.assertEqual(report["outcome"], "passed")
+        self.assertEqual(report["planFingerprint"], preview["planFingerprint"])
 
     def test_failed_and_skipped_trials_keep_explicit_denominators(self):
         next(item for item in self.case["assertions"] if item["type"] == "final_text")["equals"] = "wrong"

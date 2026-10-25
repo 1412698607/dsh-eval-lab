@@ -1,6 +1,8 @@
 # M4.2 离线配置比较报告
 
-更新：2026 年 10 月 21 日，Asia/Shanghai。`comparisonReportFormatVersion=1`。读取一个已经结束的 M4.1 实验，重新核对样本并生成独立 JSON / Markdown，不执行模型任务。
+更新：2026 年 10 月 25 日，Asia/Shanghai。`comparisonReportFormatVersion=1`。读取一个已经结束的 M4.1 实验，重新核对计划输入 / 指纹及样本并生成独立 JSON / Markdown，不执行模型任务。
+
+[双配置八任务准备](guarded-comparison.md) 新增两用例各两轮的合成链路回归，验证各用例独立配对、异常配对排除、缺失指标与停止分母。它不提供第二模型的真实比较结论，报告协议和计算规则不变。
 
 ## 使用
 
@@ -30,6 +32,8 @@ evaluations/000001.json            本次重新 inspect 和断言的结果
 
 ## 核对顺序与失败行为
 
+报告先以用例条目数 × 配置数 × 重复数计算预期总数，核对保存的 samples / batch entries 类型与数量，再按固定顺序逐项检查；不先展开完整位置列表。这样损坏的重复次数或非法样本容器会在位置枚举、inspect 和输出之前拒绝，新快照与旧格式都适用。该检查不提供输入文件字节或总内存硬上限，见 [复审修复 045](changes/2026-10-25-045-plan-review-fixes.md)。
+
 1. 从传入结果旁解析冻结的 experiment.json 和批次结果，不依赖历史 experimentDirectory / batchDirectory 等绝对位置。核对版本、终态、配置、重复次数、展开顺序、完整样本数、计划位置及 batchId / sampleId / caseRunId / runId / sessionId。重复执行 / 录制身份或实验与批次关联冲突会拒绝整份输入。
 2. 检查实验和批次路径一致、保持在对应目录内。清单路径须为相对 POSIX 路径，拒绝绝对路径、越界与符号链接逃逸；现有 runner 证据中的 Windows 分隔符另行兼容。完整实验目录复制到新位置后，可以从新位置报告。
 3. 每项以原冻结用例完整替换 configRef 得到期望输入，与批次输入及执行目录 case.json 比较，包含任务、环境初始声明 / 故障计数、预算、断言、版本和 caseId。`taskFingerprint` 是除 configRef 外整个用例的规范 JSON UTF-8 SHA-256，不是签名，也不能证明磁盘环境实际被怎样创建。
@@ -39,6 +43,26 @@ evaluations/000001.json            本次重新 inspect 和断言的结果
 样本 verification=verified 表示关联核对及复验处理完成，**不表示任务或录制通过**；具体看执行 / 录制 / 断言三维结果。输入快照不符、证据丢失或身份冲突的 finished 样本为 rejected，保留在计划 / 尝试分母中，新的 outcome=unevaluable，不沿用旧成功。原调度 error 且无法复验为 unavailable；skipped 不构造实际身份或任务结果。
 
 日志损坏、未封存或 inspect 不可用时，原 evaluate 保留 invalid / unverified，断言和日志指标按原规则缺失；独立且身份匹配的 runtime 耗时仍可观测。关联通过后发现坏日志的样本仍可能 verification=verified，其 configurationMatch=unknown，不能进入配对。
+
+## 计划输入与指纹复核
+
+043 之后的新实验声明 planInputPath，指向保存完整版本 1 指纹载荷的 plan-input.json。报告在逐样本 inspect 和新报告目录创建之前复核它；路径沿用相对 POSIX / 解析后真实目录包含关系检查，拒绝绝对路径、越界或目录链接逃逸，不读取历史 sourceManifest 或来源用例。全部实验目录搬迁后仍可核对。
+
+先严格检查保存的 planFingerprint 版本 / 小写 64 位摘要和可选 expectedPlanSha256 的格式与相等关系，再核对快照的版本、精确字段、顺序、合法上限和完整用例数量。原始清单除冻结时重写的 casePath 外必须与冻结 experiment.json 一致，条目身份 / 顺序必须相同；按条目加载的每个原始用例必须与 inputs 中的完整冻结用例一致，含预算、环境 / 故障声明、原 configRef、断言及 recorder 原声明。最后复用版本 1 指纹计算，要求快照、结果 maxSamples、实际指纹及已声明预期值一致。
+
+新 JSON 报告的 planVerification 包含：
+
+| 字段 | 含义 |
+| --- | --- |
+| status | verified：快照与冻结输入 / 保存摘要一致；unverified：未声明可复核的计划输入快照 |
+| fingerprint / expectedPlanSha256 | 保存的实际指纹 / 可选预期摘要，未知保持 null；unverified 状态不能把保存声明当作已重算事实 |
+| inputPath / reason | 已复核快照的相对路径，或旧结果无法重算的原因；旧结果 inputPath=null |
+
+Markdown 明示“计划指纹复核：verified / unverified”。未声明 planInputPath 的旧实验，包括只有 042 指纹元信息的实验，仍可正常报告和复验样本，计划状态保持 unverified；不补造快照或改写旧结果。新实验声明过快照却找不到文件、格式未知、越界或内容不一致，会以输入错误拒绝整份报告，CLI 返回 2，不创建报告目录，也不先运行 inspect。
+
+[044](guarded-acceptance.md) 已用现有 deepseek-flash 的两个用例各两次完成真实链路验收，四样本复核 verified / matched / live、计划 verified，80 份选定源文件复验前后不变；一个配置不生成 comparisons。首轮准备失败的独立实验也保留一项 unevaluable / 三项 skipped，计划 verified 不代表该任务通过。
+
+planVerification 与样本 verification、录制 outcome、任务 outcome 分别判断：计划 verified 后仍可能出现坏日志、取消或任务失败；旧计划 unverified 也不改变有充分录制证据的任务结论。SHA-256 和快照不是签名：若全部快照、冻结输入与摘要一起改写，或删除元信息后伪装成旧格式，本工具不能认证原始来源；不能据此证明模型表现、运行时环境、费用或当时是否实际执行了预期摘要检查。原算法与文件定义见 [实验说明](experiments.md#计划指纹与执行前一致性检查)，当前实现和验证见 [043](changes/2026-10-25-043-plan-snapshot-report-verification.md)。
 
 ## 分母、来源与比较
 

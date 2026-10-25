@@ -43,16 +43,20 @@ inspect --run <目录>
 | `scripts/check-output.js` | 三个真实子进程场景，检查输出和持久化证据 |
 | `scripts/prepare-live.js` | 通过实际 CLI 离线安装两个独立 profile，复制受控 fixture，只引用已有凭据文件 |
 | `scripts/run-live.js`、`scripts/fixtures/live-control.js` | 专用 CLI 子进程、真实流取消 / 强停、Web 停止 Agent 后退出及 inspect |
+| `scripts/check-web-lifecycle.js`、`scripts/fixtures/web-lifecycle-child.js` | M6.4 三个合成场景的专用子进程、原录制器、已写检查点与退出事实；不启动 Harness |
+| `scripts/web-lifecycle-live.js`、`scripts/fixtures/web-lifecycle-observer.js` | 真实 Web 独立准备、ConPTY / 专用 PID 控制、原生生命周期观察；页面动作由外部 CUA 执行 |
+| `scripts/verify_web_live.py` | 独立 live 协议、页面动作 / 模型流 / 路由 / 环境及真实退出关联，复用原 inspect 与任务门禁 |
+| `scripts/check_web_lifecycle.py`、`scripts/verify_web_lifecycle.py` | 新目录检查入口、fresh inspect 与离线生命周期判定；本阶段拒绝 live，取消 / 中断不计任务成功 |
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
-| `dsh_eval/__main__.py` | 评测 / 运行 / 报告 / 浏览互斥入口、UTF-8 stdout；浏览阻止执行和写入选项，原任务 0 / 1 / 2 不变 |
+| `dsh_eval/__main__.py` | 评测 / 实验预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 仅用于实验且与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
-| `dsh_eval/experiment.py` | 冻结实验输入、显式展开用例 / 配置 / 重复编号，复用顺序 batch，核对样本关联并汇总 |
+| `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
-| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`e47de36` 的语法 / Node / Python / compileall / 合成 demo 云端全部通过 |
+| `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`4b97120` 的 41 JS 语法 / 85 Node / 202 Python / compileall / 合成 demo 云端全部通过，旧 M5 验收保留 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
 | `scripts/fixtures/case-control.js` | 复用 M2.3 生命周期控制，观察实际选择和 request/header 路由；仅专用 IPC 子进程加载 |
 | `scripts/demo-eval.js`、`fixtures/evaluation/` | 两组公开合成证据，复用原记录器，独立 caseRunId / 会话；不运行模型或环境 |
@@ -128,6 +132,32 @@ Cordis 卸载仍会捕获清理错误，fiber.dispose 完成不等于日志有�
 控制插件仅由专用 IPC 子进程加载，不加入分发 bundle。它按实际 `{ agent, frame }` 接口，在首个模型流 chunk 后通知父进程；取消调用 `agent.cancel({ kind: 'user' })`，强停由父进程终止自己创建的进程。Windows 的 child.kill 不作为正常 SIGINT 关闭使用；Web 的 `stop` 通过 IPC 请求停止 Agent 后 appExit。headless 有 120 秒超时，Web 正常关闭有 15 秒超时，超时强停不计为成功。
 
 Python 固定检查器读取版本化联调报告定位明确目录，并重新调用 Node inspect，避免旧快照掩盖磁盘损坏。录制通过后核对用户输入、文件参数、callId 关联的实际工具结果、结果在答案之前、字段值和 turn/end；工具名来自事件。缺失文件要求真实 isError 和后续响应；取消检查 aborted/user；强停检查 SIGKILL 与非完整录制。它限定单会话与固定 fixture，不承担通用用例格式、批次调度或统计。M3.1 使用下述独立包，不修改该历史验证器。
+
+## M6.4 合成检查与真实 Web 采集
+
+新增入口将生命周期场景和任务成功分开：JavaScript 冻结 Web fixture，在独立目录启动合成子进程；子进程先 flush / close，再通知 runId、sessionId 和已写 afterSeq，父进程随后发送合成取消、允许 fixture 自然退出或对自己创建的子进程发送 SIGKILL。捕获 process.closed、exitCode、signal、forceStopped、intervention 与错误；超时兜底保留不同来源，不能冒充预期中断。
+
+Python 读取每场景的独立 webLifecycleFormatVersion 1 清单，每次调用原 Node inspect 后核对单运行 / 单会话、状态、匹配输入与任务序号。正常任务复用现有断言；取消要求 afterSeq 之后 aborted/user，任务中断要求已有输入、尚无结束并保留可校验的 recording 前缀。缺文件、损坏、旧成功、进程事实缺失和 inspect 不可用均不通过。verification 使用独立版本 1，verified 表示合成场景符合规则，liveWebVerified 始终 false。
+
+032 收紧中断门禁：run.json 的 formatVersion / statusFormatVersion / runManifestFormatVersion 必须分别为整数 2 / 1 / 1，会话检查点版本为整数 1。运行和会话均须为 recording / unverified，整体检查不得含清单开放之外的额外未确认原因，例如残留 .tmp。原 inspect 已校验状态检查点与对应原始字节前缀；Python 再比较状态的 writtenCount、writtenBytes、firstSeq、lastSeq、sha256 与 inspect 扫描到的完整前缀，要求非空且 lastSeq 等于 afterSeq。本阶段 fixture 在 flush 后停止追加事件，因此该相等条件核对操作前的已写边界；通用 inspect 仍允许有效检查点之后存在未确认尾部。Python 没有复制摘要计算，也没有更改录制器 / inspect 或数据格式。
+
+该格式只接受 synthetic，不作为通用执行 evidence。033 新增的真实路径使用另一个 liveWebLifecycleFormatVersion=1 协议及独立验证入口，不能把 source 改标签后升级；原 run / JSONL / status、通用 runner / evaluate / report 和 M2.3 控制插件均不变。
+
+真实路径先冻结用例、独立 home / Web profile / pnpm store；凭据仅引用已有文件。Web 工作区由 workspace-controller 的 documentsDirectory 部署配置绑定到 fixture，不能只依赖 CLI cwd。观察插件仅记录原生 session/event 的序号 / cwd / sourceKind / 路由、首个模型 chunk、SIGINT 和卸载，不 cancel、flush 或 appExit。监督器只计 source.kind=user 的实际任务输入，保留运行时上下文及技能目录消息的序号；服务就绪后捕获 ConPTY 实际 PID，等待 native onExit。
+
+外部 CUA 提交一次任务并保存动作元信息和页面证据。取消在首个模型流后先读取磁盘检查点，再实际点击页面停止；正常任务结束后，监督器向自己的 ConPTY 写 Ctrl+C，经宿主原生 SIGINT 清理。Windows 此 CLI 的退出码为 130；不使用 child.kill('SIGINT') 或测试 IPC 模拟普通退出。中断直接 SIGKILL 精确的自有进程，本机 native 回报 exitCode=1、signal=null，requestedSignal 与实际退出字段分别保留。任务超时与退出超时有独立干预原因，不能充当正常场景。
+
+Python 先验证 live 清单、观察区间 / PID、实际模型流和 CUA 动作，再重新 inspect、核对单会话任务及实际请求路由。共享任务门禁默认保留合成完整前缀策略；仅 live 路径允许有效未确认尾部，仍要求非空 status.lastSeq 覆盖 operation.afterSeq，并拒绝未知版本和额外不确定原因。正常 / 中断要求实际 cwd 与冻结 workspace 匹配；取消允许旧采集缺 cwd，但环境覆盖显式为未知，不声称 fixture 读取成功。后置门禁失败不能保留整体 passed，独立断言事实可保留。
+
+033 的四次真实尝试保留首轮正常失败；追加正常任务、页面取消和处理中断分别符合规则，旧取消样本工作区未知。034 复用现有驱动和协议另追加一个取消任务，注册表 / 隔离配置 / 全部 25 条原生 cwd 匹配 fixture，实际 read 结果早于取消，完成同任务停止与原生 Ctrl+C 清理；新样本环境两项观测均为 true，旧样本仍未知。验证该覆盖时显式要求 workspaceMatch 和 workspaceObservationAvailable 均为 true，不能仅凭生命周期 verified。
+
+累计五次任务保留所有旧证据，取消 / 中断任务仍 unevaluable。034 没有修改架构、采集格式或生产代码，只补真实样本与离线证据；其他平台 / 版本未验证。elapsedSeconds 是服务进程存活时间含页面等待，缺失 token / 费用保持 null。入口、字段和失败修正见 [Web 生命周期](web-lifecycle.md)、[记录 033](changes/2026-10-24-033-m6-4-live-web-validation.md) 和 [补验记录 034](changes/2026-10-24-034-m6-4-cancel-workspace-validation.md)。
+
+[审查 035](changes/2026-10-24-035-m6-4-status-review.md) 的两项边界已由 [修复 036](changes/2026-10-24-036-m6-4-startup-cleanup-timeline.md) 处理：先拒绝旧输出 / 创建新日志，再启动 ConPTY 并立即注册 onExit；初始化、输出、观察和状态 I/O 的可捕获错误唤醒监督，finally 在保存终态前回收仍存活的自有进程。初始 PID 0 只等待，不发 kill；最多十秒等待有效 PID 与原生退出，未确认时保留 closed=false 和清理错误，不保证失败报告必能落盘。无模型测试可注入终端创建函数并启动真实 Node 子进程，CLI 默认仍用原生 ConPTY，另有原生 fixture 复验；不是模型任务。
+
+普通退出校验 turn/end ≤ console-ctrl-c 操作 ≤ SIGINT ≤ 唯一卸载；取消操作仍是取消前检查点，保留首流 / 标记 / 点击 / 结束的原顺序，再接 SIGINT / 唯一卸载。所有时间允许相等。协议版本、录制器、inspect 与原始样本不变，历史成功 / 失败和旧取消工作区未知继续保留。
+
+[038](changes/2026-10-24-038-m6-4-ci-capture-path-normalization.md) 修复共享任务门禁的父目录表示：verify_recorded_task 自身先 Path(directory).resolve()，再将解析后的 runDir 与同样解析的采集根比较，不依赖外层入口预先处理。合法 junction / 非规范化父路径可用，真实 traces 别名逃逸仍在 inspect 前拒绝；strict / live-tail、状态版本和检查点门禁不变。036 / 038 已随 `4b97120` 推送并通过新云端验收，原失败记录保留，见 [039](changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。
 
 ## M3.1 用例与离线断言
 
@@ -210,9 +240,9 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-后续分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，下一批为 M5 结果浏览与持续集成。
+分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；双配置 / 重复及其他渠道扩展仍待确定。
 
-组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。当前 42 项 Node、117 项 Python 测试；真实组件、模型和子进程检查范围见 [进度](progress.md)，当前少量样本不构成模型表现或性能改善结论。
+组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。039 的修复提交云端实际通过 202 Python / 85 Node / 41 JS 语法、compileall 和合成 demo；038 的本地 202 Python 及 036 / 033 / 034 各批结果单独保留。真实组件、模型和子进程检查范围见 [进度](progress.md)，少量验收样本不构成模型表现或性能改善结论。
 
 ## M3.3 实时状态化工具边界
 
@@ -242,6 +272,14 @@ M6.3 固定评测集直接复用下述实验 / 批次 / 单用例链路，不新
 
 `experiment.py` 严格加载版本 1 清单，校验全部用例与配置组合，冻结原输入，再按重复 / 用例 / 配置顺序生成标准 batch；没有另写一套调度和清理逻辑。sampleId 对应 batch entryId，以 caseEntryId + configurationId + repeatIndex 表示计划位置，再关联实际 caseRunId / runId / sessionId。configuration 保留真实观察，requestedConfiguration 和匹配分布另列。结束后核对样本关联并生成总表及分组 JSON，不提供配置优劣判断。
 
+[040](changes/2026-10-24-040-experiment-plan-preview.md) 将原加载 / 全组合预检与样本展开提取为共用函数。`--experiment … --plan` 在生成执行 UUID / 目录之前返回独立 experimentPlanFormatVersion=1 JSON；--run 继续使用相同加载和展开逻辑后冻结输入，原输入 / 结果 / evidence / 录制格式不变。计划包含数量、顺序、请求配置、用例 budget 及原始 recorderOverrides，不生成 outcome 或实际运行身份；未来执行的 modelCalls / totalTokens / cost 保留 null。预览不探测宿主 / 凭据 / 网络、不调用 inspect，也不承诺未来实际路由或任务结果。源文件未锁定，下一次执行仍重读；录制默认值仍由 Node 解析，Python 不复制另一份默认配置。
+
+[041](changes/2026-10-25-041-experiment-sample-limit.md) 在共用加载入口增加可选 max_samples：先校验正整数参数与清单，再以 cases × configurations × repetitions 检查任务数，超限在用例读取、组合校验、矩阵展开、UUID 和目录创建之前拒绝。允许范围内继续全部原预检与执行流程，CLI 仅接受 --experiment 的 --plan / --run。默认 None 保持旧行为，新计划 / 实验结果新增 maxSamples（省略参数为 null）；旧版本 1 结果没有此字段仍可读取。该参数不进入 experiment.json，也不传给单用例宿主，不改变录制、证据或批次协议；它约束本次计划规模，不能充当模型请求数或费用限制。
+
+[042](changes/2026-10-25-042-experiment-plan-fingerprint.md) 增加共用 _plan_fingerprint：版本 1 载荷包含完整已校验 manifest、按条目加载的原始 cases、order 和 maxSamples，使用排序键、紧凑且保留非 ASCII 字符的 JSON UTF-8 SHA-256。预览与运行保存 planFingerprint={version,sha256}，运行可用 expected_plan_sha256 在 UUID / 目录 / 展开之前比对，之后冻结同一组内存输入。结果另保存 expectedPlanSha256，原输入及批次 / 证据 / 录制格式不变，旧结果无需新字段。默认不启用比对，CLI 参数仅用于实验 --run；不匹配是启动前错误，不伪造任务结果。绝对来源路径和 JSON 书写形式不参与摘要，清单相对 casePath、原始声明和数组顺序参与；宿主 / 凭据 / 代码 / 运行控制不在摘要内，多文件读取也没有事务锁。它与离线报告按非 configRef 用例内容计算的 taskFingerprint 用途和载荷不同，不可互换。
+
+[043](changes/2026-10-25-043-plan-snapshot-report-verification.md) 将同一版本 1 载荷保存为 plan-input.json，结果新增 planInputPath；_plan_input 与 _plan_fingerprint 共享定义，摘要算法不变。report 在样本复验前核对原始清单（只允许 casePath 的冻结重写）、完整原始用例与冻结输入对应关系，再核对摘要 / 上限 / 可选预期值。新 JSON / Markdown 显示 planVerification，未声明快照的旧结果 unverified，已声明快照丢失 / 冲突则先于 inspect 和报告输出拒绝。路径使用原包含关系守卫，报告不依赖原来源路径；这个计划状态不覆盖执行 / 录制 / 断言或样本复验结论。
+
 `metrics.py` 在 evaluate 重新 inspect 和核对身份后，从连续闭合任务片段提取已结算 assistant/message / assistant/attempt 和 tool/call 数量；request/header 是配置段事件，不能用作调用次数。step/start 可以早于 user/message，不能把生命周期开放事件当作任务输出越界。usage 逐字段检查覆盖，失败尝试或任一步缺失则 token 保持 null，不由 input / output 补造 total。任务失败与取消不抹掉合法观测；指标缺失不改变三维结论。
 
 同日审查修复为指标单值和求和增加有限范围检查，超大数值视为缺失，不将有效整数转成浮点数。token 某字段的单值或总和超范围仅使该字段缺失；实验汇总溢出时保留观测 / 缺失数量，总和与均值为 null，并给出可选 reason。该处理在指标层完成，不使异常 runtime 计时中断任务，也不输出 Infinity / NaN。详见 [修复记录 018](changes/2026-10-21-018-m4-1-metric-overflow.md)。
@@ -253,6 +291,8 @@ runner 在保存 case 快照后启动单调时钟，到保存 runtime 前记 ela
 ## M4.2 离线报告边界
 
 `report.py` 只读一个已结束实验，从传入结果旁定位冻结清单及批次，不信任旧绝对目录。核对计划展开、样本数、批次关联和执行 / 录制身份唯一性，路径保持在实验 / 批次目录内。每项以原用例加实验配置构造完整期望输入，比较批次及执行快照，覆盖任务、环境声明、预算、断言和版本；除 configRef 外规范 JSON 的 SHA-256 作为 taskFingerprint，不能代替签名或证明实际环境创建过程。
+
+[045](changes/2026-10-25-045-plan-review-fixes.md) 将数量检查前移：直接乘法计算计划总数，先比较保存的样本 / 批次项数，再用惰性位置迭代器核对顺序，避免损坏重复次数在校验前引发大矩阵分配。原分母、逐项关联、摘要与结果格式不变，旧格式同样执行这一数量门禁。
 
 逐项核对 evidence 身份、来源、实际配置及路径，复用原 evaluate 的 fresh inspect / 三维断言与指标采集。Windows 原生证据路径兼容后再核对；新报告各自保存复验结果，原实验和旧评测不覆写。旧 summary / 样本字段只作为 savedSummary / saved 留存，changedFields 解释新旧结果差异。样本快照或证据冲突降为 rejected / unevaluable 并留在原计划分母；全局计划 / 关联冲突拒绝整份输入。
 

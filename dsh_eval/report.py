@@ -6,11 +6,13 @@ from itertools import combinations
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 from urllib.parse import quote
 from uuid import uuid4
 
 from .evaluate import evaluate
-from .formats import load_json, nonempty, parse_json, require, validate_case, validate_experiment
+from .experiment import ORDER, _plan_fingerprint
+from .formats import fields, load_json, nonempty, parse_json, require, validate_case, validate_experiment
 from .metrics import METRICS, empty_metrics, number, summarize
 from .runner import ROOT, save_json
 
@@ -59,11 +61,12 @@ def _load_plan(source):
             and batch["batchId"] == saved["batchId"] and batch["status"] == saved["status"],
             "Experiment/batch result mismatch")
     cases = {entry["entryId"]: validate_case(load_json(_path(directory, entry["casePath"]))) for entry in manifest["cases"]}
-    positions = [(entry["entryId"], config["configurationId"], repeat)
-                 for repeat in range(1, manifest["repetitions"] + 1)
-                 for entry in manifest["cases"] for config in manifest["configurations"]]
+    count = len(manifest["cases"]) * len(manifest["configurations"]) * manifest["repetitions"]
     require(isinstance(saved["samples"], list) and isinstance(batch["entries"], list)
-            and len(saved["samples"]) == len(batch["entries"]) == len(positions), "Experiment sample count mismatch")
+            and len(saved["samples"]) == len(batch["entries"]) == count, "Experiment sample count mismatch")
+    positions = ((entry["entryId"], config["configurationId"], repeat)
+                 for repeat in range(1, manifest["repetitions"] + 1)
+                 for entry in manifest["cases"] for config in manifest["configurations"])
     seen_samples, seen_runs, seen_sessions, seen_recordings = set(), set(), set(), set()
     for sample, row, position in zip(saved["samples"], batch["entries"], positions):
         require(isinstance(sample, dict) and isinstance(row, dict), "Sample must be an object")
@@ -95,6 +98,49 @@ def _load_plan(source):
         if sample["status"] == "finished":
             require(nonempty(sample["caseRunId"]), "Finished sample lacks caseRunId")
     return saved, manifest, cases
+
+
+def _verify_plan_input(directory, saved, manifest, cases):
+    fingerprint = saved.get("planFingerprint")
+    if "planFingerprint" in saved:
+        fields(fingerprint, ("version", "sha256"))
+        require(type(fingerprint["version"]) is int and fingerprint["version"] == 1,
+                "Unsupported plan fingerprint version")
+        require(isinstance(fingerprint["sha256"], str) and re.fullmatch(r"[0-9a-f]{64}", fingerprint["sha256"]) is not None,
+                "Invalid saved plan fingerprint")
+    expected = saved.get("expectedPlanSha256")
+    require(expected is None or isinstance(expected, str) and re.fullmatch(r"[0-9a-f]{64}", expected) is not None,
+            "Invalid saved expected plan SHA-256")
+    require(expected is None or fingerprint is not None and expected == fingerprint["sha256"],
+            "Saved expected/actual plan fingerprint mismatch")
+    verification = {"status": "unverified", "fingerprint": fingerprint, "expectedPlanSha256": expected,
+                    "inputPath": None, "reason": "No saved plan input snapshot; original fingerprint cannot be rechecked"}
+    if "planInputPath" not in saved:
+        return verification
+    require(fingerprint is not None, "Plan input snapshot requires a saved fingerprint")
+    payload = load_json(_path(directory, saved["planInputPath"]))
+    fields(payload, ("version", "manifest", "cases", "maxSamples", "order"))
+    require(type(payload["version"]) is int and payload["version"] == 1, "Unsupported plan input version")
+    require(payload["order"] == ORDER, "Unsupported plan input order")
+    limit = payload["maxSamples"]
+    require(limit is None or type(limit) is int and limit > 0, "Plan input maxSamples must be a positive integer")
+    require("maxSamples" in saved and _same(limit, saved["maxSamples"]), "Plan input/result maxSamples mismatch")
+    original = validate_experiment(payload["manifest"])
+    count = len(original["cases"]) * len(original["configurations"]) * original["repetitions"]
+    require(limit is None or count <= limit, "Plan input exceeds maxSamples")
+    require(len(original["cases"]) == len(manifest["cases"]), "Plan input/frozen case count mismatch")
+    normalized = {**original, "cases": [{**entry, "casePath": frozen["casePath"]}
+                  for entry, frozen in zip(original["cases"], manifest["cases"])]}
+    require(_same(normalized, manifest), "Plan input/frozen experiment mismatch")
+    require(isinstance(payload["cases"], list) and len(payload["cases"]) == len(original["cases"]),
+            "Plan input case snapshots must match all manifest entries")
+    for entry, case in zip(original["cases"], payload["cases"]):
+        validate_case(case)
+        require(_same(case, cases[entry["entryId"]]), "Plan input/frozen case mismatch")
+    actual = _plan_fingerprint(original, payload["cases"], limit)
+    require(actual == fingerprint, "Saved plan fingerprint differs from its input snapshot")
+    verification.update(status="verified", fingerprint=actual, inputPath=saved["planInputPath"], reason=None)
+    return verification
 
 
 def _configuration_match(result, expected):
@@ -224,9 +270,11 @@ def _metric(value):
 
 def render_markdown(report):
     local_time = datetime.fromisoformat(report["generatedAt"]).astimezone(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
+    plan = report["planVerification"]
     lines = [f"# 配置报告：{_cell(report['experimentName'])}", "", f"报告 ID：{report['reportId']}。生成于 {local_time}（Asia/Shanghai）。", "",
              "本报告重新检查保存的用例、证据和录制；历史实验与评测文件保持原样。差值均为右侧减左侧，仅描述当前可配对样本。", "",
              "## 范围与不确定性", "", *[f"- {item}" for item in report["limitations"]], "",
+             f"计划指纹复核：{plan['status']}。{_cell(plan['reason'] or '输入快照、冻结用例与保存摘要一致；不表示任务通过。')}", "",
              f"样本复核：{_cell(report['verificationCounts'])}。", "", "## 按请求配置统计全部计划项", "",
              "| 配置 | 用例 | 计划 / 尝试 / 跳过 | 可评测通过 | 全尝试通过 | 可评测覆盖 | 实际匹配 / 计划 | 来源 |",
              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
@@ -284,6 +332,7 @@ def render_markdown(report):
 def generate_report(experiment_result_path, reports_root=None):
     source = Path(experiment_result_path).resolve()
     saved, manifest, cases = _load_plan(source)
+    plan_verification = _verify_plan_input(source.parent, saved, manifest, cases)
     rows, evaluations = [], []
     for sample in saved["samples"]:
         expected = {**cases[sample["caseEntryId"]], "configRef": sample["requestedConfiguration"]}
@@ -314,6 +363,7 @@ def generate_report(experiment_result_path, reports_root=None):
               "reportDirectory": str(directory), "status": "generated", "experimentId": saved["experimentId"],
               "experimentName": saved["experimentName"], "sourceExperimentResult": str(source), "batchId": saved["batchId"],
               "configurations": manifest["configurations"],
+              "planVerification": plan_verification,
               "cases": [{"caseEntryId": key, "caseId": case["caseId"], "taskFingerprint": hashlib.sha256(
                   json.dumps({name: value for name, value in case.items() if name != "configRef"},
                              sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()} for key, case in cases.items()],
