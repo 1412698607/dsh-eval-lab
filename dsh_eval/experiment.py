@@ -62,7 +62,8 @@ def _plan_fingerprint(manifest, inputs, max_samples):
 def plan_experiment(experiment_path, *, max_samples=None):
     source, manifest, inputs = _load_experiment(experiment_path, max_samples)
     samples = [deepcopy({**sample, "requestedConfiguration": case["configRef"], "budget": case["budget"],
-                         "recorderOverrides": case.get("recorder")})
+                         "recorderOverrides": case.get("recorder"),
+                         **({"modelProviders": case["modelProviders"]} if "modelProviders" in case else {})})
                for sample, case in _expand_samples(manifest, inputs)]
     return {"experimentPlanFormatVersion": 1, "valid": True, "modelCalled": False,
             "experimentName": manifest["experimentName"], "sourceManifest": str(source), "maxSamples": max_samples,
@@ -84,6 +85,7 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     require(expected is None or expected == fingerprint["sha256"],
             f"Experiment plan fingerprint mismatch: expected {expected}, actual {fingerprint['sha256']}")
     experiment_id = str(uuid4())
+    reserved_batch_id = str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "experiments").resolve() / experiment_id
     (directory / "inputs").mkdir(parents=True, exist_ok=False)
     (directory / "expanded").mkdir()
@@ -108,12 +110,17 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
               "maxSamples": max_samples,
               "planFingerprint": fingerprint, "expectedPlanSha256": expected,
               "planInputPath": "plan-input.json",
+              "resumeSupportVersion": 1,
+              "batchBinding": {"batchId": reserved_batch_id,
+                               "resultPath": f"batches/{reserved_batch_id}/batch-result.json"},
               "configurations": manifest["configurations"], "failurePolicy": manifest["failurePolicy"],
               "order": ORDER, "startedAt": datetime.now(timezone.utc).isoformat(),
               "finishedAt": None, "status": "running", "outcome": None, "batchId": None, "batchResultPath": None,
               "samples": samples, "summary": None, "groups": []}
     _checkpoint(directory, report)
-    result = run_batch(directory / "expanded.batch.json", directory / "batches", modules_dir, cancel_after_stream)
+    result = run_batch(directory / "expanded.batch.json", directory / "batches", modules_dir, cancel_after_stream,
+                       batch_id=reserved_batch_id)
+    require(result["batchId"] == reserved_batch_id, "Experiment/reserved batch identity mismatch")
     batch_directory = Path(result["batchDirectory"])
     prefix = batch_directory.relative_to(directory)
     require(len(result["entries"]) == len(samples), "Experiment/batch sample count mismatch")

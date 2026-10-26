@@ -4,6 +4,8 @@
 
 ## 运行与结果
 
+2026 年 10 月 26 日增加可选 [modelProviders 路由声明](evaluation-format.md#可选外部模型路由两个用例版本通用)：准备阶段在隔离 headless profile 配置 llm-pi-ai，并将声明保存在 setup.json。密钥仍从原凭据库 / 启动环境按 apiKeyEnv 引用，不导入原用户 profile。可先执行 `npm.cmd run check:model-providers -- <case.json>`；该命令使用已安装的真实宿主组件检查本地注册与凭据存在性，缺凭据返回 2，完整本地准备返回 0，均不调用模型，也不证明远端认证或任务成功。
+
 在仓库根目录执行；以下入口会调用用例指定的真实模型：
 
 ```powershell

@@ -6,14 +6,15 @@
 
 1. 修改功能、修复缺陷、调整配置或测试后，在同一轮工作中新增 `docs/changes/YYYY-MM-DD-NNN-topic.md`。按一次可独立说明的改动记录，不需要为每条命令创建文档；同一轮紧密相关的修改可合并。纯文档整理也记录范围，内容可以简短。
 2. 使用 `docs/templates/change-record.md`，至少写清日期、问题或目标、修改文件、关键逻辑、技术取舍、验证结果、限制和后续事项。日期按用户所在时区 Asia/Shanghai。NNN 从现有记录的最大编号继续递增。
-3. 在 `CHANGELOG.md` 添加到新记录的链接；功能状态或验证范围变化时更新 `docs/progress.md`，架构或数据格式变化时更新 `docs/architecture.md`，运行方式变化时更新 `README.md`。本地存在 `private-notes/interview.md` 时，将相关技术讨论同步到该私人材料；不作为公开仓库依赖。
+3. 在 `CHANGELOG.md` 添加到新记录的链接；功能状态或验证范围变化时更新 `docs/progress.md`，架构或数据格式变化时更新 `docs/architecture.md`，运行方式变化时更新 `README.md`。
 4. 不覆盖历史验证结果。复验或发现历史判断错误时，在新记录中说明日期和修正，当前状态写入 `docs/progress.md`。
 5. 完成前检查文档与实际代码一致、相对链接有效、验证结果可复现。纯文档修改无需重复执行全部代码测试；根据改动选择检查。
-6. 本地存在 `private-notes/handoff.md` 时，每批结束更新其当前结果、未完成项、下一批入口和必要的复现命令。新会话先读取本文件，再读取本地交接文档（如存在）、`docs/progress.md` 和相关方案；以实际文件及 Git 状态为准。公开仓库不依赖私人材料即可接续开发。
+6. 新会话先读取本文件、`docs/progress.md` 和相关方案；以实际文件及 Git 状态为准。可选的本地维护资料保存在被忽略的目录中，公开仓库不依赖这些文件即可接续开发。
 
 ## 公开与私人资料
 
-- `private-notes/` 保存个人准备材料和本机交接说明，已被 Git 忽略。不得强制添加该目录或恢复向旧的 `docs/interview.md`、`docs/handoff.md` 路径写入。
+- `private-notes/` 保存本地辅助资料，已被 Git 忽略。不得强制添加该目录，也不得将其中内容移回公开文档目录。
+- 公开文档面向使用者和维护者，记录项目用途、实现、技术取舍、可复现验证与限制。个人准备、开发对话中的指令和审批过程不写入公开修改记录；其中必要的技术事实改写为客观范围和结果。
 - 公开 Markdown 链接只指向可提交的文件，不链接私人资料、原始运行日志、缓存或凭据。引用本机路径时使用可移植示例，保留可核对的技术事实。
 - `.gitignore` 不会取消已有跟踪或清除提交历史。提交前核对忽略规则和实际跟踪文件，不自动移除已跟踪文件或改写历史。
 
@@ -32,5 +33,5 @@
 - `test/recorder.test.js`：Node.js 测试。Windows 下使用 `npm.cmd`，当前测试命令在同一进程运行。
 - 后续语言分工：Harness/Cordis 插件接入、实时录制、宿主生命周期及既有 inspect 保持 JavaScript；新增用例管理、任务断言、离线分析、重复试验、统计和报告优先 Python。状态化工具环境的核心逻辑优先 Python，宿主内工具注册与必要适配仍按 Harness 接口实现。两侧通过版本化 JSON/JSONL 或明确进程接口连接，Python 功能实现前只能标为计划。
 - 常用命令：`npm.cmd run check`、`npm.cmd test`、`npm.cmd run demo`、`npm.cmd run smoke:host`、`npm.cmd run check:output`。最后一项需要真实子进程，沙箱出现 EPERM 时报告验证限制，在获准环境或外部终端执行，不能使用 mock 代替。
-- 保留用户已有代码，尤其不要因插件使用 JavaScript 就删除 `main.py`。
+- 保留既有代码，尤其不要因插件使用 JavaScript 就删除 `main.py`。
 - `runs/` 包含原始会话与工具内容且已被 Git 忽略；项目说明使用模拟数据，避免将真实运行日志加入版本管理。

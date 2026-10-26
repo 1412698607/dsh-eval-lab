@@ -9,6 +9,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { prepareCase } from "../scripts/case-host.js";
 import { createRecorder } from "../src/recorder.js";
 import { inspectRun } from "../src/inspect.js";
+import { validateModelProviders } from "../scripts/lib/model-providers.js";
 
 async function setup(t, recorder) {
   const directory = await mkdtemp(join(tmpdir(), "dsh-eval-lab-case-config-"));
@@ -36,6 +37,50 @@ async function setup(t, recorder) {
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
   return { directory, modules };
 }
+
+const externalProviders = () => ({ bailian: { api: "openai-completions",
+  baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", apiKeyEnv: "DASHSCOPE_API_KEY",
+  models: [{ id: "qwen3.7-plus", contextWindow: 1000000, maxTokens: 131072 }] } });
+
+test("external routes reach the isolated profile and setup without importing another profile", async (t) => {
+  const { directory, modules } = await setup(t);
+  const caseData = JSON.parse(await readFile(join(directory, "case.json"), "utf8"));
+  caseData.modelProviders = externalProviders();
+  await writeFile(join(directory, "case.json"), JSON.stringify(caseData));
+  const prepared = await prepareCase(directory, modules);
+  const patch = JSON.parse(await readFile(join(prepared.home, "profiles", "headless", "cordis.patch.yml"), "utf8"));
+  assert.deepEqual(patch.find((row) => row.id === "llm-pi-ai").config, { providers: externalProviders() });
+  assert.deepEqual(prepared.modelProviders, caseData.modelProviders);
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "case.json"), "utf8")), caseData);
+  assert.deepEqual(JSON.parse(await readFile(join(directory, "setup.json"), "utf8")).modelProviders, externalProviders());
+});
+
+test("invalid routes and literal secrets are rejected before installation", async (t) => {
+  const { directory, modules } = await setup(t);
+  let installed = false;
+  t.mock.method(childProcess, "execFileSync", () => { installed = true; });
+  syncBuiltinESMExports();
+  const caseData = JSON.parse(await readFile(join(directory, "case.json"), "utf8"));
+  const mutations = [
+    (routes) => { routes.bailian.apiKey = "must-not-be-saved"; },
+    (routes) => { routes.bailian.headers = { Authorization: "secret" }; },
+    (routes) => { routes.bailian.baseURL = "https://user:secret@example.com/v1"; },
+    (routes) => { routes.bailian.baseURL = "https://example.com/v1?key=secret"; },
+    (routes) => { routes.bailian.baseURL = "https://example.com:99999/v1"; },
+    (routes) => { routes.bailian.models[0].contextWindow = true; },
+    (routes) => { routes.bailian.models.push({ ...routes.bailian.models[0] }); },
+    (routes) => { routes["deepseek-official"] = routes.bailian; },
+  ];
+  for (const mutate of mutations) {
+    caseData.modelProviders = externalProviders();
+    mutate(caseData.modelProviders);
+    await writeFile(join(directory, "case.json"), JSON.stringify(caseData));
+    await assert.rejects(prepareCase(directory, modules));
+  }
+  for (const value of [null, [], true, { bailian: null }]) assert.throws(() => validateModelProviders(value));
+  assert.equal(installed, false);
+  await assert.rejects(readFile(join(directory, "setup.json")), { code: "ENOENT" });
+});
 
 test("prepared profiles resolve independent case recorder limits and defaults", async (t) => {
   const { directory, modules } = await setup(t, { maxEventBytes: 4 * 1024 * 1024, maxPendingBytes: 7 * 1024 * 1024 });

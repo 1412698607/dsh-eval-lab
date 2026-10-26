@@ -4,7 +4,7 @@
 
 ## 问题与目标
 
-033 的旧取消样本已证明真实页面取消与正常宿主清理，但当时没有 session cwd 观测，实际 README 读取也失败，因此只报告工作区未知，不能声称 fixture 一致。用户新授权仍用现有 deepseek-flash，只追加一个取消任务，保留原样本并同步文档。
+033 的旧取消样本已证明真实页面取消与正常宿主清理，但当时没有 session cwd 观测，实际 README 读取也失败，因此只报告工作区未知，不能声称 fixture 一致。补验仍用现有 deepseek-flash，只追加一个取消任务，保留原样本并同步文档。
 
 本轮目标是新样本的实际 Web Workspace 与冻结 fixture 一致，真实相对路径读取成功之后，在同一任务中实际点击停止并完成普通退出。只执行一个新任务，不重跑正常 / 中断、不改写旧样本。
 
@@ -17,7 +17,7 @@
 | docs/architecture.md、docs/plans/m6-reliability-validation.md | 033 的取消覆盖局限为当前状态 | 补充 034 的验证范围；架构 / 协议行为不变 | 同步实际验收范围 |
 | CHANGELOG.md、本记录 | 无本次补验说明 | 增加独立 034 与链接 | 保留任务数量、过程和证据边界 |
 
-生产代码、测试、用例 fixture 和格式均未改动。本机忽略目录仅新增独立运行证据、离线核对脚本 / 副本及检查结果；私人交接和面试材料同步，不作为公开仓库依赖。
+生产代码、测试、用例 fixture 和格式均未改动。本机忽略目录仅新增独立运行证据、离线核对脚本 / 副本及检查结果。
 
 ## 实现与技术取舍
 
@@ -58,10 +58,6 @@
 
 本轮无生产代码 / 协议变更，不重复全部测试；033 的 196 Python / 82 Node / 41 文件语法及 compileall 保持历史结果，不作为本轮重跑成绩。没有云端 CI、资源测量或成本 / 成功率 / 性能提升结论。新增事件、flush / sealed 和摘要继续不提供完整备份、fsync、断电恢复或签名保证。
 
-## 面试讨论点
-
-可以用一个取消任务串联“冻结环境 → 实际 Workspace → 真正读取 → 页面停止 → 原生退出 → fresh inspect”。生命周期 verified 和环境 coverage 是不同事实；旧样本可以取消成立但工作区未知，新样本用注册表、原生 cwd 和工具返回补齐覆盖。单条读取证据 passed 不改变取消任务的三维分类，复验也不能改写原始失败或未知。
-
 ## 文档同步
 
-同步 README、CHANGELOG、[Web 生命周期](../web-lifecycle.md)、[进度](../progress.md)、[架构](../architecture.md)、[M6 方案](../plans/m6-reliability-validation.md) 及本机私人材料。033 及更早修改记录不变，当前范围统一以 034 为准；完成前检查链接、换行 / 空白、摘要及 Git 状态。
+同步 README、CHANGELOG、[Web 生命周期](../web-lifecycle.md)、[进度](../progress.md)、[架构](../architecture.md)、[M6 方案](../plans/m6-reliability-validation.md)。033 及更早修改记录不变，当前范围统一以 034 为准；完成前检查链接、换行 / 空白、摘要及 Git 状态。

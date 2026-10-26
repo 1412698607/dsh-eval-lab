@@ -24,6 +24,7 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | input | 非空任务文本，与 user/message 的文本块拼接结果精确相等 |
 | environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象；拒绝绝对路径、冒号、反斜杠、空 / 点 / 上级分量和文件目录冲突；离线仅保留声明，M3.2 实际写入独立 workspace 并补查 Windows 名称 / 大小写冲突 |
 | configRef | provider / model / profile / pluginVersion 四个非空字符串；不得内嵌凭据 |
+| modelProviders | 可选外部模型路由字典；端点、模型容量和凭据名称随用例冻结，密钥值不得内嵌，见下节 |
 | recorder | 可选对象，仅允许 maxEventBytes / maxPendingBytes 两个独立正安全整数，范围 1～9007199254740991；不属于模型路由配置，详见下节 |
 | budget.timeoutSeconds | 正整数，声明预算；离线评测不会实施它，不支持 token / 步骤上限 |
 | assertions | 非空数组，每条有唯一 id 和已支持的 type；所有断言均为必需 |
@@ -64,6 +65,29 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 `result.textEquals` 接受任意字符串，包括 `""`，与工具返回的全部文本块拼接结果精确比较，不做 strip；空白或后续非空文本块均不等于空字符串。textEquals 与 textContains 不可同时声明，textContains 仍必须非空。未声明新字段的用例保留原有存在性匹配语义，输入不会自动补字段。
 
 这是可选字段扩展，格式编号不变；新字段需要升级后的读取器，旧严格读取器会拒绝。历史实验仍按原冻结用例复验；当前更严格的用例属于新的完整输入，不能通过改写旧快照补造历史验收。修复与回归见 [记录 028](changes/2026-10-24-028-m6-3-assertion-constraints.md)。
+
+## 可选外部模型路由：两个用例版本通用
+
+caseFormatVersion 1 / 2 可在顶层声明 `modelProviders`，用于向隔离 headless profile 的 `llm-pi-ai` 配置添加路由。例如：
+
+```json
+"modelProviders": {
+  "bailian": {
+    "api": "openai-completions",
+    "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "apiKeyEnv": "DASHSCOPE_API_KEY",
+    "models": [{"id": "qwen3.7-plus", "contextWindow": 1000000, "maxTokens": 131072}]
+  }
+}
+```
+
+每条路由必须且只能包含上述四字段；当前仅支持 `openai-completions` 文本模型。路由名为小写字母开头的小写字母 / 数字 / 连字符，不得占用 deepseek-official / deepseek-account。baseURL 必须为可打印 ASCII 的 HTTPS 端点，原始主机名可含 ASCII 字母 / 数字 / 点 / 连字符，端口若声明须为 1～65535 的非空数字；不接受百分号编码的主机名、用户信息、查询串、片段、空白或反斜杠。端点地域应与凭据所属地域匹配；两侧校验一致性修复见 [051](changes/2026-10-26-051-provider-endpoint-review.md)。apiKeyEnv 仅接受变量名形式的凭据引用。拒绝 apiKey、headers 等未支持字段，避免把密钥写进用例与计划快照；这不是对任意字符串内容的机密扫描。
+
+models 为非空数组，条目仅包含唯一非空 id 及两个正安全整数 contextWindow / maxTokens；后者声明模型容量，不是任务 token 或费用预算。允许省略 modelProviders 或声明 `{}`，不补写默认值；旧用例运行方式不变，旧严格读取器会拒绝新字段。configRef 仍是原四字段；选择外部路由时 provider 对应该字典的键，model 对应模型 id。声明目录不证明远端实际提供该模型。
+
+单用例、批次和实验保存完整声明；实验只替换 configRef，不丢失路由。计划样本显示声明，原有完整输入指纹自动覆盖端点、模型和凭据引用。准备时再次校验，写入隔离 profile 与 setup.json.modelProviders，不导入原用户 profile。报告继续使用冻结输入和原始路由证据；没有新增端点 / 模型版本认证结论。离线评测不会重新调用或配置模型。
+
+本机密钥存于 `$DSH_HOME/.credentials.yaml`（未设置 DSH_HOME 时为用户目录的 `.dsh/.credentials.yaml`）的 refs 分节，或同名启动环境变量。保留已有分节，仅添加实际使用的引用；例如 DASHSCOPE_API_KEY 和 ZHIPU_API_KEY。密钥值不进入仓库。当前实现和验证见 [记录 050](changes/2026-10-26-050-external-model-providers.md)。
 
 ## 可选录制配置：两个用例版本通用
 

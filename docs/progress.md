@@ -1,14 +1,26 @@
 # dsh-eval-lab 开发进度
 
-[048 复审修复](changes/2026-10-25-048-comparison-source-review.md) 补齐 047 合成测试遗漏的原始评测、实验 / 分组摘要来源，跳过项保持未知；加强原始模板完整配置与部分填写拒绝回归。比较相关六项、完整 249 Python / 61.446 秒和 compileall 通过。模板、生产代码及格式不变，本批不选第二套模型、不追加真实任务；按授权提交推送并核对新 SHA 的 CI，准确状态以 Git / Actions 对应提交为准。
+2026 年 10 月 27 日，[053 提交验收](changes/2026-10-27-053-resume-delivery-ci.md) 核实 049–052 已提交为 `e3dc29a0f7bd3502e070a23ac8ae9d6a4a9883a4`，对应 CI run 40357525952 / job 121693864714 / attempt 1 的精确 head SHA 及全部步骤均 completed / success。日志接口返回 403，因此云端具体测试数量未核对，不以本地历史数量替代。
 
-[047 双配置八任务准备](changes/2026-10-25-047-guarded-comparison-preparation.md) 已完成待填写模板、五项合成回归和使用说明。本机完整 248 Python / 60.778 秒及 compileall 通过；生产运行代码和协议不变，本批不追加真实模型。第二配置尚未选定，空模板启动前拒绝；实际双配置比较与完整集扩大仍未执行。本批按授权提交 / 推送并独立核对新 CI，准确状态以 Git / Actions 对应提交为准。
+[054 实验级续跑预检](changes/2026-10-27-054-experiment-resume-preflight.md) 已实现新实验的显式批次绑定及 `--resume-experiment --plan`，保留用例 / 配置 / 重复轮次身份，输出复用、未开始和阻断分类。当前 executionSupported=false，执行、实验汇总回填与旧实验升级均未实现。新增十四项定向回归通过；最终完整 285 Python / 84.277 秒、87 Node、43 JS 语法与 compileall 通过，无新增真实模型任务。本批尚未提交或运行对应的新云端 CI。
+
+[051 端点一致性修复](changes/2026-10-26-051-provider-endpoint-review.md) 已统一 Python / Node 对异常地址的拒绝；[052 批次级安全续跑](changes/2026-10-26-052-safe-batch-resume.md) 增加内核锁、冻结输入指纹、无模型复核与明确未开始项的新批次执行。已完成项重新 inspect / 评测后复用；未知执行、清理不明、原 stop 失败策略及重复领取均阻断。实验级续跑 / 汇总回填未实现。本轮未新增真实模型样本，050 四项实际结果与四 skipped 保留。
+
+051 / 052 最终本地验证：完整 271 Python / 69.890 秒、87 Node（无失败 / 跳过）、43 JS 语法及 compileall 通过；含十七项新增续跑 / 内核锁检查和一项端点跨语言一致性回归。050 再次独立报告保留三通过 / 一失败 / 四跳过，88 份选定原始文件摘要不变；旧批次续跑预览明确拒绝、未启动任务。改动尚未提交 / 推送或运行新云端 CI。
+
+[050 外部模型路由与真实比较](changes/2026-10-26-050-external-model-providers.md) 于 2026 年 10 月 26 日增加用例 modelProviders、冻结 / 指纹覆盖、隔离 pi-ai 路由和无模型注册检查。完整 253 Python / 87 Node / 43 JS、compileall 通过；首次沙箱进程限制及获准复验分别记录。DeepSeek Flash / 百炼 Qwen3.7-Plus 的八任务计划实际执行四项，三通过、一失败，按 stop 策略跳过第二轮四项；Qwen 已完成失败后重试，但最终值带 Markdown 反引号，精确文本断言失败。独立报告计划 verified，四实际样本 verified / matched / live，88 份选定原始文件摘要不变，四专用 CLI PID 均已退出。未追加模型、提交 / 推送或新云端 CI。
+
+[049 公开文档整理补记](changes/2026-10-26-049-public-documentation-record.md) 核对 2026 年 10 月 25 日 `8f3bef2` 的公开资料整理范围，并修复原缺失记录的导航。该历史整理将本机路径改为通用示例、更新开发约定与模板；功能状态、历史测试结果和真实样本范围不变。
+
+[048 复审修复](changes/2026-10-25-048-comparison-source-review.md) 补齐 047 合成测试遗漏的原始评测、实验 / 分组摘要来源，跳过项保持未知；加强原始模板完整配置与部分填写拒绝回归。比较相关六项、完整 249 Python / 61.446 秒和 compileall 通过。模板、生产代码及格式不变，本批不选第二套模型、不追加真实任务；新 SHA 的 CI 需独立核对，准确状态以 Git / Actions 对应提交为准。
+
+[047 双配置八任务准备](changes/2026-10-25-047-guarded-comparison-preparation.md) 已完成待填写模板、五项合成回归和使用说明。本机完整 248 Python / 60.778 秒及 compileall 通过；生产运行代码和协议不变，本批不追加真实模型。第二配置尚未选定，空模板启动前拒绝；实际双配置比较与完整集扩大仍未执行。新 CI 需独立核对，准确状态以 Git / Actions 对应提交为准。
 
 041–045 的 25 份实现 / 测试 / 文档已提交并推送为 `dffac4c7f5dac1b4c136d8ce2dbfc75a75fabe0f`；其 [CI 40167590361](https://github.com/1412698607/dsh-eval-lab/actions/runs/40167590361) / job 121091692849 全部 success，实际日志为 243 Python / 85 Node / 41 JS、compileall 与无模型示例通过，见 [046 交付验收](changes/2026-10-25-046-plan-guard-delivery-ci.md)。本批不追加真实模型，044 的四任务历史与首轮准备失败保留。验收文档在实现之后单独提交；后续分支状态以实际 Git / Actions 对应提交为准。
 
 截至 2026 年 10 月 25 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 `a239d7d` 包含 [M6.2 配置传递修复 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md) 与 [M6.3 单配置固定评测集 027](changes/2026-10-24-027-m6-3-core-evaluation.md)，`2c60b63` 包含 [审查修复 028](changes/2026-10-24-028-m6-3-assertion-constraints.md) 与 [分支整理 029](changes/2026-10-24-029-m5-m6-delivery-branch.md)。实际分支为 `20261024/feat/m6-4-web-lifecycle`，`103c090` 包含 030 至 034。035 至 038 的 18 份修复 / 测试 / 文档已提交并推送为 `4b97120`；其云端运行 40086861972 全部成功，实际 202 Python、85 Node、41 JS 语法、compileall 与无模型示例通过，见 [验收 039](changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。039 未新增模型任务；044 的四任务真实验收单列于上文。
 
-既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；027 / 028 保持原范围。033 的四次 deepseek-flash Web 任务保留首次正常失败与旧取消工作区未知；034 按用户新授权只追加一个取消任务，完成工作区匹配、实际 README 读取、页面停止与退出复验。累计五次任务，三个最终场景均有工作区匹配的生命周期样本；取消 / 中断仍 unevaluable。双配置 / 重复扩展仍待定，039 只增加修复提交的无模型云端验收。
+既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；027 / 028 保持原范围。033 的四次 deepseek-flash Web 任务保留首次正常失败与旧取消工作区未知；034 另追加一个取消任务，完成工作区匹配、实际 README 读取、页面停止与退出复验。累计五次任务，三个最终场景均有工作区匹配的生命周期样本；取消 / 中断仍 unevaluable。双配置 / 重复扩展仍待定，039 只增加修复提交的无模型云端验收。
 
 ## 项目目标
 
@@ -21,14 +33,17 @@
 | 插件版本 | `0.1.2`；M6.1 新 run.json 版本 2 / 清单版本 1，JSONL / status 仍为版本 1 |
 | 当前开发分支 | `20261024/feat/m6-4-web-lifecycle` |
 | 048 起始基线 | `815a944` 包含 047 双配置无模型准备，已提交推送；父提交 1ebd294，M6 历史验收保留 |
-| 当前交付范围 | 048 修正合成归档来源并加固模板回归，共六项比较测试；第二真实配置保持待填写 |
+| 048 历史交付范围 | 修正合成归档来源并加固模板回归，共六项比较测试；该阶段第二真实配置保持待填写 |
+| 050 已提交范围 | 外部路由与凭据引用已实现；DeepSeek / 百炼首次比较执行 4 / 8，三通过一失败、四跳过；已包含于 e3dc29a |
+| 051 / 052 已提交范围 | 两侧端点校验一致与批次级受限续跑；e3dc29a 的提交级 CI success，具体日志数量未知 |
+| 054 本地新增范围 | 显式实验 / 批次绑定与只读续跑预检，十四项新增回归；执行未实现，尚未提交 |
 | 048 起始已验收 CI | 815a944 的 run 40168781995 / job 121095193491 全部 success；本次修复独立核对新 SHA，旧失败和成功保留历史 |
 | 已核实基线提交 | `e47de36` 为云端路径兼容修复；`db6d572` 为 M5 审查修复；`36b4e1b` 为 M5 主体；`b0de80c` 为 M4.2；`a39e43c` 为 M4.1 指标溢出修复，`1a6cf69` 为主体；`5cdd803` 为 M3.4 启动失败修复；`bbe1b4a` 为 M3.4 主体；`3ce645d` 为 M3.3 审查修复，`302855f` 为 M3.3 主体；`31a24fa` 为 M3.2；`868529d` 为 M3.1；`4f54ddf` 为 M2.3 与路线，经 `de86bd2` 合并；`f459945` 为 M2.2 |
 | 开发语言 | JavaScript 宿主接入和生命周期及浏览交互；Python 已实现离线断言、状态化环境、真实单用例 / 批次、重复统计、离线报告及只读浏览服务 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 10 月 25 日，Asia/Shanghai |
-| 真实模型基线 | CLI `0.2.0-rc.2`；`deepseek-official / deepseek-flash`；独立 Web / headless profile |
+| 最新复核日期 | 2026 年 10 月 27 日，Asia/Shanghai |
+| 真实模型基线 | CLI `0.2.0-rc.2`；原 `deepseek-official / deepseek-flash`；050 追加 `bailian / qwen3.7-plus` 的 headless 首轮两项，实际失败范围单列 |
 
 ## 功能状态
 
@@ -58,13 +73,16 @@
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消和清理；可选用例 recorder 经冻结后传入隔离插件配置，批次 / 实验保留 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
 | 顺序批次、重置和结果清单 | 版本 1 批次 / 结果与历史真实恢复批次已验证；启动失败策略及 source / metrics 可选输出已实现 | `dsh_eval/batch.py`、[批次运行](batch-runner.md) |
+| 批次级安全续跑 | 新批次保存协调版本 / 锁 / 冻结输入指纹；预览重新核对原证据，执行只安排明确未开始项并保留来源；未知项不自动重跑 | [批次续跑](batch-resume.md)、记录 052 |
+| 实验级续跑预检 | 只支持 --resume-experiment --plan；明确批次绑定，复核原始计划 / 完整展开 / 来源及用例配置轮次位置；未知项阻断、旧实验拒绝，不执行任务 | [实验续跑预检](experiment-resume.md)、记录 054 |
 | 重复试验与观测统计 | 版本 1 实验、三种分母、缺失覆盖及异常单值 / 求和保护已实现；本批历史样本复验保持原分类 | `dsh_eval/experiment.py`、`dsh_eval/metrics.py`、[重复试验](experiments.md)、修复记录 018 |
 | 实验预检与计划预览 | --plan 与 --run 互斥；共用全组合校验及展开，打印数量 / 顺序 / 请求配置 / 预算与原始录制覆盖；无模型、无运行身份和结果 | [实验说明](experiments.md)、记录 040 |
 | 实验任务数上限 | 可选 --max-samples 正整数，预览 / 执行先按全部条目数相乘检查；超限不读用例、不展开 / 输出，默认无上限；计划 / 结果保存 maxSamples | [实验说明](experiments.md)、记录 041 |
 | 计划指纹与执行前一致性 | 完整清单 / 原始用例、顺序和上限的版本化 SHA-256；实际运行可带预期摘要，变化时在展开 / UUID / 输出前拒绝，匹配后冻结同一组输入 | [实验说明](experiments.md)、记录 042 |
 | 计划输入快照与离线指纹复核 | 新实验保存原始载荷并声明路径；报告核对冻结输入和摘要，JSON / Markdown 分开呈现计划状态与任务结论；旧实验 unverified，声明快照缺失 / 冲突拒绝报告 | [配置报告](configuration-reports.md)、记录 043 |
 | 带计划约束的真实小批验收 | 两用例各两次、现有单配置、失败即停，上限 / 指纹 / 快照 / 报告链路真实验收；四任务 passed，首轮未到模型的准备失败保留 | [小批验收](guarded-acceptance.md)、记录 044 |
-| 双配置八任务准备 | 两用例 × 两配置 × 两轮模板与六项合成回归；048 补齐归档来源并加强空 / 部分配置拒绝；配对 / 异常 / 停止分母覆盖；未执行真实双配置 | [比较准备](guarded-comparison.md)、记录 047 / 048 |
+| 双配置八任务准备（047 / 048 历史） | 两用例 × 两配置 × 两轮模板与六项合成回归；补齐归档来源和空 / 部分配置拒绝；该阶段未执行真实双配置，050 实际首轮结果另列 | [比较准备](guarded-comparison.md)、记录 047 / 048 |
+| 外部模型路由与首次真实比较 | 可选 modelProviders 传入隔离 pi-ai profile，随完整输入冻结 / 指纹核对；真实 DeepSeek / 百炼执行第一轮四项、三通过一失败，第二轮四项跳过；录制、路由和报告独立复验通过 | [记录 050](changes/2026-10-26-050-external-model-providers.md) |
 | 配置比较报告与不确定性边界 | 已实现版本 1 离线 JSON / Markdown；核对输入 / 身份 / 路由 / 来源，同用例和重复编号配对，公开范围、分母与排除；多配置验证为合成样本 | `dsh_eval/report.py`、[配置报告](configuration-reports.md)、记录 019 |
 | 固定真实评测集 | 10 个用例单配置首次真实验收通过；028 补齐必要步骤顺序和精确空文本，旧录制离线检查通过；双配置比较尚未执行 | [固定评测集](core-evaluation.md)、`fixtures/evaluation/core/` |
 | 结果浏览与持续集成 | 本地只读浏览及审查修复已实现；云端路径问题已修，Windows CI 的 134 Python / 44 Node / 31 文件语法、compileall 和 demo 全部通过 | [结果浏览](result-browser.md)、记录 020 / 021 / 022 |
@@ -142,7 +160,7 @@
 
 ## 历史验证：M6.4 修复提交与云端 CI（039，2026 年 10 月 24 日）
 
-- 用户授权提交并推送；18 份预期文件纳入 `4b97120770d4e57ace908a8996afc74af04dd6df`，正常推送当前分支，没有强制更新或上传 runs / private-notes。
+- 已提交并推送；18 份预期文件纳入 `4b97120770d4e57ace908a8996afc74af04dd6df`，正常推送当前分支，没有强制更新或上传 runs / private-notes。
 - [运行 40086861972](https://github.com/1412698607/dsh-eval-lab/actions/runs/40086861972) / job 120851472045，attempt 1，head SHA 精确匹配修复提交；北京时间 18:40:46 至 18:42:16，run / job 及全部步骤 success。
 - 实际日志：41 份 JS 语法、85 Node（fail=0 / skipped=0，6913.5286 ms）、202 Python（56.592 秒 / OK）、compileall 和 demo:eval 均通过，示例 source=synthetic、modelCalled=false。
 - 本批不追加生产代码或模型任务，不在本机重复完整回归；继续核对验收文档推送后的最新提交，避免沿用旧 SHA 结果。原失败、真实样本和取消 / 中断的 unevaluable 结论保留。详见 [记录 039](changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。
@@ -182,7 +200,7 @@
 
 ## 历史验证：取消工作区一致性（034，2026 年 10 月 24 日）
 
-- 按用户新授权，仍用 deepseek-official / deepseek-flash，只追加一个 page-cancel 任务；提交前实际任务数为 0，录制中恰有一个 source.kind=user 输入。没有重跑正常或中断，累计为五任务（正常两次、取消两次、中断一次），原样本和历史记录未改。
+- 补验仍用 deepseek-official / deepseek-flash，只追加一个 page-cancel 任务；提交前实际任务数为 0，录制中恰有一个 source.kind=user 输入。没有重跑正常或中断，累计为五任务（正常两次、取消两次、中断一次），原样本和历史记录未改。
 - 提交前工作区注册表、隔离配置、原生 cwd 与冻结 fixture 一致；实际 read README 的 callSeq=17 / resultSeq=18 返回正确 projectName，早于取消检查点 afterSeq=21。CUA 在同任务中真实点击停止，turn/end 为 aborted/user；之后原生 Ctrl+C、SIGINT / 卸载和 exit130，无强停或错误。
 - 新样本 25 条 sealed，fresh inspect=complete，全部 25 条原生事件 cwd 匹配；environment.workspaceMatch 与 workspaceObservationAvailable 均为 true。结果 cancelled / complete / unevaluable，主断言 not_run；单独读取证据检查 passed 仅说明取消前读取成功，不代表任务完成。
 - 新样本独立 CLI 复验通过；错误工作区副本被拒绝；缺 cwd 副本和原取消样本仍只得到未知，不能通过文档中的工作区覆盖门禁。原取消样本的生命周期通过与工作区未知两项事实均保留。
@@ -229,11 +247,11 @@
 
 - 新增 10 个版本 2 固定用例、一个单配置单轮实验清单和 6 项无模型回归。30 份参考正例 / 无工具 / 错误答案轨迹经过真实录制与 fresh inspect，另验证 22 项必要工具证据删除以及 4 组替代目录 / 状态重置。
 - 完整 150 Python（获准环境，44.706 秒）、79 Node、36 文件 JS 语法及 compileall 通过。本批未修改生产执行代码，保留上一批未提交配置修复，没有运行云端 CI、资源基线或旧模型任务。
-- 经用户明确选择，现有 deepseek-official / deepseek-flash 顺序执行 10 个用例各一次。planned / attempted / finished 为 10 / 10 / 10，skipped / errors 为 0 / 0，10 项均 completed / complete / passed。独立离线报告均 verified / matched、source=live、changedFields 为空，单配置 comparisons 为空。
+- 使用 deepseek-official / deepseek-flash 顺序执行 10 个用例各一次。planned / attempted / finished 为 10 / 10 / 10，skipped / errors 为 0 / 0，10 项均 completed / complete / passed。独立离线报告均 verified / matched、source=live、changedFields 为空，单配置 comparisons 为空。
 - 32 次已结算模型调用、24 次工具调用、已报告 totalTokens 合计 242085，数值指标覆盖 10 / 10，费用 10 项均缺失。耗时合计约 56.795 秒包含准备 / 执行 / 清理，不是整个命令墙钟或纯模型延迟；缓存用量字段与 totalTokens 边界见 [固定评测集](core-evaluation.md)。
 - 原实验 125 份 JSON / JSONL 摘要复验前后不变，10 个录制 run 均 sealed；10 项 childClosed=true、准备进程退出、stdinWriterStopped=true，10 个保存的专用 CLI PID 再查均不存在。没有将这些事实扩张为任意进程树保证。
 
-本批按用户选择完成单配置范围，未追加任何模型重跑；原建议的第二配置与重复扩展仍待预算，下一批入口为 M6.4 实际页面取消 / 退出 / 中断。详细证据、可复现命令及局限见 [记录 027](changes/2026-10-24-027-m6-3-core-evaluation.md)。
+本批完成单配置范围，未追加任何模型重跑；原建议的第二配置与重复扩展仍待预算，下一批入口为 M6.4 实际页面取消 / 退出 / 中断。详细证据、可复现命令及局限见 [记录 027](changes/2026-10-24-027-m6-3-core-evaluation.md)。
 
 ## 历史验证：M6.2 录制配置传递（2026 年 10 月 23 日）
 
@@ -457,7 +475,7 @@
 - 状态替换验证限定当前 Windows 本地文件系统；没有验证所有网络盘、占用行为或操作系统强杀、断电场景。
 - 固定组件检查、真实 headless 和 Web 验证分别记录；本批只证明上述独立 profile 与固定任务。原有自定义模型配置没有导入测试 profile。
 - M2.3 Web 基线仍使用测试专用 IPC；033 另行验证 Windows 当前 CLI 的页面实际取消、普通 ConPTY Ctrl+C 清理及处理中断。033 旧取消样本缺工作区观测，034 已用一个新取消任务补齐匹配 / 实际读取，旧证据仍未知；desktop / SDK、其他平台 / 版本仍未验证。
-- `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。`dsh_eval` 的 --run 已实现受控单会话单任务 headless；离线入口仍不执行环境 / 预算。M3.3 / M3.4 已补桥接和顺序批次，M4 已实现重复统计和单实验离线报告，M5 已实现本地浏览；并发、崩溃续跑及跨实验合并尚未实现。浏览是保存文件的读取，不是实时一致快照或新复验。指标只反映闭合录制和已报告 usage，运行耗时不是纯模型延迟，缺失与费用不补零。配对覆盖不足有选择偏差，没有置信区间、显著性或真实多配置表现结论。
+- `scripts/verify_live.py` 仍限定 M2.3 固定 fixture。`dsh_eval` 的 --run 已实现受控单会话单任务 headless；离线入口仍不执行环境 / 预算。M3.3 / M3.4 已补桥接和顺序批次，M4 已实现重复统计和单实验离线报告，M5 已实现本地浏览；并发、实验级崩溃恢复及跨实验合并尚未实现；052 已实现受限的批次级续跑。浏览是保存文件的读取，不是实时一致快照或新复验。指标只反映闭合录制和已报告 usage，运行耗时不是纯模型延迟，缺失与费用不补零。配对覆盖不足有选择偏差，没有置信区间、显著性或真实多配置表现结论。
 - 版本 2 由真实适配器采集请求路由 / 退出 / 干预，离线再核对日志请求头；来源字段本身不是签名。准备和清理另有期限，不把任务 timeoutSeconds 说成总退出硬上限，不支持 token / 步骤预算；本批只验证 Windows 与当前组件。
 
 ## 后续里程碑
@@ -501,4 +519,4 @@
 - [修改记录](../CHANGELOG.md)
 - [修改记录模板](templates/change-record.md)
 
-公开文档足以接续开发；本机交接和个人准备保存在被忽略的私人目录。隔离说明见 [修改记录 005](changes/2026-10-11-005-public-repository-filter.md)。
+公开文档足以接续开发，本地辅助资料保存在忽略目录。隔离说明见 [修改记录 005](changes/2026-10-11-005-public-repository-filter.md)。

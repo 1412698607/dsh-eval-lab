@@ -20,7 +20,7 @@ M6.2 的 maxEventBytes 默认 1 MiB，独立记录器和插件 config 可调高�
 | `docs/single-case-runner.md`、`docs/batch-runner.md`、`docs/experiments.md`、`docs/architecture.md` | 无对应传递约定 | 明确各层沿完整 case 保留，与模型配置分开 | 与实际责任边界一致 |
 | `CHANGELOG.md`、`docs/progress.md`、`docs/plans/m6-reliability-validation.md` | M6.2 原验收 | 追加配置传递修复及当前验证 | 原历史结果不覆盖 |
 
-本机 handoff / interview 同步本批结果，仍被忽略，不作为公开依赖。保留 main.py、原用例、仓库 cordis.patch.yml、用户 profile 和既有调度 / 评测 / 报告实现。
+保留 main.py、原用例、仓库 cordis.patch.yml、用户 profile 和既有调度 / 评测 / 报告实现。
 
 ## 实现与技术取舍
 
@@ -54,7 +54,7 @@ prepareCase 在新隔离 profile 的覆盖层增加 `{id: "eval-lab", config: {m
 | `npm.cmd run test:python` | 获准环境首次 143 项通过；最终新增第六项后完整 144 项通过（41.733 秒） | 最终 Python 测试版本及原真实子进程 / 强停回归，没有模型调用 |
 | `python -m compileall -q dsh_eval test` | 通过 | Python 编译检查 |
 | 真实离线安装、真实 CLI `--profile headless --dump-config`、真实 Cordis / SessionStore 组件 | 三组通过，详见下表 | profile 修改确实合并到已安装 eval-lab 条目，再用合并后配置挂载组件，不启动 headless 模型任务 |
-| 公开相对链接、`git diff --check`、忽略与跟踪核对 | 46 份 Markdown / 300 个相对链接有效；diff 检查通过；runs / private-notes 均忽略且无跟踪文件 | 公开文档不依赖私人材料或原始日志，15 个公开修改 / 新增文件保留待用户提交 |
+| 公开相对链接、`git diff --check`、忽略与跟踪核对 | 46 份 Markdown / 300 个相对链接有效；diff 检查通过；runs / private-notes 均忽略且无跟踪文件 | 公开文档不依赖私人材料或原始日志，共 15 个公开修改 / 新增文件 |
 
 Node 单元测试仅隔离安装边界，仍写真实 profile / setup；Python 冻结测试在准备阶段明确停止，不能当成真实模型运行。真实安装与配置合并另行执行：每组先用实际 prepareCase / 离线 CLI 安装到新 home，dump-config 使用真实 Harness 的 bundle / profile 合并算法、保留 eval-lab 原插件 name；从合并条目读取配置，挂载真实 Cordis 4.0.4 / SessionStore 0.2.0-rc.2 并注入人工工具事件，再核对 setup、profile、合并树、run.json、状态和 inspect。
 
@@ -76,10 +76,6 @@ Node 单元测试仅隔离安装边界，仍写真实 profile / setup；Python �
 
 下一批仍是 M6.3：先明确实际配置、固定用例与模型调用预算；M6.4 Web 生命周期仍计划。本批没有新模型调用、提交、推送或云端运行。
 
-## 面试讨论点
-
-可以从“底层可配置不代表任务入口可配置”解释配置归属与隔离：新 profile 丢失原设置，需将可审计的用例字段沿冻结链路传入。默认解析集中在原 JS config，Python只校验跨语言安全整数约束；实际模型路由与录制策略分开。测试既验证冻结 / 覆盖，又用真实配置合并证明同 id 的 profile patch 确实命中安装插件，避免只手动传 createRecorder 得出接线已通过的结论。
-
 ## 文档同步
 
-更新 README、CHANGELOG、progress、architecture、资源说明、评测格式、单用例 / 批次 / 实验说明和 M6 方案；本机 handoff / interview 另存当前结果。025 的历史验证不覆盖，公开资料不链接原始日志或私人材料。
+更新 README、CHANGELOG、progress、architecture、资源说明、评测格式、单用例 / 批次 / 实验说明和 M6 方案；025 的历史验证不覆盖，公开资料不链接原始日志或私人材料。

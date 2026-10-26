@@ -77,6 +77,12 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 
 ## 运行与输入
 
+实验级 [续跑预检](experiment-resume.md) 已实现 `--resume-experiment --plan`，尚未实现对应 `--run`。新实验在首次 checkpoint 保存 resumeSupportVersion=1 与 batchBinding，明确预留批次身份和相对结果路径；只有实际批次存在并通过来源 / 输入核对后，预检才分类样本。原 batchId / batchResultPath 仍在下游批次返回后保存为观察结果。旧实验不自动补造绑定。
+
+下游新批次仍可按 [批次续跑](batch-resume.md) 显式复核 / 继续明确未开始项；它保存独立续跑结果和新批次，不回填原 experiment-result.json 的状态 / 汇总，不将不同执行身份自动合并成原实验报告。
+
+2026 年 10 月 26 日增加用例的可选 [modelProviders](evaluation-format.md#可选外部模型路由两个用例版本通用)。计划样本在声明存在时显示路由，完整原始用例已纳入指纹，因此更换端点、凭据引用或模型目录会使旧摘要失效；冻结清单、用例及展开任务保留声明。未声明的新旧用例保留原行为，没有新的 experiment 字段或指纹算法版本。模型容量声明不增加 token / 费用预算；真实组件的本地注册检查不代表远端可用。
+
 需要小批验收计划约束链路时，另有 [四任务清单](../fixtures/evaluation/core/guarded-acceptance.experiment.json)：两个既有用例各两次、单配置、失败即停。搭配 --max-samples 4 和 --expected-plan-sha256，实际命令、短目录要求、首轮准备失败及四任务真实结果见 [044 验收说明](guarded-acceptance.md)。
 
 M6.3 的 [固定评测集](core-evaluation.md) 另提供 10 个用例各一次的单配置清单：`python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --run`。同样会调用真实模型；它验证任务覆盖，没有重复样本或双配置配对，不能据此推断配置提升。

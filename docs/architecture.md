@@ -10,6 +10,12 @@ M6.2 配置传递修复增加用例顶层可选 recorder 对象，由 Python 严
 
 ## 执行流程与模块
 
+[054 实验续跑预检](changes/2026-10-27-054-experiment-resume-preflight.md) 为初始实验 checkpoint 增加显式 batchBinding，将预留 UUID 传给原批次调度器，实际批次返回后才填写原观察字段。experiment_resume.py 在该批次锁下复核原 plan-input / 指纹、完整展开与来源，再复用批次预检进行证据分类，保留 caseEntryId / configurationId / repeatIndex。此模块只读，不安装宿主、分配身份或执行任务，实验续跑和报告整合另计。
+
+[052 批次续跑](changes/2026-10-26-052-safe-batch-resume.md) 在 Python 批次层增加内核独占锁和冻结输入指纹。resume.py 在同一源锁下复核已完成录制、断言、身份和退出，校验预览摘要，并以排他领取文件限制同一源只创建一次续跑；新批次只含明确未开始项。原终态、输入和已完成用例保持不变。未知执行 / 清理或原 stop 失败策略阻断；没有模型状态恢复、实验层结果合并或 fsync 承诺。协议见 [批次续跑](batch-resume.md)。
+
+[外部模型路由 050](changes/2026-10-26-050-external-model-providers.md) 增加可选 case.modelProviders：Python 在创建身份前严格校验，既有完整用例冻结和计划指纹覆盖该声明；Node 准备时再次校验并写入隔离 profile 的 llm-pi-ai config.providers 与 setup.json.modelProviders。仅支持显式 HTTPS Chat Completions 文本模型，密钥按 apiKeyEnv 引用原凭据服务，不复制到用例。实验仍只覆盖 configRef；报告的路由匹配仍来自 request/header，不把端点声明当远端身份认证。check:model-providers 只检查本机组件与凭据元信息，不发起生成或远端发现。
+
 ```text
 apply(ctx, config)
   → 路径优先级解析、maxEventBytes / maxPendingBytes 校验
@@ -224,7 +230,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 使用 JavaScript ES Module 直接接入 Cordis，无新增运行时依赖。JSONL 和独立 status 避免把内部状态混入 Harness 事件；保留旧数据可读性，但旧日志不自动获得封存资格。Promise 队列保留原顺序，容量限制减少待写文本无限增长风险，尚无轮转、会话淘汰、数据库或跨进程修复。原有 main.py 保持不变。
 
-2026 年 10 月 14 日按用户决定，后续采用 JavaScript 接入与录制、Python 评测与分析的分工：
+2026 年 10 月 14 日，后续采用 JavaScript 接入与录制、Python 评测与分析的分工：
 
 | 部分 | 语言与当前状态 |
 | --- | --- |
