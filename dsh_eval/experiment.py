@@ -62,7 +62,8 @@ def _plan_fingerprint(manifest, inputs, max_samples):
 def plan_experiment(experiment_path, *, max_samples=None):
     source, manifest, inputs = _load_experiment(experiment_path, max_samples)
     samples = [deepcopy({**sample, "requestedConfiguration": case["configRef"], "budget": case["budget"],
-                         "recorderOverrides": case.get("recorder")})
+                         "recorderOverrides": case.get("recorder"),
+                         **({"modelProviders": case["modelProviders"]} if "modelProviders" in case else {})})
                for sample, case in _expand_samples(manifest, inputs)]
     return {"experimentPlanFormatVersion": 1, "valid": True, "modelCalled": False,
             "experimentName": manifest["experimentName"], "sourceManifest": str(source), "maxSamples": max_samples,

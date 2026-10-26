@@ -10,6 +10,10 @@ M6.2 配置传递修复增加用例顶层可选 recorder 对象，由 Python 严
 
 ## 执行流程与模块
 
+[052 批次续跑](changes/2026-10-26-052-safe-batch-resume.md) 在 Python 批次层增加内核独占锁和冻结输入指纹。resume.py 在同一源锁下复核已完成录制、断言、身份和退出，校验预览摘要，并以排他领取文件限制同一源只创建一次续跑；新批次只含明确未开始项。原终态、输入和已完成用例保持不变。未知执行 / 清理或原 stop 失败策略阻断；没有模型状态恢复、实验层结果合并或 fsync 承诺。协议见 [批次续跑](batch-resume.md)。
+
+[外部模型路由 050](changes/2026-10-26-050-external-model-providers.md) 增加可选 case.modelProviders：Python 在创建身份前严格校验，既有完整用例冻结和计划指纹覆盖该声明；Node 准备时再次校验并写入隔离 profile 的 llm-pi-ai config.providers 与 setup.json.modelProviders。仅支持显式 HTTPS Chat Completions 文本模型，密钥按 apiKeyEnv 引用原凭据服务，不复制到用例。实验仍只覆盖 configRef；报告的路由匹配仍来自 request/header，不把端点声明当远端身份认证。check:model-providers 只检查本机组件与凭据元信息，不发起生成或远端发现。
+
 ```text
 apply(ctx, config)
   → 路径优先级解析、maxEventBytes / maxPendingBytes 校验

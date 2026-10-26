@@ -2,6 +2,8 @@
 
 更新：2026 年 10 月 25 日，Asia/Shanghai。本批完成模板和无模型回归，复用现有 experiment / batch / runner / report；没有执行第二套真实模型，也没有新增调度器或数据格式。
 
+2026 年 10 月 26 日首次真实比较单列于 [050](changes/2026-10-26-050-external-model-providers.md)：DeepSeek Flash / 百炼 Qwen3.7-Plus，计划八项，实际第一轮四项中三通过、一失败，按 stop 策略跳过后四项。失败为恢复用例的最终值带 Markdown 反引号，工具重试与正常结束均通过；四实际样本录制 complete、路由 matched、独立复核 verified，每用例仅一对。下文 047 / 048 合成历史保留，原模板仍未填写，不将本次描述为八项全部执行或模型优劣结论。
+
 ## 范围与待填写项
 
 [比较模板](../fixtures/evaluation/core/guarded-comparison.experiment.template.json) 固定 direct-read / retry-once 两个版本 2 用例、baseline / candidate 两个配置、各两轮，共 8 个计划任务。顺序为每轮先 direct-read 的 baseline / candidate，再 retry-once 的 baseline / candidate。failurePolicy=stop；每项独立环境、home、会话和故障状态，timeoutSeconds=120。
@@ -25,6 +27,8 @@ python -m unittest discover -s test -p test_guarded_comparison.py -v
 正常合成报告的计划 verified、8 个样本 verified / matched / synthetic，四个用例配置组、两个比较各含两对。测试人为指定 elapsedSeconds，以验证直接读取均值差 2、恢复用例均值差 5 的计算；这些是确定性输入，不能当作实测速度。未报告的 totalTokens / cost 保持缺失，不能补零。来源冲突负例中故意写入 live 声明，复核拒绝归属，不构成真实模型证据。
 
 ## 以后选定配置后的预览
+
+2026 年 10 月 26 日增加 [外部模型路由支持 050](changes/2026-10-26-050-external-model-providers.md)。保留原待填写模板；选择百炼等外部端点时，在复制出的两个用例中添加相同 modelProviders 路由声明，并将 candidate.configRef 的 provider / model 改为对应路由名 / 模型 id。凭据值只放在本机凭据库的 refs 分节，apiKeyEnv 填名称。百炼使用控制台的 **OpenAI 兼容地址**（包含 /compatible-mode/v1），不是 API Host 或原生 DashScope 地址。先对一个复制用例执行 `npm.cmd run check:model-providers -- <case.json>`，再预览；本地检查不调用模型或验证远端端点。
 
 保留原模板和用例，将三份文件复制到新的忽略目录；目录已存在时更换名称，不覆盖历史输入：
 
@@ -50,6 +54,6 @@ $plan.planFingerprint
 
 以后真实运行结束后，对返回的 experiment-result.json 使用现有 --report 独立复验。检查 planVerification、各项 verification / configurationMatch / source，以及执行、录制、断言三个结果。每个用例只能按同轮次、同来源、实际配置匹配的样本成对；两用例不能合并成四对来掩盖任务差异。
 
-路由不符、来源冲突、坏录制、失败、跳过与缺失均公开。计划 verified 不代表任务 passed；少量配对、固定顺序和缺失覆盖不能推断配置优胜、总体成功率、显著性或费用 / 性能改善。当前真实证据仍只有既有单配置验收，本批合成结果不扩大其范围。
+路由不符、来源冲突、坏录制、失败、跳过与缺失均公开。计划 verified 不代表任务 passed；少量配对、固定顺序和缺失覆盖不能推断配置优胜、总体成功率、显著性或费用 / 性能改善。047 / 048 完成时真实证据只有既有单配置验收，其合成结果不扩大该范围；050 首次真实双配置结果在本文开头单列。
 
 格式和统计规则见 [实验说明](experiments.md)、[配置报告](configuration-reports.md)，原始交付见 [记录 047](changes/2026-10-25-047-guarded-comparison-preparation.md)，来源修正与模板回归加固见 [复审 048](changes/2026-10-25-048-comparison-source-review.md)。047 的旧结果和记录保留，不把原始归档标记不一致写成实际模型调用。

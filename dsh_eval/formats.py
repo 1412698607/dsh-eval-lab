@@ -1,7 +1,9 @@
 """Version 1 case and evidence formats. No third-party dependencies."""
 import json
 import math
+import re
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 from uuid import UUID
 
 
@@ -89,8 +91,41 @@ def validate_experiment(experiment):
     return experiment
 
 
+def model_providers(value):
+    require(isinstance(value, dict), "modelProviders must be an object")
+    for route, profile in value.items():
+        require(re.fullmatch(r"[a-z][a-z0-9-]*", route) is not None
+                and route not in ("deepseek-official", "deepseek-account"), "Invalid external provider route")
+        fields(profile, ("api", "baseURL", "apiKeyEnv", "models"))
+        require(profile["api"] == "openai-completions", "External providers require openai-completions")
+        require(isinstance(profile["apiKeyEnv"], str)
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", profile["apiKeyEnv"]) is not None,
+                "apiKeyEnv must be a credential reference name")
+        address = profile["baseURL"]
+        require(isinstance(address, str) and address.startswith("https://")
+                and all(33 <= ord(character) <= 126 and character not in "\\@?#" for character in address),
+                "baseURL must be an ASCII HTTPS endpoint without credentials, query or fragment")
+        endpoint = urlsplit(address)
+        require(re.fullmatch(r"[A-Za-z0-9.-]+(?::[0-9]+)?", endpoint.netloc) is not None
+                and endpoint.scheme == "https" and bool(endpoint.hostname)
+                and re.fullmatch(r"[A-Za-z0-9.-]+", endpoint.hostname) is not None
+                and endpoint.username is None and endpoint.password is None
+                and (endpoint.port is None or 0 < endpoint.port <= 65535), "Invalid HTTPS provider endpoint")
+        require(isinstance(profile["models"], list) and bool(profile["models"]), "Provider models must be nonempty")
+        identifiers = set()
+        for model in profile["models"]:
+            fields(model, ("id", "contextWindow", "maxTokens"))
+            require(nonempty(model["id"]) and model["id"] not in identifiers, "Model IDs must be nonempty and unique")
+            identifiers.add(model["id"])
+            for name in ("contextWindow", "maxTokens"):
+                require(type(model[name]) is int and 0 < model[name] <= 9007199254740991,
+                        f"Model {name} must be a positive safe integer")
+    return value
+
+
 def validate_case(case):
-    fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"), ("recorder",))
+    fields(case, ("caseFormatVersion", "caseId", "input", "environment", "configRef", "budget", "assertions"),
+           ("recorder", "modelProviders"))
     require(type(case["caseFormatVersion"]) is int and case["caseFormatVersion"] in (1, 2), "Unsupported case format")
     require(nonempty(case["caseId"]) and nonempty(case["input"]), "caseId and input must be nonempty strings")
     fields(case["environment"], ("files",), ("stateful",) if case["caseFormatVersion"] == 2 else ())
@@ -111,6 +146,8 @@ def validate_case(case):
         require(all(path in files and type(count) is int and count >= 0 for path, count in failures.items()),
                 "Transient failures require an existing file and a nonnegative integer")
     configuration(case["configRef"])
+    if "modelProviders" in case:
+        model_providers(case["modelProviders"])
     if "recorder" in case:
         fields(case["recorder"], (), ("maxEventBytes", "maxPendingBytes"))
         for name, value in case["recorder"].items():

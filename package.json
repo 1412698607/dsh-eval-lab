@@ -23,6 +23,7 @@
     "demo:eval": "node scripts/demo-eval.js",
     "smoke:host": "node scripts/smoke-host.js",
     "check:output": "node scripts/check-output.js",
+    "check:model-providers": "node scripts/check-model-providers.js",
     "check:web-lifecycle": "python -m scripts.check_web_lifecycle",
     "live:web-lifecycle": "node scripts/web-lifecycle-live.js",
     "measure:recorder": "node scripts/measure-recorder.js",

@@ -1,14 +1,23 @@
 """Sequential live cases, immutable input snapshots, and one active batch checkpoint."""
 from datetime import datetime, timezone
+import hashlib
+import json
 from pathlib import Path
 from uuid import uuid4
 
+from .batch_lock import batch_lock
 from .formats import load_json, require, validate_batch
 from .runner import ROOT, run_case, save_json, validate_live_case
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def input_fingerprint(manifest, cases):
+    payload = {"version": 1, "manifest": manifest, "cases": cases}
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    return {"version": 1, "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
 
 
 def _checkpoint(directory, report):
@@ -65,7 +74,15 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
             "executionStatus": None, "recordingOutcome": None, "assertionOutcome": None, "outcome": None,
             "source": None, "metrics": None})
     save_json(directory / "batch.json", frozen)
-    _checkpoint(directory, report)
+    with batch_lock(directory, create=True):
+        report["resumeSupportVersion"] = 1
+        report["inputFingerprint"] = input_fingerprint(frozen, [case for _entry, _path, case in inputs])
+        _checkpoint(directory, report)
+        return _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream)
+
+
+def _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream):
+    batch_id = report["batchId"]
     active = None
     try:
         for index, active in enumerate(report["entries"]):
@@ -95,7 +112,7 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
                     report.update(status="interrupted", stopReason="user_interrupt")
                 elif not _cleanup_confirmed(runtime):
                     report.update(status="error", stopReason="cleanup_unconfirmed")
-                elif result["outcome"] != "passed" and manifest["failurePolicy"] == "stop" and index + 1 < len(inputs):
+                elif result["outcome"] != "passed" and manifest["failurePolicy"] == "stop" and index + 1 < len(report["entries"]):
                     report.update(status="stopped", stopReason="failure_policy")
             except Exception as error:
                 # An unexpected runner/result failure cannot establish isolation for the next case.

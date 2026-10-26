@@ -17,7 +17,9 @@
 - 预览输出版本化计划指纹；实际执行可带 `--expected-plan-sha256` 重新检查清单、全部用例和任务上限，输入变化时在创建目录或启动任务前拒绝。
 - 新实验保存参与指纹计算的原始计划输入快照，离线 JSON / Markdown 报告核对其与冻结用例、保存摘要的一致性；旧实验缺少快照时明确标为 unverified，见 [配置报告](docs/configuration-reports.md)。
 - [四任务真实验收](docs/guarded-acceptance.md) 已验证现有 deepseek-flash 的读取 / 恢复各两次，以及上限、预期指纹、保存快照和离线报告链路；首轮深目录准备失败保留，短目录下 4 个真实任务均通过。
-- [双配置八任务准备](docs/guarded-comparison.md) 提供待填写模板和无模型配对回归；第二配置尚未选择，空模板会在启动前拒绝，本批未执行真实比较。
+- [双配置八任务准备](docs/guarded-comparison.md) 提供待填写模板和无模型配对回归；原空模板会在启动前拒绝，实际比较状态见该文档。
+- 用例可通过 [modelProviders](docs/evaluation-format.md#可选外部模型路由两个用例版本通用) 声明外部文本模型路由，随输入冻结并计入计划指纹；密钥仅按名称引用。`npm.cmd run check:model-providers -- <case.json>` 检查本机真实宿主的路由 / 目录注册和凭据存在性，不调用模型、不验证远端端点。
+- [批次级安全续跑](docs/batch-resume.md) 提供 `--resume-batch <batch-result.json> --plan` 无模型复核；显式执行仅安排已协调批次中明确未开始的任务，已完成项经重新 inspect / 评测后复用，未知项阻断。原结果不覆盖；实验层汇总回填尚未实现。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；Windows 无模型云端 CI 已验收通过。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。

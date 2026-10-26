@@ -45,6 +45,8 @@ stdout 输出批次 JSON。退出码：0 表示整批 passed；1 表示已明确
 
 ## 隔离、关联与进度文件
 
+2026 年 10 月 26 日新增 [批次级安全续跑](batch-resume.md)：新批次额外保存 resumeSupportVersion=1、完整冻结输入的 inputFingerprint 和 `.batch-execution.lock`。原进程运行时持有内核锁；续跑复核后只对明确未开始的项创建新批次，原进度 / 终态不覆盖。旧批次不补造协调元信息，执行未知项不自动重跑；原失败策略继续有效。该范围不代表会话恢复、断电可靠或实验汇总自动整合。
+
 ```text
 runs/batches/<batchId>/
   batch.json                  路径改写为 inputs/ 的可再次运行清单
@@ -60,7 +62,7 @@ runs/batches/<batchId>/
 
 每次调用 run_case 都新建 caseRunId、workspace、home、安装 store、Harness 会话及 Python 环境；不复用上一项的故障计数或请求缓存。batchId 写入 evidence / evaluation，清单以 entryId + caseRunId 映射重复用例，runId / sessionId 继续来自实际宿主和录制。开始前失败时可以没有这些实际身份。
 
-本批运行期间在开始项和结束项后更新 batch-result.json：在同目录新建独立临时 JSON，再 replace 当前快照。它是活动进度文件，允许本批更新；终态不再写，后续运行使用新目录。没有 fsync、崩溃恢复或 resume 承诺。进程被强杀或磁盘写入失败时，文件可能保留 running 状态和临时文件；running 不是成功，写进度失败会停止后续启动。
+本批运行期间在开始项和结束项后更新 batch-result.json：在同目录新建独立临时 JSON，再 replace 当前快照。它是活动进度文件，允许本批更新；终态不再写，后续运行使用新目录。普通运行不提供 fsync 或任意崩溃恢复保证；052 的受限批次续跑见上文，不能恢复正在执行的模型会话。进程被强杀或磁盘写入失败时，文件可能保留 running 状态和临时文件；running 不是成功，写进度失败会停止后续启动。
 
 已保存的 batch.json 可再运行，仍会创建全新批次与会话；这会重新执行任务和模型请求，不是轨迹重放。离线复验单项时使用其自身 case.json / evidence.json：
 
