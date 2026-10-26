@@ -13,12 +13,13 @@ def main(argv=None):
     selection.add_argument("--batch", help="Version 1 sequential batch manifest")
     selection.add_argument("--experiment", help="Version 1 repeated-trial experiment manifest")
     selection.add_argument("--resume-batch", help="Preview or continue provably unstarted entries from a coordinated batch result")
+    selection.add_argument("--resume-experiment", help="Read-only continuation preflight for a bound experiment result; requires --plan")
     selection.add_argument("--report", help="Recheck a saved terminal experiment-result.json without model calls")
     selection.add_argument("--browse", action="store_true", help="Serve a read-only local viewer; never executes tasks")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
-    mode.add_argument("--plan", action="store_true", help="Preview --experiment or --resume-batch without executing tasks")
+    mode.add_argument("--plan", action="store_true", help="Preview an experiment or continuation without executing tasks")
     parser.add_argument("--max-samples", type=int, help="Positive task-count cap for experiments or new batch-continuation tasks")
     parser.add_argument("--expected-plan-sha256", help="Require a matching preview fingerprint; mandatory for --resume-batch --run")
     parser.add_argument("--runs-root", help="Run output parent; --browse reads existing results from this directory")
@@ -29,15 +30,17 @@ def main(argv=None):
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
+    if args.resume_experiment and not args.plan:
+        parser.error("--resume-experiment currently supports --plan only; execution is not implemented")
     if args.expected_plan_sha256 is not None and not ((args.experiment or args.resume_batch) and args.run):
         parser.error("--expected-plan-sha256 requires --experiment or --resume-batch with --run")
     if args.max_samples is not None:
-        if not (args.experiment or args.resume_batch) or not (args.plan or args.run):
-            parser.error("--max-samples requires --experiment or --resume-batch with --plan or --run")
+        if not (args.experiment or args.resume_batch or args.resume_experiment) or not (args.plan or args.run):
+            parser.error("--max-samples requires an experiment or continuation plan/run")
         if args.max_samples <= 0:
             parser.error("--max-samples must be a positive integer")
-    if args.plan and not (args.experiment or args.resume_batch):
-        parser.error("--plan requires --experiment or --resume-batch")
+    if args.plan and not (args.experiment or args.resume_batch or args.resume_experiment):
+        parser.error("--plan requires --experiment, --resume-batch or --resume-experiment")
     if args.plan and (args.cancel_after_stream or any(value is not None for value in
                      (args.evidence, args.output, args.runs_root, args.host_modules, args.reports_root, args.cases_root, args.port))):
         parser.error("--plan cannot use execution, evidence, browse, report, or output controls; the plan is printed to stdout")
@@ -49,9 +52,9 @@ def main(argv=None):
         parser.error("--report cannot use execution, evidence, or output controls; use --reports-root")
     if args.reports_root and not args.report:
         parser.error("--reports-root requires --report")
-    if (args.batch or args.experiment or args.resume_batch) and (not (args.run or args.plan) or args.evidence or args.output):
+    if (args.batch or args.experiment or args.resume_batch or args.resume_experiment) and (not (args.run or args.plan) or args.evidence or args.output):
         parser.error("--batch requires --run; --experiment and --resume-batch require --run or --plan; none accepts --evidence or --output")
-    if not (args.batch or args.experiment or args.resume_batch or args.report or args.browse) and args.run == bool(args.evidence):
+    if not (args.batch or args.experiment or args.resume_batch or args.resume_experiment or args.report or args.browse) and args.run == bool(args.evidence):
         parser.error("Choose --run or --evidence")
     if args.run and args.output:
         parser.error("--run saves evaluation.json in its new run directory; omit --output")
@@ -67,6 +70,9 @@ def main(argv=None):
         if args.report:
             from .report import generate_report
             result = generate_report(args.report, args.reports_root)
+        elif args.resume_experiment:
+            from .experiment_resume import plan_experiment_resume
+            result = plan_experiment_resume(args.resume_experiment, max_samples=args.max_samples)
         elif args.resume_batch:
             from .resume import plan_batch_resume, resume_batch
             result = (plan_batch_resume(args.resume_batch, max_samples=args.max_samples) if args.plan else
@@ -91,10 +97,12 @@ def main(argv=None):
                 stream.write(text)
         print(text, end="")
         if args.plan:
+            if args.resume_experiment:
+                return 0 if result["eligibleForResume"] else 2
             return 2 if args.resume_batch and not result["canResume"] else 0
         return 0 if args.report else {"passed": 0, "failed": 1, "unevaluable": 2}[result["outcome"]]
     except (OSError, ValueError, KeyError, TypeError) as error:
-        version_key = ("batchResumePlanFormatVersion" if args.plan and args.resume_batch else "experimentPlanFormatVersion" if args.plan else
+        version_key = ("experimentResumePlanFormatVersion" if args.resume_experiment else "batchResumePlanFormatVersion" if args.plan and args.resume_batch else "experimentPlanFormatVersion" if args.plan else
                        "batchResumeResultFormatVersion" if args.resume_batch else "browserFormatVersion" if args.browse else "comparisonReportFormatVersion" if args.report else "experimentResultFormatVersion" if args.experiment else
                        "batchResultFormatVersion" if args.batch else "evaluationFormatVersion")
         state = {"valid": False, "modelCalled": False} if args.plan else {"outcome": "unevaluable"}

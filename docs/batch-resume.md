@@ -1,6 +1,6 @@
 # 批次级安全续跑
 
-更新：2026 年 10 月 26 日，Asia/Shanghai。首版复用既有 batch / runner / evaluate / inspect，仅对明确未开始的项创建新批次；原批次结果、输入和已执行任务不覆盖。当前验收是合成任务与真实子进程检查，没有新增真实模型任务。实现与验证见 [052](changes/2026-10-26-052-safe-batch-resume.md)。
+更新：2026 年 10 月 27 日，Asia/Shanghai。首版复用既有 batch / runner / evaluate / inspect，仅对明确未开始的项创建新批次；原批次结果、输入和已执行任务不覆盖。当前验收是合成任务与真实子进程检查，没有新增真实模型任务。实现与验证见 [052](changes/2026-10-26-052-safe-batch-resume.md)。
 
 ## 入口
 
@@ -61,6 +61,6 @@ batchResumePlanFormatVersion / batchResumeResultFormatVersion 均为 1。计划�
 
 newlyExecutedSummary 只统计新批次；combinedSummary 将复用事实与新批次按原 entryId 顺序汇总，指标包含复用任务的历史观察值，不能当成本次新增调用量。费用与跳过项仍保持缺失；历史 failed 不因后续新任务通过而变成 passed。resume-result.json 先保存 running，终态使用同目录临时文件 replace；中断可能留 running / 空 batchResultPath。
 
-复用项路径相对 sourceBatchResult 所在目录；新批次路径相对 resumeDirectory。逐项离线复验继续使用原 case.json / evidence.json。首版没有跨批次实验报告合并、浏览器索引或 --resume-experiment，不回填原实验的 summary / samples，不把 resume-result.json 交给 --report 当作实验结果。
+复用项路径相对 sourceBatchResult 所在目录；新批次路径相对 resumeDirectory。逐项离线复验继续使用原 case.json / evidence.json。首版没有跨批次实验报告合并或浏览器索引，不回填原实验的 summary / samples，不把 resume-result.json 交给 --report 当作实验结果。054 已增加 [实验级只读预检](experiment-resume.md) 的 --resume-experiment --plan；实验执行尚未实现。
 
 目前只验证 Windows 当前组件与本地文件系统。锁是当前调度器的协作协议；不能约束绕开协议的程序，不提供原目录搬迁后的续跑保证，也不能恢复模型内部会话或确定性重放。原 050 比较因普通断言失败而停止，其历史结果与第二轮 skipped 保留。

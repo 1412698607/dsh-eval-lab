@@ -126,12 +126,13 @@ class ModelProviderTests(unittest.TestCase):
                         run_experiment(path, directory / "outputs", max_samples=2, expected_plan_sha256=digest)
             case_path.write_text(json.dumps(case), encoding="utf-8")
 
-            def examine_frozen(batch_path, *_args):
+            def examine_frozen(batch_path, *_args, **options):
                 batch = load_json(batch_path)
                 snapshots = [load_json(batch_path.parent / row["casePath"]) for row in batch["cases"]]
                 self.assertEqual([row["configRef"]["provider"] for row in snapshots], ["deepseek-official", "bailian"])
                 self.assertTrue(all(row["modelProviders"] == providers() for row in snapshots))
                 self.assertEqual(load_json(batch_path.parent / "plan-input.json")["cases"][0], case)
+                self.assertEqual(load_json(batch_path.parent / "experiment-result.json")["batchBinding"]["batchId"], options["batch_id"])
                 raise ValueError("stop before actual execution")
 
             with patch("dsh_eval.experiment.run_batch", side_effect=examine_frozen):

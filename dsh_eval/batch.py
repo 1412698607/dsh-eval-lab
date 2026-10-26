@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from .batch_lock import batch_lock
 from .formats import load_json, require, validate_batch
@@ -48,13 +48,14 @@ def _outcome(report):
     return "unevaluable"
 
 
-def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False):
+def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None):
+    require(batch_id is None or isinstance(batch_id, str), "Reserved batch_id must be a UUID string")
     source = Path(batch_path).resolve()
     manifest = validate_batch(load_json(source))
     # Validate all cases before creating a run or calling a model, then freeze inputs.
     inputs = [(entry, (source.parent / entry["casePath"]).resolve(),
                validate_live_case(load_json(source.parent / entry["casePath"]))) for entry in manifest["cases"]]
-    batch_id = str(uuid4())
+    batch_id = str(UUID(batch_id)) if batch_id is not None else str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "batches").resolve() / batch_id
     (directory / "inputs").mkdir(parents=True, exist_ok=False)
     (directory / "cases").mkdir()

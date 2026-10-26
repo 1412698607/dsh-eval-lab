@@ -2,6 +2,11 @@
 
 按开发批次记录目标、代码变化、设计取舍和验证。当前插件版本为 `0.1.2`，完成录制、M2 / M3 受控评测闭环、M4 重复试验 / 指标与离线报告、M5 本地浏览和无模型 Windows CI 验收。当前状态见 [开发进度](docs/progress.md)。
 
+## 2026年10月27日 提交验收与实验续跑预检
+
+- [053](docs/changes/2026-10-27-053-resume-delivery-ci.md) 核对 e3dc29a 对应 CI 的 run / job / attempt、精确 SHA 和步骤成功状态；原始日志接口 403，具体云端数量保持未知。
+- [054](docs/changes/2026-10-27-054-experiment-resume-preflight.md) 增加实验初始批次绑定及 --resume-experiment --plan，复核原计划 / 展开与完整样本身份，未知项阻断；执行尚未实现，未新增模型任务。
+
 ## 2026年10月26日 外部模型路由与双配置验收
 
 同日后续：[051 外部端点一致性修复](docs/changes/2026-10-26-051-provider-endpoint-review.md) 统一 Python / Node 对原始地址的接受范围；[052 批次级安全续跑](docs/changes/2026-10-26-052-safe-batch-resume.md) 增加独占锁、冻结指纹、只读复核与新批次执行，保留历史失败和未知边界。本轮后续不调用真实模型。
