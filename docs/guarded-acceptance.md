@@ -31,7 +31,7 @@ python -m dsh_eval --report 'runs/g44/<experimentId>/experiment-result.json'
 
 ## 044 实际验收
 
-本批用户授权继续开发并运行真实模型。无模型新增 3 项 / 0.967 秒、获准完整 241 Python / 50.782 秒及 compileall 通过。测试覆盖固定规模 / 顺序 / 配置 / 停止策略、超限 / 指纹冲突先于执行拒绝，以及四样本真实 Node 合成适配器到离线报告的链路；这些测试没有调用模型。
+本批进行真实模型链路验收。无模型新增 3 项 / 0.967 秒、获准完整 241 Python / 50.782 秒及 compileall 通过。测试覆盖固定规模 / 顺序 / 配置 / 停止策略、超限 / 指纹冲突先于执行拒绝，以及四样本真实 Node 合成适配器到离线报告的链路；这些测试没有调用模型。
 
 真实运行使用 Windows、Python 3.12.0、Node v24.14.0、CLI / SessionStore 0.2.0-rc.2、Cordis 4.0.4。先后保留两个独立实验：
 

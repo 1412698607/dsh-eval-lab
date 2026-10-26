@@ -74,10 +74,6 @@ inspect 按原始字节逐行读取与计算摘要，严格解码 UTF-8，核对
 - abrupt-exit 使用专用录制器子进程 flush 后 process.exit(0)，未验证操作系统强杀或断电；未终止用户宿主。
 - 下一批 M2.3：实际 profile、受控真实模型任务、Web/headless 正常退出、取消及强制停止的分别验证。本批未安装 profile、未调用模型、未提交或推送。
 
-## 面试讨论点
-
-可以演示 record 成功仅为入队、flush 保存前缀而 close 才封存、容量为什么按 UTF-8 字节计数，以及为什么真实组件检查暴露了简化上下文测试漏掉的清理接口问题。把录制 complete 与任务 passed 分开；不填写未测量的性能、成功率或费用改善。
-
 ## 文档同步
 
-已同步 README、docs/progress.md、docs/architecture.md、M2 方案、CHANGELOG，以及本地存在的私人准备和交接材料；公开文档不依赖私人文件。按用户指定的 Karpathy Guidelines 限定 M2.2 范围，以失败测试、真实组件复现和实际结果收敛实现。
+已同步 README、docs/progress.md、docs/architecture.md、M2 方案、CHANGELOG。公开文档不依赖私人文件。本批通过失败测试、真实组件复现和实际结果验证 M2.2 实现。

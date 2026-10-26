@@ -127,11 +127,11 @@ if ($cancelCheck.liveWebVerified -ne $true -or $cancelCheck.environment.workspac
 
 ## 累计范围与历史
 
-033 经授权执行三场景各一任务，再追加一次正常任务，共四次：首次正常任务因默认 Web Workspace 未指向 fixture、监督器误计上下文消息而失败；该样本的原始 PID / 超时强停事实和失败断言全部保留。修复工作区绑定、用户消息计数、实际 PID 捕获与结束后撤销计时器后，追加正常任务读取成功、答案匹配并真实 Ctrl+C 退出。页面取消与处理中断不重跑。
+033 执行三场景各一任务，再追加一次正常任务，共四次：首次正常任务因默认 Web Workspace 未指向 fixture、监督器误计上下文消息而失败；该样本的原始 PID / 超时强停事实和失败断言全部保留。修复工作区绑定、用户消息计数、实际 PID 捕获与结束后撤销计时器后，追加正常任务读取成功、答案匹配并真实 Ctrl+C 退出。页面取消与处理中断不重跑。
 
 033 的三类生命周期最终均有通过样本，不能表述为首次 3 / 3 通过或四次任务均成功。其取消样本在工作区观测加入前采集，原 README 读取失败；当时只验收取消与退出，完整 fixture 一致性未知。该原始样本和历史判断保持不变。
 
-034 经用户另行授权，只追加一个同配置取消任务，累计五次任务（正常两次、取消两次、中断一次）。提交前注册表及原生 cwd 指向本场景隔离工作区，fixture 字节与冻结用例一致；模型实际 read README 的 callSeq=17 / resultSeq=18，成功返回正确 projectName，先于取消检查点 afterSeq=21。随后 CUA 实际点击停止，同任务 turn/end 为 aborted/user；再经真实 Ctrl+C 收到 SIGINT / 卸载并 exit130，无强停。fresh inspect 的 25 条事件完整封存，全部 25 条原生事件 cwd 匹配，`workspaceMatch=true` / `workspaceObservationAvailable=true`，因此补齐新取消样本的工作区一致性。
+034 另追加一个同配置取消任务，累计五次任务（正常两次、取消两次、中断一次）。提交前注册表及原生 cwd 指向本场景隔离工作区，fixture 字节与冻结用例一致；模型实际 read README 的 callSeq=17 / resultSeq=18，成功返回正确 projectName，先于取消检查点 afterSeq=21。随后 CUA 实际点击停止，同任务 turn/end 为 aborted/user；再经真实 Ctrl+C 收到 SIGINT / 卸载并 exit130，无强停。fresh inspect 的 25 条事件完整封存，全部 25 条原生事件 cwd 匹配，`workspaceMatch=true` / `workspaceObservationAvailable=true`，因此补齐新取消样本的工作区一致性。
 
 补充的单条读取证据检查 passed 只证明取消前的读取，不执行取消任务的完整答案 / completed 断言；主结果仍 cancelled / complete / unevaluable、断言 not_run。离线副本验证错误工作区会拒绝，删去 cwd 仅能得到未知、不能宣称覆盖；旧取消样本 fresh 复验仍为未知。运行指标 modelCalls=2、toolCalls=1，不等于两次任务；不完整 token / 费用保持 null。
 

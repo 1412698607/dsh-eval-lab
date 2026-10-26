@@ -6,7 +6,7 @@
 
 本文件保留 027 / 028 的十用例历史。2026 年 10 月 25 日 [044 小批真实验收](guarded-acceptance.md) 另复用 direct-read / retry-once 各两次，验证 041–043 的上限、指纹、快照与报告链路；先保留深目录准备失败，再以短目录完成四个真实任务。该新增单配置批次不改写原十用例结果，也未执行双配置比较。
 
-用户选择先用现有 `deepseek-official / deepseek-flash` 执行 10 个固定用例，每个一次。本批验证单配置的任务覆盖，不包含第二套配置或重复统计，不推断模型整体能力、成本降低或配置优劣。用例清单与必要证据见 [用例目录](../fixtures/evaluation/core/README.md)，可运行清单为 [core.experiment.json](../fixtures/evaluation/core/core.experiment.json)。
+本批使用 `deepseek-official / deepseek-flash` 执行 10 个固定用例，每个一次。本批验证单配置的任务覆盖，不包含第二套配置或重复统计，不推断模型整体能力、成本降低或配置优劣。用例清单与必要证据见 [用例目录](../fixtures/evaluation/core/README.md)，可运行清单为 [core.experiment.json](../fixtures/evaluation/core/core.experiment.json)。
 
 10 项覆盖普通读取、嵌套发现、引用链、当前 / 归档值、缺失与空文件、中文、单路径与双路径暂时失败，以及旧路径后再重试。它们基于版本 2 的虚拟文件与真实工具桥接；文件不会物化到工作目录供原生 read 绕过，暂时故障计数逐用例重置。
 

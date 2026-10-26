@@ -87,14 +87,14 @@ python -m scripts.verify_web_live runs/web-lifecycle-live/normal-new --output ru
 
 prepare 仅冻结环境并离线安装本地插件；run 启动独立 Web，CUA 在页面提交任务时才调用模型。仓库命令不自动完成浏览器步骤。正常任务完成后输入 `{"type":"shutdown"}` 经真实 ConPTY Ctrl+C 清理；取消必须实际点击页面按钮，中断由监督器终止自己的 PID。完整操作、采集协议、四次尝试及取消样本的覆盖局限见 [Web 生命周期](docs/web-lifecycle.md) 和 [记录 033](docs/changes/2026-10-24-033-m6-4-live-web-validation.md)。
 
-[记录 034](docs/changes/2026-10-24-034-m6-4-cancel-workspace-validation.md) 另获授权只追加一个 deepseek-flash 取消任务：提交前注册表 / 原生 cwd 与隔离 fixture 一致，实际 README 读取成功后点击停止，结果 cancelled / complete / unevaluable，工作区两项观测均为 true。旧取消样本不改写，仍保留工作区未知；034 未改生产代码、协议或运行方式。
+[记录 034](docs/changes/2026-10-24-034-m6-4-cancel-workspace-validation.md) 另追加一个 deepseek-flash 取消任务：提交前注册表 / 原生 cwd 与隔离 fixture 一致，实际 README 读取成功后点击停止，结果 cancelled / complete / unevaluable，工作区两项观测均为 true。旧取消样本不改写，仍保留工作区未知；034 未改生产代码、协议或运行方式。
 
 ## 本地演示
 
 在 PowerShell 中运行：
 
 ```powershell
-Set-Location 'D:\codexWorkspace\dsh-eval-lab'
+Set-Location 'C:\work\dsh-eval-lab'
 npm.cmd run check
 npm.cmd test
 npm.cmd run demo
@@ -136,7 +136,7 @@ npm.cmd run check:output -- 'D:\your-harness\node_modules'
 
 1. Harness 插件配置中的 `config.outputDir`。
 2. 宿主进程的环境变量 `DSH_EVAL_OUTPUT_DIR`。
-3. 用户主目录下的 `.dsh-eval-lab/runs`；当前 Windows 用户对应 `C:\Users\Admin\.dsh-eval-lab\runs`。
+3. 用户主目录下的 `.dsh-eval-lab/runs`；Windows PowerShell 下对应 `$HOME\.dsh-eval-lab\runs`。
 
 显式配置和环境变量必须是非空绝对路径。选中的值无效时直接报错，不退回下一项。分发用 `cordis.patch.yml` 保持空配置，不再绑定开发机盘符；`demo` 与验证脚本仍显式写入项目内的 `runs/`。已有 profile 若保存了旧的显式 `outputDir`，它仍优先于环境变量，需要通过该 profile 的配置方式更改或移除。
 
@@ -160,7 +160,7 @@ Python 的 `--case --run`、`--batch --run`、`--experiment --run` 会生成新�
 例如在启动 CLI 的同一个 PowerShell 窗口中，将真实任务日志写入本项目：
 
 ```powershell
-$env:DSH_EVAL_OUTPUT_DIR = 'D:\codexWorkspace\dsh-eval-lab\runs'
+$env:DSH_EVAL_OUTPUT_DIR = 'C:\work\dsh-eval-lab\runs'
 ```
 
 该设置只影响当前窗口及其后续启动的进程，已运行的桌面应用不会因此改变环境。
@@ -168,8 +168,8 @@ $env:DSH_EVAL_OUTPUT_DIR = 'D:\codexWorkspace\dsh-eval-lab\runs'
 以下命令适用于 CLI 的 **web profile**，需要安装版 CLI 所使用的 pnpm 可执行文件可用：
 
 ```powershell
-Set-Location 'D:\codexWorkspace\dsh-eval-lab'
-npx.cmd @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add 'D:/codexWorkspace/dsh-eval-lab'
+Set-Location 'C:\work\dsh-eval-lab'
+npx.cmd @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile web add 'C:/work/dsh-eval-lab'
 npx.cmd @deepseek-ai/dsh@0.2.0-rc.2 web
 ```
 
@@ -255,7 +255,7 @@ runs/
 显式指定一次运行目录，不自动选择最新批次：
 
 ```powershell
-npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<run-id>'
+npm.cmd run inspect -- --run 'C:\work\dsh-eval-lab\runs\<run-id>'
 ```
 
 命令输出 JSON 报告：

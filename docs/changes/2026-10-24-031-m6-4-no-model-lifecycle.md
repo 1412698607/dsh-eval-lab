@@ -4,7 +4,7 @@
 
 ## 问题与目标
 
-用户要求继续 M6.4，先实现验收脚本和无模型检查。已有 M2.3 Web 关闭依赖专用 IPC，取消通过 Agent API 程序化执行，尚未覆盖实际页面取消或普通宿主信号退出。本阶段先固定三个场景的判定与失败行为，在无模型条件下验证实际子进程、录制器和 fresh inspect，后续再接入真实 Web 观察与页面操作来源。
+本批实现 M6.4 验收脚本和无模型检查。已有 M2.3 Web 关闭依赖专用 IPC，取消通过 Agent API 程序化执行，尚未覆盖实际页面取消或普通宿主信号退出。本阶段先固定三个场景的判定与失败行为，在无模型条件下验证实际子进程、录制器和 fresh inspect，后续再接入真实 Web 观察与页面操作来源。
 
 开始时实际分支为 `20261024/feat/m6-4-web-lifecycle`，HEAD 为 `2c60b63`；030 的 CHANGELOG / progress 修改与新记录已有未提交内容，本批保留。030 中创建分支名称是历史，本次不改写该记录。
 
@@ -19,7 +19,7 @@
 | `package.json`、`.github/workflows/deterministic.yml` | 无入口；compileall 不含 scripts | 新增 check:web-lifecycle；scripts 纳入 Python 编译检查 | 提供本机入口并覆盖新增 Python 文件 |
 | `README.md`、progress、architecture、M6 方案、Web 生命周期说明、CHANGELOG | M6.4 仅计划 | 更新脚本与无模型阶段及实际 Web 未验收范围 | 文档与实际实现一致 |
 
-本机交接与面试材料另行同步，私人文件不作为公开依赖。原 src、通用 runner / evaluate / report、M2.3 脚本与 main.py 没有修改。
+原 src、通用 runner / evaluate / report、M2.3 脚本与 main.py 没有修改。
 
 ## 实现与技术取舍
 
@@ -37,7 +37,7 @@ Python 使用独立 webLifecycleFormatVersion 1 捕获协议及验证版本 1，
 | --- | --- | --- |
 | `python -m unittest discover -s test -p test_web_lifecycle.py -v`，首次沙箱 | 7 项事件规则通过；setUpClass 的三次 fork 均 EPERM，整体失败 | 明确保留子进程验证限制，不算通过 |
 | 同一命令，获准环境 | 17 项通过，1.028 秒 | 事件与格式边界、真实子进程 / recorder / fresh inspect |
-| `npm.cmd run check:web-lifecycle -- runs/web-lifecycle/<new-check>`，获准环境 | 三个独立进程场景均 verified | 实际输出目录由本机交接记录；合成事件不是实际 Web 操作 |
+| `npm.cmd run check:web-lifecycle -- runs/web-lifecycle/<new-check>`，获准环境 | 三个独立进程场景均 verified | 实际输出保存在被忽略的运行目录；合成事件不是实际 Web 操作 |
 | `npm.cmd run test:python`，获准环境 | 完整 180 项通过，48.692 秒 | 原 163 项及新增 17 项；真实进程清理回归 |
 | `npm.cmd test` | 79 项通过，无失败 / 跳过 | 既有 Node 回归 |
 | `npm.cmd run check` | 38 个 JavaScript 文件通过 | 原 36 及两个新增脚本 |
@@ -55,10 +55,6 @@ Python 使用独立 webLifecycleFormatVersion 1 捕获协议及验证版本 1，
 
 当前 fixture 的自然退出、手工追加事件及专用 SIGKILL 不代表真实模型行为、任意外部进程树、断电可靠性或可恢复日志。10 秒监督兜底与 30 秒 fixture 孤儿保护不执行 case 的 timeoutSeconds，也不是费用预算。双配置与重复扩展仍待配置及预算。
 
-## 面试讨论点
-
-如何将“场景检查通过”与“任务成功”分开；为什么取消任务可以拥有完整录制但任务仍无法评测；为何强停前先等待已写检查点；为什么 inspect 报错或缺文件不能自动当作成功中断；如何明确合成事件、真实文件 / 进程和实际页面 / 模型行为各自证明的范围。
-
 ## 文档同步
 
-同步 README、progress、architecture、M6 方案、新 Web 生命周期说明、CHANGELOG 及本机交接 / 面试材料。保留 030 及既有验证历史；本批未提交或推送。
+同步 README、progress、architecture、M6 方案、新 Web 生命周期说明、CHANGELOG。保留 030 及既有验证历史。

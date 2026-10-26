@@ -4,7 +4,7 @@
 
 ## 问题与目标
 
-用户要求修复当前 M6.4 审查中的两个问题，补充回归并同步文档，先不运行真实模型。本批开始时分支为 `20261024/feat/m6-4-web-lifecycle`，030 / 031 的未提交改动已存在，全部保留。
+本批修复 M6.4 审查中的两个问题，补充回归并同步文档，不运行真实模型。本批开始时分支为 `20261024/feat/m6-4-web-lifecycle`，030 / 031 的未提交改动已存在，全部保留。
 
 031 的中断分支仅要求 fresh inspect 返回 unverified，运行与会话仍为 recording，存在两种误通过：
 
@@ -22,7 +22,7 @@
 | `README.md`、`docs/web-lifecycle.md`、`docs/architecture.md` | 中断干净前缀的判定条件不完整 | 说明版本门禁、检查点覆盖和通用 inspect 的边界 | 保持使用说明与实现一致 |
 | `docs/progress.md`、M6 方案、`CHANGELOG.md`、本记录 | 031 的验证范围 | 新增 032 修正、实际回归及后续入口 | 保留原历史结果 |
 
-本机交接与面试材料同步更新，私人文件不作为公开仓库依赖。本批未修改 JavaScript 采集器 / fixture、原 recorder / inspect、dsh_eval 通用评测包、M2.3 脚本或 main.py。
+本批未修改 JavaScript 采集器 / fixture、原 recorder / inspect、dsh_eval 通用评测包、M2.3 脚本或 main.py。
 
 ## 实现与技术取舍
 
@@ -48,7 +48,7 @@
 | 独立 Python CLI 对三份原采集及四份修改后的副本 fresh 复验 | 三正例退出 0；未知状态版本 / 空检查点 / 落后检查点 / 残留替换文件四反例退出 1 | 四反例均 verified=false、recording=unverified，所有 liveWebVerified=false；不继承旧 verification |
 | 原文件摘要核对 | 77 份受保护源文件及此前录制、28 份本批原采集文件均未变化 | 修复与离线复验没有改写这些源文件或原证据 |
 
-表中的新输出目录为每批独立目录，本机交接保留实际路径与完整日志。新增测试准备较早检查点时按原始行字节生成独立有效前缀，确保反例不是因错误摘要被 Node inspect 提前判为 invalid。新 CLI 输出仍使用新建模式，拒绝覆盖旧结果。
+表中的新输出目录为每批独立目录。新增测试准备较早检查点时按原始行字节生成独立有效前缀，确保反例不是因错误摘要被 Node inspect 提前判为 invalid。新 CLI 输出仍使用新建模式，拒绝覆盖旧结果。
 
 最终文档核对：55 份公开 Markdown / 363 个相对文件链接有效，未链接私人材料或运行证据；修改 / 新增文件的末尾换行与空白检查通过，progress 分支与实际 Git 一致。`git diff --check` 通过，仅有 LF / CRLF 提示；runs / private-notes 仍忽略且无跟踪文件。本批三份采集保存的专用 PID 再查均不存在，不扩张为任意外部进程树保证。
 
@@ -60,10 +60,6 @@
 
 SHA-256 和过程清单不是签名；flush 不承诺 fsync、断电持久化、完整会话恢复或任意外部进程树清理。当前真实 Web 生命周期仍未实现 / 未验收。下一步接入实际 Web 启动、操作来源和只观察生命周期的采集器，再按另定配置与数量运行任务；双配置 / 重复扩展继续待预算。
 
-## 面试讨论点
-
-为什么 unverified 需要区分具体原因；为什么“日志尾部存在 afterSeq”不能替代“有效检查点覆盖 afterSeq”；如何复用已有 inspect 的原始字节和摘要校验，并在专用验收器增加场景约束；如何通过失败反例、非零起点正例和独立 CLI 复验证明门禁生效。
-
 ## 文档同步
 
-同步 README、Web 生命周期说明、architecture、progress、M6 方案、CHANGELOG 与本机交接 / 面试材料。030 / 031 和既有验证历史保留；本批尚未提交或推送。
+同步 README、Web 生命周期说明、architecture、progress、M6 方案、CHANGELOG。030 / 031 和既有验证历史保留。

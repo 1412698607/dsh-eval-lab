@@ -1,6 +1,6 @@
 # 修改记录 012 M3.3 状态化工具与实时桥接
 
-日期：2026 年 10 月 18 日，Asia/Shanghai。类型：功能 / 测试 / 文档。插件版本：0.1.2。相关 Git 提交：本批尚未提交；已核实上一批 M3.2 为 `31a24fa`，修正旧交接中尚未提交的过时说明。
+日期：2026 年 10 月 18 日，Asia/Shanghai。类型：功能 / 测试 / 文档。插件版本：0.1.2。相关 Git 提交：本批尚未提交；已核实上一批 M3.2 为 `31a24fa`，修正当前版本状态的过时说明。
 
 ## 问题与目标
 
@@ -17,7 +17,7 @@ M3.2 只能使用初始实际文件，无法按路径制造暂时工具故障，
 | scripts/smoke-bridge.js、smoke_bridge.py | 不存在 | 无模型的真实注册与跨进程检查 | 单独证明桥接层 |
 | fixtures/evaluation/stale-path.case.json、retry-read.case.json | 不存在 | 两个版本 2 受控用例 | 真实任务验收 |
 | test/test_environment.py、tool-bridge.test.js、test_evaluation.py | 无状态测试；拒绝版本 2 | 新增 7 项 Python、3 项 Node 测试，未知版本反例改为 3 | 兼容性与错误语义 |
-| README、CHANGELOG、docs 与本机私人材料 | M3.3 待开发 | 当前协议、命令、验证与 M3.4 入口 | 同步范围 |
+| README、CHANGELOG、docs | M3.3 待开发 | 当前协议、命令、验证与 M3.4 入口 | 同步范围 |
 
 ## 实现与技术取舍
 
@@ -53,10 +53,6 @@ Windows，Node v24.14.0、Python 3.12.0、CLI / session 0.2.0-rc.2、Cordis 4.0.
 
 下一批 M3.4：Python 顺序批次调度、每次隔离重置、版本化批次结果清单及明确的继续 / 停止策略。剩 M3.4、M4、M5 三个主要阶段，M4 拆两批，共四批。
 
-## 面试讨论点
-
-可用真实日志说明“录制有效”和“任务成功”分开，工具 isError 可被模型恢复；桥接基础设施错误应导致无法评测。可演示重复 requestId 不消耗故障次数，而模型新调用的新 requestId 会推进状态；取消终止等待不等于撤销已经提交的操作。
-
 ## 文档同步
 
-已更新 README、CHANGELOG、progress、architecture、评测格式、单用例入口、M3 路线、公开用例说明，以及存在的私人交接 / 面试材料。公开文档不依赖私人材料或原始日志。25 份公开 Markdown 的 103 个本地链接有效，目标无忽略依赖；三个实际任务均使用各自 case 快照重新离线检查，保持原分类。git diff --check 通过，仅行尾转换提示。runs / private-notes 无跟踪文件且忽略有效。
+已更新 README、CHANGELOG、progress、architecture、评测格式、单用例入口、M3 路线、公开用例说明。公开文档不依赖私人材料或原始日志。25 份公开 Markdown 的 103 个本地链接有效，目标无忽略依赖；三个实际任务均使用各自 case 快照重新离线检查，保持原分类。git diff --check 通过，仅行尾转换提示。runs / private-notes 无跟踪文件且忽略有效。

@@ -224,7 +224,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 使用 JavaScript ES Module 直接接入 Cordis，无新增运行时依赖。JSONL 和独立 status 避免把内部状态混入 Harness 事件；保留旧数据可读性，但旧日志不自动获得封存资格。Promise 队列保留原顺序，容量限制减少待写文本无限增长风险，尚无轮转、会话淘汰、数据库或跨进程修复。原有 main.py 保持不变。
 
-2026 年 10 月 14 日按用户决定，后续采用 JavaScript 接入与录制、Python 评测与分析的分工：
+2026 年 10 月 14 日，后续采用 JavaScript 接入与录制、Python 评测与分析的分工：
 
 | 部分 | 语言与当前状态 |
 | --- | --- |

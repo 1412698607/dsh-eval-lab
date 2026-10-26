@@ -12,7 +12,7 @@ coverage/
 *.tgz
 *.log
 
-# Private preparation and local conversation handoff
+# Local notes and maintenance files
 /private-notes/
 # Protect the previous locations if a tool recreates them.
 /docs/interview.md

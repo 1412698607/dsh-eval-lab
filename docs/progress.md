@@ -1,14 +1,16 @@
 # dsh-eval-lab 开发进度
 
-[048 复审修复](changes/2026-10-25-048-comparison-source-review.md) 补齐 047 合成测试遗漏的原始评测、实验 / 分组摘要来源，跳过项保持未知；加强原始模板完整配置与部分填写拒绝回归。比较相关六项、完整 249 Python / 61.446 秒和 compileall 通过。模板、生产代码及格式不变，本批不选第二套模型、不追加真实任务；按授权提交推送并核对新 SHA 的 CI，准确状态以 Git / Actions 对应提交为准。
+[049 公开文档整理](changes/2026-10-25-049-public-documentation-cleanup.md) 将个人准备内容和开发对话过程移出公开记录，本机路径改为通用示例，并更新开发约定与模板。功能状态、历史测试结果和真实样本范围不变；本批仅进行文档与文件范围检查。
 
-[047 双配置八任务准备](changes/2026-10-25-047-guarded-comparison-preparation.md) 已完成待填写模板、五项合成回归和使用说明。本机完整 248 Python / 60.778 秒及 compileall 通过；生产运行代码和协议不变，本批不追加真实模型。第二配置尚未选定，空模板启动前拒绝；实际双配置比较与完整集扩大仍未执行。本批按授权提交 / 推送并独立核对新 CI，准确状态以 Git / Actions 对应提交为准。
+[048 复审修复](changes/2026-10-25-048-comparison-source-review.md) 补齐 047 合成测试遗漏的原始评测、实验 / 分组摘要来源，跳过项保持未知；加强原始模板完整配置与部分填写拒绝回归。比较相关六项、完整 249 Python / 61.446 秒和 compileall 通过。模板、生产代码及格式不变，本批不选第二套模型、不追加真实任务；新 SHA 的 CI 需独立核对，准确状态以 Git / Actions 对应提交为准。
+
+[047 双配置八任务准备](changes/2026-10-25-047-guarded-comparison-preparation.md) 已完成待填写模板、五项合成回归和使用说明。本机完整 248 Python / 60.778 秒及 compileall 通过；生产运行代码和协议不变，本批不追加真实模型。第二配置尚未选定，空模板启动前拒绝；实际双配置比较与完整集扩大仍未执行。新 CI 需独立核对，准确状态以 Git / Actions 对应提交为准。
 
 041–045 的 25 份实现 / 测试 / 文档已提交并推送为 `dffac4c7f5dac1b4c136d8ce2dbfc75a75fabe0f`；其 [CI 40167590361](https://github.com/1412698607/dsh-eval-lab/actions/runs/40167590361) / job 121091692849 全部 success，实际日志为 243 Python / 85 Node / 41 JS、compileall 与无模型示例通过，见 [046 交付验收](changes/2026-10-25-046-plan-guard-delivery-ci.md)。本批不追加真实模型，044 的四任务历史与首轮准备失败保留。验收文档在实现之后单独提交；后续分支状态以实际 Git / Actions 对应提交为准。
 
 截至 2026 年 10 月 25 日（Asia/Shanghai），插件版本 `0.1.2`。已核实 `a239d7d` 包含 [M6.2 配置传递修复 026](changes/2026-10-23-026-m6-2-recorder-config-propagation.md) 与 [M6.3 单配置固定评测集 027](changes/2026-10-24-027-m6-3-core-evaluation.md)，`2c60b63` 包含 [审查修复 028](changes/2026-10-24-028-m6-3-assertion-constraints.md) 与 [分支整理 029](changes/2026-10-24-029-m5-m6-delivery-branch.md)。实际分支为 `20261024/feat/m6-4-web-lifecycle`，`103c090` 包含 030 至 034。035 至 038 的 18 份修复 / 测试 / 文档已提交并推送为 `4b97120`；其云端运行 40086861972 全部成功，实际 202 Python、85 Node、41 JS 语法、compileall 与无模型示例通过，见 [验收 039](changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。039 未新增模型任务；044 的四任务真实验收单列于上文。
 
-既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；027 / 028 保持原范围。033 的四次 deepseek-flash Web 任务保留首次正常失败与旧取消工作区未知；034 按用户新授权只追加一个取消任务，完成工作区匹配、实际 README 读取、页面停止与退出复验。累计五次任务，三个最终场景均有工作区匹配的生命周期样本；取消 / 中断仍 unevaluable。双配置 / 重复扩展仍待定，039 只增加修复提交的无模型云端验收。
+既定 M1 至 M5 保留原本地与云端验收，历史失败不覆盖。[M6 可靠性与真实验收](plans/m6-reliability-validation.md) 的 M6.1 / M6.2 已完成本地验证；027 / 028 保持原范围。033 的四次 deepseek-flash Web 任务保留首次正常失败与旧取消工作区未知；034 另追加一个取消任务，完成工作区匹配、实际 README 读取、页面停止与退出复验。累计五次任务，三个最终场景均有工作区匹配的生命周期样本；取消 / 中断仍 unevaluable。双配置 / 重复扩展仍待定，039 只增加修复提交的无模型云端验收。
 
 ## 项目目标
 
@@ -142,7 +144,7 @@
 
 ## 历史验证：M6.4 修复提交与云端 CI（039，2026 年 10 月 24 日）
 
-- 用户授权提交并推送；18 份预期文件纳入 `4b97120770d4e57ace908a8996afc74af04dd6df`，正常推送当前分支，没有强制更新或上传 runs / private-notes。
+- 已提交并推送；18 份预期文件纳入 `4b97120770d4e57ace908a8996afc74af04dd6df`，正常推送当前分支，没有强制更新或上传 runs / private-notes。
 - [运行 40086861972](https://github.com/1412698607/dsh-eval-lab/actions/runs/40086861972) / job 120851472045，attempt 1，head SHA 精确匹配修复提交；北京时间 18:40:46 至 18:42:16，run / job 及全部步骤 success。
 - 实际日志：41 份 JS 语法、85 Node（fail=0 / skipped=0，6913.5286 ms）、202 Python（56.592 秒 / OK）、compileall 和 demo:eval 均通过，示例 source=synthetic、modelCalled=false。
 - 本批不追加生产代码或模型任务，不在本机重复完整回归；继续核对验收文档推送后的最新提交，避免沿用旧 SHA 结果。原失败、真实样本和取消 / 中断的 unevaluable 结论保留。详见 [记录 039](changes/2026-10-24-039-m6-4-push-cloud-ci-acceptance.md)。
@@ -182,7 +184,7 @@
 
 ## 历史验证：取消工作区一致性（034，2026 年 10 月 24 日）
 
-- 按用户新授权，仍用 deepseek-official / deepseek-flash，只追加一个 page-cancel 任务；提交前实际任务数为 0，录制中恰有一个 source.kind=user 输入。没有重跑正常或中断，累计为五任务（正常两次、取消两次、中断一次），原样本和历史记录未改。
+- 补验仍用 deepseek-official / deepseek-flash，只追加一个 page-cancel 任务；提交前实际任务数为 0，录制中恰有一个 source.kind=user 输入。没有重跑正常或中断，累计为五任务（正常两次、取消两次、中断一次），原样本和历史记录未改。
 - 提交前工作区注册表、隔离配置、原生 cwd 与冻结 fixture 一致；实际 read README 的 callSeq=17 / resultSeq=18 返回正确 projectName，早于取消检查点 afterSeq=21。CUA 在同任务中真实点击停止，turn/end 为 aborted/user；之后原生 Ctrl+C、SIGINT / 卸载和 exit130，无强停或错误。
 - 新样本 25 条 sealed，fresh inspect=complete，全部 25 条原生事件 cwd 匹配；environment.workspaceMatch 与 workspaceObservationAvailable 均为 true。结果 cancelled / complete / unevaluable，主断言 not_run；单独读取证据检查 passed 仅说明取消前读取成功，不代表任务完成。
 - 新样本独立 CLI 复验通过；错误工作区副本被拒绝；缺 cwd 副本和原取消样本仍只得到未知，不能通过文档中的工作区覆盖门禁。原取消样本的生命周期通过与工作区未知两项事实均保留。
@@ -229,11 +231,11 @@
 
 - 新增 10 个版本 2 固定用例、一个单配置单轮实验清单和 6 项无模型回归。30 份参考正例 / 无工具 / 错误答案轨迹经过真实录制与 fresh inspect，另验证 22 项必要工具证据删除以及 4 组替代目录 / 状态重置。
 - 完整 150 Python（获准环境，44.706 秒）、79 Node、36 文件 JS 语法及 compileall 通过。本批未修改生产执行代码，保留上一批未提交配置修复，没有运行云端 CI、资源基线或旧模型任务。
-- 经用户明确选择，现有 deepseek-official / deepseek-flash 顺序执行 10 个用例各一次。planned / attempted / finished 为 10 / 10 / 10，skipped / errors 为 0 / 0，10 项均 completed / complete / passed。独立离线报告均 verified / matched、source=live、changedFields 为空，单配置 comparisons 为空。
+- 使用 deepseek-official / deepseek-flash 顺序执行 10 个用例各一次。planned / attempted / finished 为 10 / 10 / 10，skipped / errors 为 0 / 0，10 项均 completed / complete / passed。独立离线报告均 verified / matched、source=live、changedFields 为空，单配置 comparisons 为空。
 - 32 次已结算模型调用、24 次工具调用、已报告 totalTokens 合计 242085，数值指标覆盖 10 / 10，费用 10 项均缺失。耗时合计约 56.795 秒包含准备 / 执行 / 清理，不是整个命令墙钟或纯模型延迟；缓存用量字段与 totalTokens 边界见 [固定评测集](core-evaluation.md)。
 - 原实验 125 份 JSON / JSONL 摘要复验前后不变，10 个录制 run 均 sealed；10 项 childClosed=true、准备进程退出、stdinWriterStopped=true，10 个保存的专用 CLI PID 再查均不存在。没有将这些事实扩张为任意进程树保证。
 
-本批按用户选择完成单配置范围，未追加任何模型重跑；原建议的第二配置与重复扩展仍待预算，下一批入口为 M6.4 实际页面取消 / 退出 / 中断。详细证据、可复现命令及局限见 [记录 027](changes/2026-10-24-027-m6-3-core-evaluation.md)。
+本批完成单配置范围，未追加任何模型重跑；原建议的第二配置与重复扩展仍待预算，下一批入口为 M6.4 实际页面取消 / 退出 / 中断。详细证据、可复现命令及局限见 [记录 027](changes/2026-10-24-027-m6-3-core-evaluation.md)。
 
 ## 历史验证：M6.2 录制配置传递（2026 年 10 月 23 日）
 
@@ -501,4 +503,4 @@
 - [修改记录](../CHANGELOG.md)
 - [修改记录模板](templates/change-record.md)
 
-公开文档足以接续开发；本机交接和个人准备保存在被忽略的私人目录。隔离说明见 [修改记录 005](changes/2026-10-11-005-public-repository-filter.md)。
+公开文档足以接续开发，本地辅助资料保存在忽略目录。隔离说明见 [修改记录 005](changes/2026-10-11-005-public-repository-filter.md)。

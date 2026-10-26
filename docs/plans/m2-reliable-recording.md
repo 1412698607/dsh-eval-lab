@@ -10,7 +10,7 @@
 
 | 渠道 | 需要适配的部分 | 本阶段定位 |
 | --- | --- | --- |
-| Web | web profile、服务端启动和正常关闭、页面内任务操作 | 首个人工联调基线；这是暂定入口，不表示用户已确认主要使用方式 |
+| Web | web profile、服务端启动和正常关闭、页面内任务操作 | 首个人工联调基线；其他渠道的验证范围单独记录 |
 | 桌面 | 桌面自带运行时、保留 profile 和安装入口 | 核心保持兼容设计，实际桌面版本明确后再验证；不套用任意 npm CLI 管理桌面 profile |
 | headless | 单任务进程、退出码、JSON 输出和关闭链路 | 首个可脚本化真实任务验证入口 |
 | SDK | profile、JSON-RPC stdio、会话与进程生命周期 | M3 自动化评测候选入口；本阶段先修复输出通道冲突 |
@@ -27,7 +27,7 @@
 | M2.2 录制状态与检查工具（已完成） | 会话状态文件、校验信息、待写入上限、离线检查命令 | 正常封存可校验；未关闭直接退出、截断、损坏、写入错误和过载均不判为完整 |
 | M2.3 真实任务联调 | 受控工作目录、实际 profile 安装、Web 和 headless 验证说明 | 真实模型任务的输入、调用、结果与结束原因可关联，正常退出后的录制可检查 |
 
-M2 的插件、录制和宿主适配继续使用 JavaScript。2026 年 10 月 14 日按用户决定，M3 及后续适合独立处理的评测与分析部分优先 Python，具体边界见后文及 [修改记录 007](../changes/2026-10-14-007-python-evaluation-plan.md)。TypeScript、SQLite、页面、旧历史恢复、配置 A/B 和评测指标汇总在 M2 阶段暂缓。
+M2 的插件、录制和宿主适配继续使用 JavaScript。2026 年 10 月 14 日，M3 及后续适合独立处理的评测与分析部分优先 Python，具体边界见后文及 [修改记录 007](../changes/2026-10-14-007-python-evaluation-plan.md)。TypeScript、SQLite、页面、旧历史恢复、配置 A/B 和评测指标汇总在 M2 阶段暂缓。
 
 ## M2.1 输出与配置设计
 
@@ -112,7 +112,7 @@ M2.1 已观察到 session/flush 能传播录制错误；M2.2 新增的真实清�
 已增加命令，参数明确指定运行目录，避免默认选择“最新文件”造成误读：
 
 ```powershell
-npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<runId>'
+npm.cmd run inspect -- --run 'C:\work\dsh-eval-lab\runs\<runId>'
 ```
 
 读取时逐行解析并对原始文件字节计算摘要，核对运行和会话身份、记录条数、字节数及序号。空文件、残缺末行、非法 JSON、损坏元信息和摘要不匹配均给出原因。未知事件类型可以展示，检查器不承担 Harness 完整历史重建。
@@ -158,7 +158,7 @@ npm.cmd run inspect -- --run 'D:\codexWorkspace\dsh-eval-lab\runs\<runId>'
 | `test/` | 状态、检查点竞态、过载、损坏和输出通道测试 |
 | `package.json`、`cordis.patch.yml` | 新脚本、可移植配置及实际发布版本调整 |
 
-现有 `record`、`flush`、`close` 调用方式尽量保持兼容。每批实现都有独立修改记录，接口或日志状态协议调整同步到架构和面试文档。
+现有 `record`、`flush`、`close` 调用方式尽量保持兼容。每批实现都有独立修改记录，接口或日志状态协议调整同步到架构和使用文档。
 
 ## 验收与测试
 
