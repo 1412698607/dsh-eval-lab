@@ -47,6 +47,8 @@ stdout 输出批次 JSON。退出码：0 表示整批 passed；1 表示已明确
 
 054 为实验绑定增加内部 API 的可选 batch_id：有效 UUID 在启动前确定并使用，新目录仍不覆盖；未指定时保留原自动生成行为。实验预留身份不代表已创建批次或调用模型；绑定的实际结果仍需 [实验预检](experiment-resume.md) 核对。
 
+[058](changes/2026-10-27-058-resume-lock-report-version.md) 增加内部 _lock_stack 参数，由实验的 ExitStack 保留 run_batch 取得的同一锁，直到实验最终 checkpoint 完成。普通调用省略该参数时仍自行取得 / 释放批次锁；没有跳过锁或先释放再重取。命令和保存格式不变。
+
 2026 年 10 月 26 日新增 [批次级安全续跑](batch-resume.md)：新批次额外保存 resumeSupportVersion=1、完整冻结输入的 inputFingerprint 和 `.batch-execution.lock`。原进程运行时持有内核锁；续跑复核后只对明确未开始的项创建新批次，原进度 / 终态不覆盖。旧批次不补造协调元信息，执行未知项不自动重跑；原失败策略继续有效。该范围不代表会话恢复、断电可靠或实验汇总自动整合。
 
 ```text

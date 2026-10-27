@@ -42,6 +42,8 @@ API 为 `plan_batch_resume(result_path, *, max_samples=None)` 和 `resume_batch(
 
 原批次首次执行持有 `.batch-execution.lock`，本地内核在进程退出后释放锁。源结果增加 resumeSupportVersion=1 和完整冻结清单 / 用例的版本化 inputFingerprint。续跑同时检查条目顺序、用例 / 路由、路径包含关系、身份和正常退出事实，保留已完成任务的精确断言结果。
 
+若批次由实验创建，[058 修复](changes/2026-10-27-058-resume-lock-report-version.md) 后原实验会继续持有同一锁，覆盖批次返回后的关联 / 汇总及实验最终 checkpoint。即使 batch-result.json 已终态，原实验仍在收尾时，批次与实验续跑均拒绝进入。独立批次的锁生命周期不变；异常退出释放锁，后续仍须重新核对证据。
+
 预览摘要版本 1 覆盖源结果路径、选定源文件的原始字节 SHA-256、待执行 / 复用条目身份及上限。因此源结果、冻结文件、评测、runtime 或录制的字节变化会使旧摘要失效，包括仅格式变化；不同于实验计划按解析后 JSON 计算的语义摘要。摘要不是签名，也不承诺多个文件的事务快照或对抗协调改写。
 
 执行前在原目录以排他创建方式写 `.batch-resume-claim.json`，记录新 resumeId / 输出目录，保证同一源只领取一次。进程退出会释放内核锁，领取记录仍保留。若在领取后、创建新批次结果前中断，需人工检查新目录，首版不自动移除领取记录或重跑。这些步骤没有 fsync / 断电可靠保证。
@@ -61,6 +63,6 @@ batchResumePlanFormatVersion / batchResumeResultFormatVersion 均为 1。计划�
 
 newlyExecutedSummary 只统计新批次；combinedSummary 将复用事实与新批次按原 entryId 顺序汇总，指标包含复用任务的历史观察值，不能当成本次新增调用量。费用与跳过项仍保持缺失；历史 failed 不因后续新任务通过而变成 passed。resume-result.json 先保存 running，终态使用同目录临时文件 replace；中断可能留 running / 空 batchResultPath。
 
-复用项路径相对 sourceBatchResult 所在目录；新批次路径相对 resumeDirectory。逐项离线复验继续使用原 case.json / evidence.json。首版没有跨批次实验报告合并或浏览器索引，不回填原实验的 summary / samples，不把 resume-result.json 交给 --report 当作实验结果。054 已增加 [实验级只读预检](experiment-resume.md) 的 --resume-experiment --plan；实验执行尚未实现。
+复用项路径相对 sourceBatchResult 所在目录；新批次路径相对 resumeDirectory。逐项离线复验继续使用原 case.json / evidence.json。不回填原实验的 summary / samples，纯批次 resume-result.json 仍不能交给 --report。054 / 055 已增加 [实验级安全续跑](experiment-resume.md) 的 --resume-experiment --plan / --run；两个入口共用源锁和领取记录。实验执行保存独立身份映射和新增摘要；056 允许终态 experiment-resume-result.json 生成版本 2 的跨批次报告，核对原实验及两个批次。纯批次续跑没有实验矩阵，不能套用该报告入口；当前浏览器已由 [057](changes/2026-10-27-057-resume-report-browser.md) 接入版本 2 报告与续跑关联。
 
 目前只验证 Windows 当前组件与本地文件系统。锁是当前调度器的协作协议；不能约束绕开协议的程序，不提供原目录搬迁后的续跑保证，也不能恢复模型内部会话或确定性重放。原 050 比较因普通断言失败而停止，其历史结果与第二轮 skipped 保留。

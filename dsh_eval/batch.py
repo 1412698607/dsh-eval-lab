@@ -1,4 +1,5 @@
 """Sequential live cases, immutable input snapshots, and one active batch checkpoint."""
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -48,7 +49,7 @@ def _outcome(report):
     return "unevaluable"
 
 
-def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None):
+def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None, _lock_stack=None):
     require(batch_id is None or isinstance(batch_id, str), "Reserved batch_id must be a UUID string")
     source = Path(batch_path).resolve()
     manifest = validate_batch(load_json(source))
@@ -75,7 +76,10 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
             "executionStatus": None, "recordingOutcome": None, "assertionOutcome": None, "outcome": None,
             "source": None, "metrics": None})
     save_json(directory / "batch.json", frozen)
-    with batch_lock(directory, create=True):
+    with ExitStack() as local_locks:
+        # Experiments retain this same lock through their own final checkpoint.
+        lock_owner = _lock_stack if _lock_stack is not None else local_locks
+        lock_owner.enter_context(batch_lock(directory, create=True))
         report["resumeSupportVersion"] = 1
         report["inputFingerprint"] = input_fingerprint(frozen, [case for _entry, _path, case in inputs])
         _checkpoint(directory, report)

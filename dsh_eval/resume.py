@@ -166,37 +166,42 @@ def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_str
         plan, saved, cases = _load_plan(source, max_samples)
         require(plan["canResume"], "Batch cannot resume: " + "; ".join(plan["reasons"] + [row["reason"] for row in plan["blockedEntries"]]))
         require(plan["planFingerprint"]["sha256"] == expected_plan_sha256.lower(), "Resume plan fingerprint mismatch")
-        resume_id = str(uuid4())
-        directory = Path(runs_root or ROOT / "runs" / "resumes").resolve() / resume_id
-        require(not directory.exists(), "Resume directory already exists")
-        # Creation is exclusive, and happens before any remaining task can start.
-        # A crash leaves a claim requiring inspection, rather than automatic reuse.
-        save_json(source.parent / CLAIM_NAME, {"resumeClaimFormatVersion": 1, "resumeId": resume_id,
-                                             "resumeDirectory": str(directory), "claimedAt": _now()})
-        (directory / "inputs").mkdir(parents=True, exist_ok=False)
-        save_json(directory / "resume-plan.json", plan)
-        remaining = {"batchFormatVersion": 1, "batchName": saved["batchName"] + " continuation",
-                     "failurePolicy": saved["failurePolicy"], "cases": []}
-        for index, entry_id in enumerate(plan["pendingEntryIds"], 1):
-            path = f"inputs/{index:04}.case.json"
-            save_json(directory / path, cases[entry_id])
-            remaining["cases"].append({"entryId": entry_id, "casePath": path})
-        save_json(directory / "remaining.batch.json", remaining)
-        report = {"batchResumeResultFormatVersion": 1, "resumeId": resume_id, "resumeDirectory": str(directory),
-                  "sourceBatchResult": str(source), "sourceBatchId": saved["batchId"],
-                  "planFingerprint": plan["planFingerprint"], "startedAt": _now(), "finishedAt": None,
-                  "status": "running", "outcome": None, "reusedEntries": plan["reusedEntries"], "batchResultPath": None}
-        save_json(directory / "resume-result.json", report)
-        result = run_batch(directory / "remaining.batch.json", directory / "batches", modules_dir, cancel_after_stream)
-        rows = {row["entryId"]: row for row in [*plan["reusedEntries"], *result["entries"]]}
-        combined = [rows[row["entryId"]] for row in saved["entries"]]
-        outcomes = {row["outcome"] for row in combined}
-        outcome = ("unevaluable" if result["status"] in ("error", "interrupted") or "unevaluable" in outcomes
-                   else "failed" if "failed" in outcomes else "passed" if outcomes == {"passed"} else "unevaluable")
-        report.update(finishedAt=_now(), status=result["status"], outcome=outcome,
-                      batchResultPath=(Path(result["batchDirectory"]).relative_to(directory) / "batch-result.json").as_posix(),
-                      newlyExecutedSummary=summarize(result["entries"]), combinedSummary=summarize(combined))
-        temporary = directory / f".resume-result-{uuid4()}.tmp"
-        save_json(temporary, report)
-        temporary.replace(directory / "resume-result.json")
-        return report
+        return _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream)
+
+
+def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None):
+    """Execute a verified plan while the caller retains the source batch lock."""
+    resume_id = resume_id or str(uuid4())
+    directory = Path(runs_root or ROOT / "runs" / "resumes").resolve() / resume_id
+    require(not directory.exists(), "Resume directory already exists")
+    # Creation is exclusive, and happens before any remaining task can start.
+    # A crash leaves a claim requiring inspection, rather than automatic reuse.
+    save_json(source.parent / CLAIM_NAME, {"resumeClaimFormatVersion": 1, "resumeId": resume_id,
+                                         "resumeDirectory": str(directory), "claimedAt": _now()})
+    (directory / "inputs").mkdir(parents=True, exist_ok=False)
+    save_json(directory / "resume-plan.json", plan)
+    remaining = {"batchFormatVersion": 1, "batchName": saved["batchName"] + " continuation",
+                 "failurePolicy": saved["failurePolicy"], "cases": []}
+    for index, entry_id in enumerate(plan["pendingEntryIds"], 1):
+        path = f"inputs/{index:04}.case.json"
+        save_json(directory / path, cases[entry_id])
+        remaining["cases"].append({"entryId": entry_id, "casePath": path})
+    save_json(directory / "remaining.batch.json", remaining)
+    report = {"batchResumeResultFormatVersion": 1, "resumeId": resume_id, "resumeDirectory": str(directory),
+              "sourceBatchResult": str(source), "sourceBatchId": saved["batchId"],
+              "planFingerprint": plan["planFingerprint"], "startedAt": _now(), "finishedAt": None,
+              "status": "running", "outcome": None, "reusedEntries": plan["reusedEntries"], "batchResultPath": None}
+    save_json(directory / "resume-result.json", report)
+    result = run_batch(directory / "remaining.batch.json", directory / "batches", modules_dir, cancel_after_stream)
+    rows = {row["entryId"]: row for row in [*plan["reusedEntries"], *result["entries"]]}
+    combined = [rows[row["entryId"]] for row in saved["entries"]]
+    outcomes = {row["outcome"] for row in combined}
+    outcome = ("unevaluable" if result["status"] in ("error", "interrupted") or "unevaluable" in outcomes
+               else "failed" if "failed" in outcomes else "passed" if outcomes == {"passed"} else "unevaluable")
+    report.update(finishedAt=_now(), status=result["status"], outcome=outcome,
+                  batchResultPath=(Path(result["batchDirectory"]).relative_to(directory) / "batch-result.json").as_posix(),
+                  newlyExecutedSummary=summarize(result["entries"]), combinedSummary=summarize(combined))
+    temporary = directory / f".resume-result-{uuid4()}.tmp"
+    save_json(temporary, report)
+    temporary.replace(directory / "resume-result.json")
+    return report

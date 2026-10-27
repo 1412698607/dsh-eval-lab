@@ -10,7 +10,13 @@ M6.2 配置传递修复增加用例顶层可选 recorder 对象，由 Python 严
 
 ## 执行流程与模块
 
-[054 实验续跑预检](changes/2026-10-27-054-experiment-resume-preflight.md) 为初始实验 checkpoint 增加显式 batchBinding，将预留 UUID 传给原批次调度器，实际批次返回后才填写原观察字段。experiment_resume.py 在该批次锁下复核原 plan-input / 指纹、完整展开与来源，再复用批次预检进行证据分类，保留 caseEntryId / configurationId / repeatIndex。此模块只读，不安装宿主、分配身份或执行任务，实验续跑和报告整合另计。
+[054 实验续跑预检](changes/2026-10-27-054-experiment-resume-preflight.md) 为初始实验 checkpoint 增加显式 batchBinding，将预留 UUID 传给原批次调度器，实际批次返回后才填写原观察字段。experiment_resume.py 在该批次锁下复核原 plan-input / 指纹、完整展开与来源，再复用批次预检进行证据分类，保留 caseEntryId / configurationId / repeatIndex。预检本身不安装宿主、分配身份或执行任务。
+
+[055 实验续跑执行](changes/2026-10-27-055-experiment-resume-execution.md) 提取同锁下的实验预检及共用批次续跑核心。--run 重新复核实验摘要，在身份 / 输出创建前拒绝变化和阻断；实验层先保存分类及下游预留结果路径，再由批次核心排他领取、冻结剩余项、执行并保存新增摘要。源批次锁保持到返回，两个入口共享同一领取记录。新增 experimentResumeResultFormatVersion=1，不修改原实验或记录协议；samplePlan 只表示启动映射，下游才是新执行事实；055 当时尚无跨批次报告，后续扩展见 056。
+
+[056 跨批次实验报告](changes/2026-10-27-056-experiment-resume-report.md) 复用 _load_inputs 校验冻结实验与矩阵，resume_report.py 核对实验续跑 / 批次续跑 / 领取的显式绑定及保存的两层计划摘要，要求原计划和源元信息字节不变，再验证新批次输入、顺序与跨批次执行身份。证据文件不因旧摘要变化而整份丢弃，逐项交回原 _recheck / evaluate / inspect；坏证据保留原分母并排除配对。新报告 comparisonReportFormatVersion=2，batchId=null、batchIds 及逐样本来源说明两个批次，reusedSummary / newlyExecutedSummary 与分组 byExecutionOrigin 都来自本次复验。普通实验继续版本 1；当前浏览器版本 2 接入见 057。
+
+[058 协调与兼容修复](changes/2026-10-27-058-resume-lock-report-version.md) 由 run_experiment 的 ExitStack 持有 run_batch 已取得的同一内核锁，覆盖批次执行、实验关联 / 汇总和最终 checkpoint；不在两阶段之间释放并重新加锁。批次独立调用仍自行管理锁，异常退出由上下文释放，结果格式不变。_load_inputs 只核对归档身份、矩阵及冻结输入；续跑预检再由批次加载器检查当前安装版本 / headless 限制。离线报告不执行运行环境校验，但仍逐项核对归档配置与录制插件版本、实际请求路由及证据。
 
 [052 批次续跑](changes/2026-10-26-052-safe-batch-resume.md) 在 Python 批次层增加内核独占锁和冻结输入指纹。resume.py 在同一源锁下复核已完成录制、断言、身份和退出，校验预览摘要，并以排他领取文件限制同一源只创建一次续跑；新批次只含明确未开始项。原终态、输入和已完成用例保持不变。未知执行 / 清理或原 stop 失败策略阻断；没有模型状态恢复、实验层结果合并或 fsync 承诺。协议见 [批次续跑](batch-resume.md)。
 
@@ -56,11 +62,15 @@ inspect --run <目录>
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
-| `dsh_eval/__main__.py` | 评测 / 实验预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 仅用于实验且与 --run 互斥，原任务 0 / 1 / 2 不变 |
+| `dsh_eval/__main__.py` | 评测 / 实验及续跑预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
 | `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
+| `dsh_eval/batch.py` | 冻结输入与顺序调度；独立调用管理批次锁，实验内部通过 _lock_stack 保留同一锁至实验收尾 |
+| `dsh_eval/experiment_resume.py` | 显式批次绑定及实验 / 批次同锁复核；比较实验摘要后调用共用续跑核心，保存独立结果和原样本映射 |
+| `dsh_eval/resume.py` | 批次预检、同源排他领取和新批次执行核心；共用原 runner / inspect / evaluate，不重试未知项 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
-| `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
+| `dsh_eval/report.py` | 普通实验版本 1 / 实验续跑版本 2 报告，重新 evaluate 并按路由 / 来源 / 轮次配对；续跑分开历史与新增用量 |
+| `dsh_eval/resume_report.py` | 只读核对续跑的两层计划、源元信息、领取、批次和原矩阵绑定，为共用报告器提供逐样本证据根 |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
 | `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`4b97120` 的 41 JS 语法 / 85 Node / 202 Python / compileall / 合成 demo 云端全部通过，旧 M5 验收保留 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
@@ -71,6 +81,8 @@ inspect --run <目录>
 ## 输出与数据格式
 
 M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=...` 读取一个已保存 JSON / Markdown 或一页 JSONL。目录索引带 `browserFormatVersion: 1`，只是读取响应，没有新持久化结果格式；不会写入文件、刷新摘要或改变评测状态。浏览 API 不调用原 evaluate / inspect / runner，旧结果可过时，与 M4.2 的主动离线复验是两个入口。
+
+浏览器同时接受比较报告版本 1 / 2；版本 2 按保存的 batchIds、executionOrigin、sourceBatchResult、reusedSummary / newlyExecutedSummary 及 groups.byExecutionOrigin 展示多个批次和历史 / 新增分区。显式 sourceResumeResult、resumeVerification.batchResumeResult 及两层续跑的来源路径沿用同一范围检查后成为关联链接；续跑结果仅作为关联文档，不新增列表类别或执行入口。普通报告布局与浏览响应版本不变，见 [记录 057](changes/2026-10-27-057-resume-report-browser.md)。
 
 服务固定绑定 127.0.0.1，以启动时随机令牌、Host / Origin 检查及根目录解析限制访问，扫描不跟随符号目录 / junction。内容用文本节点呈现，默认排除独立 home / workspace 和私人目录。该方案复用现有 JSON 与原证据位置，无前端依赖和数据库；代价是没有实时一致快照、远程多用户访问或编辑 / 运行功能。容量、分页和已验证边界见 [结果浏览](result-browser.md)。
 

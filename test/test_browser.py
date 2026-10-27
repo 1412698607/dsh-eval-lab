@@ -103,6 +103,77 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(catalog["runs:missing/experiment-result.json"]["sources"], ["unknown"])
         self.assertEqual(catalog["runs:one/evaluation.json"]["sources"], ["synthetic"])
 
+    def test_version_two_report_and_explicit_continuation_links_are_read_only(self):
+        original = self.write(self.runs / "original/experiment-result.json", {"experimentResultFormatVersion": 1})
+        old_batch = self.write(self.runs / "old/batch-result.json", {"batchResultFormatVersion": 1})
+        new_batch = self.write(self.runs / "new/batch-result.json", {"batchResultFormatVersion": 1})
+        continuation = self.write(self.runs / "resume/experiment-resume-result.json", {"experimentResumeResultFormatVersion": 1,
+            "batchResumeResultPath": "child/resume-result.json", "sourceBatchResult": str(old_batch)})
+        child = self.write(continuation.parent / "child/resume-result.json", {"batchResumeResultFormatVersion": 1,
+            "sourceBatchResult": str(old_batch), "batchResultPath": "../../new/batch-result.json"})
+        report = {"comparisonReportFormatVersion": 2, "reportId": "resumed", "batchId": None,
+            "batchIds": ["old", "new"], "sourceExperimentResult": str(original), "sourceResumeResult": str(continuation),
+            "resumeVerification": {"status": "verified", "batchResumeResult": str(child)},
+            "samples": [{"executionOrigin": "reused", "source": "synthetic", "sourceBatchResult": str(old_batch)},
+                        {"executionOrigin": "new", "source": None, "sourceBatchResult": str(new_batch)}]}
+        self.write(self.runs / "report/report.json", report)
+        before = self.digest()
+        with patch("dsh_eval.report.evaluate", side_effect=AssertionError("browse must not inspect")), \
+                patch("dsh_eval.runner.run_case", side_effect=AssertionError("browse must not run")):
+            item = next(item for item in self.browser.catalog()["items"] if item["id"] == "runs:report/report.json")
+            self.assertEqual(item["kind"], "report")
+            self.assertNotIn("error", item)
+            self.assertEqual(item["sources"], ["synthetic", "unknown"])
+            document = self.browser.document(item["id"])
+            self.assertEqual(document["data"], report)
+            links = {link["label"]: link["id"] for link in document["links"]}
+            self.assertEqual(links["sourceResumeResult"], "runs:resume/experiment-resume-result.json")
+            self.assertEqual(links["resumeVerification / batchResumeResult"], "runs:resume/child/resume-result.json")
+            self.assertEqual(links["1 / sourceBatchResult"], "runs:old/batch-result.json")
+            self.assertEqual(links["2 / sourceBatchResult"], "runs:new/batch-result.json")
+            self.assertEqual(self.browser.document(links["sourceResumeResult"])["data"]["experimentResumeResultFormatVersion"], 1)
+            child_document = self.browser.document(links["resumeVerification / batchResumeResult"])
+            self.assertEqual(next(link["id"] for link in child_document["links"] if link["label"] == "batchResultPath"),
+                             "runs:new/batch-result.json")
+        self.assertEqual(self.digest(), before)
+
+    def test_version_two_new_links_reject_external_unc_private_and_missing_targets(self):
+        data = {"sourceResumeResult": str(self.directory / "outside/experiment-resume-result.json"),
+                "resumeVerification": {"batchResumeResult": "//viewer-v2.invalid/share/resume-result.json"},
+                "samples": [{"sourceBatchResult": str(self.runs / "home/batch-result.json")}]}
+        with patch.object(Path, "resolve", side_effect=AssertionError("Reject external references before resolving")):
+            links = self.browser._links(data, self.runs / "report")
+        self.assertEqual(len(links), 3)
+        self.assertTrue(all(link["id"] is None for link in links))
+        self.write(self.runs / "report/report.json", {"comparisonReportFormatVersion": 2,
+                   "sourceResumeResult": "missing/experiment-resume-result.json"})
+        document = self.browser.document("runs:report/report.json")
+        self.assertIsNone(next(link["id"] for link in document["links"] if link["label"] == "sourceResumeResult"))
+
+    def test_report_version_one_and_two_are_supported_but_future_or_coerced_versions_are_not(self):
+        path = self.runs / "report/report.json"
+        for version in (1, 2, 3, True, 2.0):
+            self.write(path, {"comparisonReportFormatVersion": version})
+            if type(version) is int and version in (1, 2):
+                self.assertEqual(self.browser.document("runs:report/report.json")["kind"], "report")
+            else:
+                with self.subTest(version=version), self.assertRaises(ValueError):
+                    self.browser.document("runs:report/report.json")
+
+    def test_http_serves_saved_version_two_report_without_execution_or_writes(self):
+        saved = {"comparisonReportFormatVersion": 2, "samples": [{"source": None, "executionOrigin": "new"}],
+                 "newlyExecutedSummary": {"planned": 1, "sourceCounts": {"unknown": 1}}}
+        self.write(self.runs / "report/report.json", saved)
+        self.server()
+        before = self.digest()
+        with patch("dsh_eval.report.evaluate", side_effect=AssertionError("browse must not inspect")), \
+                patch("dsh_eval.runner.run_case", side_effect=AssertionError("browse must not execute")):
+            status, _, body = self.request("/api/document?id=runs:report/report.json")
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)["data"], saved)
+            self.assertEqual(self.request("/api/document?id=runs:report/report.json", method="POST")[0], 405)
+        self.assertEqual(self.digest(), before)
+
     def test_missing_and_malformed_files_are_visible_and_refresh_finds_new_files(self):
         catalog = ArtifactBrowser(self.cases, self.directory / "absent").catalog()
         self.assertEqual(len(catalog["warnings"]), 1)

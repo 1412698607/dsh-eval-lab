@@ -1,4 +1,4 @@
-"""Experiment continuation previews preserve sample identities without scheduling."""
+"""Synthetic experiment continuation preserves identities and prevents duplicate work."""
 import copy
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import hashlib
@@ -17,8 +17,10 @@ from dsh_eval.batch_lock import batch_lock
 from dsh_eval.evaluate import evaluate
 from dsh_eval.experiment import run_experiment
 from dsh_eval.experiment_resume import plan_experiment_resume
+from dsh_eval import experiment_resume
 from dsh_eval.formats import load_json
 from dsh_eval.report import generate_report
+from dsh_eval.resume import CLAIM_NAME, plan_batch_resume, resume_batch
 from dsh_eval.runner import ROOT, run_case
 
 
@@ -102,7 +104,7 @@ class ExperimentResumeTests(unittest.TestCase):
             plan = plan_experiment_resume(self.source, max_samples=6)
         self.assertTrue(plan["eligibleForResume"])
         self.assertFalse(plan["modelCalled"])
-        self.assertFalse(plan["executionSupported"])
+        self.assertTrue(plan["executionSupported"])
         self.assertEqual(plan["counts"], {"original": 8, "reused": 2, "newSamples": 6, "blocked": 0})
         self.assertEqual(plan["planVerification"]["status"], "verified")
         self.assertEqual([(row["caseEntryId"], row["configurationId"], row["repeatIndex"]) for row in plan["samples"]],
@@ -135,6 +137,24 @@ class ExperimentResumeTests(unittest.TestCase):
         self.save(self.path, {"invalid": True})
         self.save(self.directory / "second.json", {"invalid": True})
         self.assertTrue(plan_experiment_resume(self.source)["eligibleForResume"])
+
+    def test_local_plugin_upgrade_still_blocks_continuation_preflight_and_execution(self):
+        self.crash()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        before = self.snapshot()
+
+        def upgraded_package(path):
+            data = load_json(path)
+            return {**data, "version": data["version"] + "-upgrade-test"} if path == ROOT / "package.json" else data
+
+        with patch("dsh_eval.runner.load_json", side_effect=upgraded_package):
+            with self.assertRaisesRegex(ValueError, "different recorder version"):
+                plan_experiment_resume(self.source, max_samples=6)
+            with self.assertRaisesRegex(ValueError, "different recorder version"):
+                self.execute(plan)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.called, [])
+        self.assertFalse((self.directory / "resumes").exists())
 
     def test_reordered_duplicate_or_wrong_repeat_sample_metadata_rejects(self):
         self.crash()
@@ -191,6 +211,8 @@ class ExperimentResumeTests(unittest.TestCase):
         before = self.snapshot()
         with batch_lock(self.batch_source.parent), self.assertRaisesRegex(ValueError, "active or locked"):
             plan_experiment_resume(self.source)
+        with batch_lock(self.batch_source.parent), self.assertRaisesRegex(ValueError, "active or locked"):
+            experiment_resume.resume_experiment(self.source, self.directory / "resumes", expected_plan_sha256="0" * 64)
         self.assertEqual(self.snapshot(), before)
 
     def test_bad_recording_is_classified_as_blocked_without_relabeling_source(self):
@@ -223,6 +245,9 @@ class ExperimentResumeTests(unittest.TestCase):
         plan = plan_experiment_resume(self.source)
         self.assertFalse(plan["eligibleForResume"])
         self.assertEqual(plan["counts"], {"original": 8, "reused": 8, "newSamples": 0, "blocked": 0})
+        with self.assertRaisesRegex(ValueError, "No unstarted"):
+            experiment_resume.resume_experiment(self.source, self.directory / "resumes",
+                expected_plan_sha256=plan["planFingerprint"]["sha256"])
         report = generate_report(self.source, self.directory / "reports")
         self.assertEqual(report["planVerification"]["status"], "verified")
         self.assertEqual(self.snapshot(), before)
@@ -241,21 +266,216 @@ class ExperimentResumeTests(unittest.TestCase):
         self.assertEqual(plan["samples"][0]["outcome"], "failed")
         self.assertEqual(plan["counts"]["newSamples"], 7)
         self.assertTrue(any("failure policy" in reason for reason in plan["reasons"]))
+        self.called.clear()
+        with self.assertRaisesRegex(ValueError, "failure policy"):
+            experiment_resume.resume_experiment(self.source, self.directory / "resumes",
+                expected_plan_sha256=plan["planFingerprint"]["sha256"])
+        self.assertEqual(self.called, [])
+        self.assertFalse((self.directory / "resumes").exists())
 
-    def test_real_cli_preview_and_forbidden_execution_do_not_schedule(self):
+    def test_real_cli_preview_and_invalid_execution_controls_do_not_schedule(self):
         self.crash()
         before = self.snapshot()
         process = subprocess.run([sys.executable, "-m", "dsh_eval", "--resume-experiment", str(self.source),
                                   "--plan", "--max-samples", "6"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         self.assertFalse(json.loads(process.stdout)["modelCalled"])
-        for arguments in (["--resume-experiment", str(self.source), "--run"],
+        for arguments in (["--resume-experiment", str(self.source), "--plan", "--expected-plan-sha256", "0" * 64],
                           ["--resume-experiment", str(self.source)],
                           ["--resume-experiment", str(self.source), "--plan", "--runs-root", "forbidden"]):
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 main(arguments)
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.called, [])
+
+    def execute(self, plan=None, **kwargs):
+        plan = plan or plan_experiment_resume(self.source, max_samples=6)
+        return experiment_resume.resume_experiment(self.source, self.directory / "resumes", max_samples=6,
+            expected_plan_sha256=plan["planFingerprint"]["sha256"].upper(), **kwargs)
+
+    def test_execution_reuses_two_and_runs_six_with_shared_lock_and_original_evidence(self):
+        self.crash()
+        before = self.snapshot()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        original_runs = {row["caseRunId"] for row in plan["samples"][:2]}
+
+        def locked_case(*args, **kwargs):
+            with self.assertRaisesRegex(ValueError, "active or locked"):
+                plan_batch_resume(self.batch_source)
+            return self.synthetic_case(*args, **kwargs)
+
+        with patch("dsh_eval.batch.run_case", side_effect=locked_case):
+            result = self.execute(plan)
+        self.assertEqual((result["status"], result["outcome"]), ("completed", "passed"))
+        self.assertEqual(result["experimentResumeResultFormatVersion"], 1)
+        self.assertEqual(result["samplePlan"], plan["samples"])
+        self.assertEqual(result["counts"], plan["counts"])
+        self.assertEqual(result["newlyExecutedSummary"]["planned"], 6)
+        self.assertEqual(result["newlyExecutedSummary"]["sourceCounts"], {"synthetic": 6})
+        self.assertEqual(len(self.called), 6)
+        self.assertEqual(len(set(self.called)), 6)
+        self.assertTrue(original_runs.isdisjoint(self.called))
+        directory = Path(result["resumeDirectory"])
+        child_path = directory / result["batchResumeResultPath"]
+        child = load_json(child_path)
+        batch = load_json(child_path.parent / child["batchResultPath"])
+        self.assertEqual([row["entryId"] for row in batch["entries"]],
+                         [row["sampleId"] for row in plan["samples"] if row["disposition"] == "pending"])
+        self.assertEqual(child["combinedSummary"]["planned"], 8)
+        self.assertEqual(child["combinedSummary"]["sourceCounts"], {"synthetic": 8})
+        self.assertEqual(load_json(directory / "experiment-resume-result.json"), result)
+        self.assertEqual(load_json(directory / "resume-plan.json"), plan)
+        after = self.snapshot()
+        self.assertTrue(all(after[name] == digest for name, digest in before.items()))
+        claim_path = self.batch_source.parent / CLAIM_NAME
+        self.assertEqual(set(after) - set(before), {claim_path.relative_to(self.source.parent).as_posix()})
+        self.assertEqual(Path(load_json(claim_path)["resumeDirectory"]), child_path.parent)
+        with self.assertRaisesRegex(ValueError, "claim"):
+            resume_batch(self.batch_source, self.directory / "duplicate", expected_plan_sha256=child["planFingerprint"]["sha256"])
+        with self.assertRaisesRegex(ValueError, "claim"):
+            self.execute(plan)
+
+    def test_invalid_digest_cap_or_changed_source_rejects_before_identity_or_output(self):
+        self.crash()
+        before = self.snapshot()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        with patch("dsh_eval.experiment_resume.uuid4", side_effect=AssertionError("must reject before allocating")):
+            batch_digest = plan["batchPlanFingerprint"]["sha256"]
+            for digest in (None, "invalid", "0" * 64, batch_digest):
+                with self.subTest(digest=digest), self.assertRaises(ValueError):
+                    experiment_resume.resume_experiment(self.source, self.directory / "resumes", max_samples=6,
+                                                        expected_plan_sha256=digest)
+            for cap in (True, 0, -1, 1.5):
+                with self.subTest(cap=cap), self.assertRaises(ValueError):
+                    experiment_resume.resume_experiment(self.source, self.directory / "resumes", max_samples=cap,
+                                                        expected_plan_sha256=plan["planFingerprint"]["sha256"])
+            with self.assertRaisesRegex(ValueError, "fingerprint mismatch"):
+                experiment_resume.resume_experiment(self.source, self.directory / "resumes",
+                    expected_plan_sha256=plan["planFingerprint"]["sha256"])
+            with self.assertRaisesRegex(ValueError, "exceeds"):
+                experiment_resume.resume_experiment(self.source, self.directory / "resumes", max_samples=5,
+                    expected_plan_sha256=plan["planFingerprint"]["sha256"])
+            # A byte-only change is semantically valid but invalidates the approved preview.
+            self.source.write_bytes(self.source.read_bytes() + b"\n")
+            changed = self.snapshot()
+            with self.assertRaisesRegex(ValueError, "fingerprint mismatch"):
+                self.execute(plan)
+        self.assertEqual(self.snapshot(), changed)
+        self.assertFalse((self.directory / "resumes").exists())
+        self.assertEqual(self.called, [])
+        self.assertEqual(set(changed), set(before))
+
+    def test_unknown_execution_blocks_execution_before_claim(self):
+        self.crash("unknown")
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, "cannot resume"):
+            self.execute(plan)
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse((self.directory / "resumes").exists())
+        self.assertEqual(self.called, [])
+
+    def test_bad_recording_cannot_be_executed_using_an_old_preview(self):
+        self.crash()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        row = load_json(self.batch_source)["entries"][0]
+        trace = next((self.batch_source.parent / row["runDir"]).glob("*.jsonl"))
+        trace.write_bytes(trace.read_bytes()[:-3])
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, "cannot resume"):
+            self.execute(plan)
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse((self.directory / "resumes").exists())
+
+    def test_batch_entry_point_claim_also_blocks_experiment_entry_point(self):
+        self.crash()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        batch_plan = plan_batch_resume(self.batch_source, max_samples=6)
+        resume_batch(self.batch_source, self.directory / "batch-resumes", max_samples=6,
+                     expected_plan_sha256=batch_plan["planFingerprint"]["sha256"])
+        self.called.clear()
+        with self.assertRaisesRegex(ValueError, "claim"):
+            self.execute(plan)
+        self.assertEqual(self.called, [])
+        self.assertFalse((self.directory / "resumes").exists())
+
+    def test_crash_after_claim_preserves_explicit_child_path_and_blocks_retry(self):
+        self.crash()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        with patch("dsh_eval.resume.run_batch", side_effect=SimulatedCrash), self.assertRaises(SimulatedCrash):
+            self.execute(plan)
+        directory = next((self.directory / "resumes").iterdir())
+        result = load_json(directory / "experiment-resume-result.json")
+        child_path = directory / result["batchResumeResultPath"]
+        self.assertEqual(result["status"], "running")
+        self.assertIsNone(result["outcome"])
+        self.assertEqual(result["samplePlan"], plan["samples"])
+        self.assertEqual(load_json(child_path)["status"], "running")
+        self.assertEqual(Path(load_json(self.batch_source.parent / CLAIM_NAME)["resumeDirectory"]), child_path.parent)
+        with self.assertRaisesRegex(ValueError, "claim"):
+            self.execute(plan)
+        self.assertEqual(self.called, [])
+
+    def test_recovered_evaluation_is_not_executed_again(self):
+        self.crash("saved-evaluation")
+        result = self.execute()
+        self.assertEqual(result["outcome"], "passed")
+        self.assertTrue(result["samplePlan"][1]["recoveredCheckpoint"])
+        self.assertEqual(len(self.called), 6)
+
+    def test_reused_failure_is_preserved_when_all_new_tasks_pass(self):
+        self.manifest["repetitions"] = 1
+        self.save(self.path, self.manifest)
+        case_path = self.directory / "first.json"
+        case = load_json(case_path)
+        next(item for item in case["assertions"] if item["type"] == "final_text")["equals"] = "wrong"
+        self.save(case_path, case)
+        self.crash()
+        result = self.execute()
+        self.assertEqual(result["outcome"], "failed")
+        self.assertEqual(result["newlyExecutedSummary"]["outcomes"], {"passed": 2, "failed": 0, "unevaluable": 0})
+        self.assertEqual([row["outcome"] for row in result["samplePlan"][:2]], ["failed", "failed"])
+        self.assertEqual(len(self.called), 2)
+
+    def test_new_runner_error_stops_remaining_tasks_without_claim_release(self):
+        self.crash()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        with patch("dsh_eval.batch.run_case", side_effect=ValueError("synthetic runner error")):
+            result = self.execute(plan)
+        self.assertEqual((result["status"], result["outcome"]), ("error", "unevaluable"))
+        summary = result["newlyExecutedSummary"]
+        self.assertEqual((summary["attempted"], summary["errors"], summary["skipped"]), (1, 1, 5))
+        self.assertEqual(summary["sourceCounts"], {"unknown": 6})
+        with self.assertRaisesRegex(ValueError, "claim"):
+            self.execute(plan)
+
+    def test_cli_execution_returns_versioned_result(self):
+        self.crash()
+        plan = plan_experiment_resume(self.source, max_samples=6)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main(["--resume-experiment", str(self.source), "--run", "--max-samples", "6",
+                         "--expected-plan-sha256", plan["planFingerprint"]["sha256"],
+                         "--runs-root", str(self.directory / "resumes")])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())["experimentResumeResultFormatVersion"], 1)
+        self.assertEqual(len(self.called), 6)
+
+    def test_real_cli_execution_with_wrong_digest_cannot_claim_or_schedule(self):
+        self.crash()
+        before = self.snapshot()
+        process = subprocess.run([sys.executable, "-m", "dsh_eval", "--resume-experiment", str(self.source),
+                                  "--run", "--expected-plan-sha256", "0" * 64,
+                                  "--runs-root", str(self.directory / "resumes")],
+                                 cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(process.returncode, 2, process.stdout + process.stderr)
+        result = json.loads(process.stdout)
+        self.assertEqual(result["experimentResumeResultFormatVersion"], 1)
+        self.assertEqual(result["outcome"], "unevaluable")
+        self.assertIn("fingerprint mismatch", result["error"])
+        self.assertEqual(process.stderr, "")
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse((self.directory / "resumes").exists())
 
     def test_blocked_cli_preview_has_versioned_json_and_exit_two(self):
         self.crash("unknown")
