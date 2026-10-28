@@ -176,3 +176,24 @@ test("version one report retains its original layout without continuation panels
   assert.ok(section(get, "原实验保存的汇总指标"));
   assert.doesNotMatch(section(get, "逐次结果").textContent, /执行归属/);
 });
+
+test("version three lists all historical batches and the latest batch without hiding the continuation chain", async () => {
+  const artifact = resumedReport(), requests = [];
+  artifact.data.comparisonReportFormatVersion = 3;
+  artifact.data.batchIds = ["original", "middle", "latest"];
+  artifact.data.resumeChain = [{ resumeId: "first-resume" }, { resumeId: "second-resume" }];
+  artifact.links.push({ label: "续跑 1 / resultPath", id: "runs:chain/first.json" });
+  const get = await openReport(artifact, requests);
+  const binding = section(get, "续跑来源与保存的关联复核");
+  assert.match(binding.textContent, /原批次\s+original/);
+  assert.match(binding.textContent, /历史续跑\s+middle/);
+  assert.match(binding.textContent, /本轮新增\s+latest/);
+  assert.match(section(get, "连续续跑链").textContent, /first-resume/);
+  assert.match(section(get, "连续续跑链").textContent, /second-resume/);
+  assert.match(section(get, "连续续跑链").textContent, /缺失或超出浏览目录/);
+  assert.ok(section(get, "历史与新增用量（分别统计）"));
+  assert.match(section(get, "逐次结果").textContent, /执行归属/);
+  findButton(get("detail"), "查看续跑结果").trigger("click");
+  await new Promise(setImmediate);
+  assert.ok(requests.some((path) => path.includes("id=runs%3Achain%2Ffirst.json")));
+});

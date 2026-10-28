@@ -67,6 +67,7 @@ inspect --run <目录>
 | `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
 | `dsh_eval/batch.py` | 冻结输入与顺序调度；独立调用管理批次锁，实验内部通过 _lock_stack 保留同一锁至实验收尾 |
 | `dsh_eval/experiment_resume.py` | 显式批次绑定及实验 / 批次同锁复核；比较实验摘要后调用共用续跑核心，保存独立结果和原样本映射 |
+| `dsh_eval/experiment_resume_chain.py` | 显式祖先链校验、顺序持有各批次锁、全矩阵预检 / 执行及版本 3 报告输入；只为最近批次的未开始项领取 |
 | `dsh_eval/resume.py` | 批次预检、同源排他领取和新批次执行核心；共用原 runner / inspect / evaluate，不重试未知项 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 普通实验版本 1 / 实验续跑版本 2 报告，重新 evaluate 并按路由 / 来源 / 轮次配对；续跑分开历史与新增用量 |
@@ -79,6 +80,10 @@ inspect --run <目录>
 | `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
 ## 输出与数据格式
+
+[059](changes/2026-10-28-059-continuation-chains.md) 新增 experimentResumePlanFormatVersion=2 / experimentResumeResultFormatVersion=2 和 comparisonReportFormatVersion=3，原实验及首轮续跑格式保持兼容。连续计划保存所有批次预检、祖先归档 SHA-256、原矩阵分类和当前来源；执行在祖先锁内重算摘要，使用原批次续跑核心领取最新源并运行剩余项。批次续跑新增启动时的 batchBinding，锁保持到外层结果写入。链按 sourceResumeResult 迭代加载，最多 32 个结果，拒绝循环 / 重复身份；没有目录扫描、旧领取重置或未知任务重试。
+
+离线报告共用静态归档加载和原 _recheck / 配对逻辑，版本 3 将每个原样本对应到其实际批次 / 证据根；祖先可保留 running，选定最新结果仍须终态。batchIds / batchResultPaths 和 resumeChain 保留所有来源，历史 / 本轮新增用量分开。浏览继续只读，新增链接沿原根目录规则解析，不调用 inspect 或执行器。
 
 M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=...` 读取一个已保存 JSON / Markdown 或一页 JSONL。目录索引带 `browserFormatVersion: 1`，只是读取响应，没有新持久化结果格式；不会写入文件、刷新摘要或改变评测状态。浏览 API 不调用原 evaluate / inspect / runner，旧结果可过时，与 M4.2 的主动离线复验是两个入口。
 

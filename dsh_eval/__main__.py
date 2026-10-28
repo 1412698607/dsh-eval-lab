@@ -13,7 +13,7 @@ def main(argv=None):
     selection.add_argument("--batch", help="Version 1 sequential batch manifest")
     selection.add_argument("--experiment", help="Version 1 repeated-trial experiment manifest")
     selection.add_argument("--resume-batch", help="Preview or continue provably unstarted entries from a coordinated batch result")
-    selection.add_argument("--resume-experiment", help="Preview or continue provably unstarted samples from a bound experiment result")
+    selection.add_argument("--resume-experiment", help="Preview or continue unstarted samples from a bound experiment or explicit continuation result")
     selection.add_argument("--report", help="Recheck a terminal experiment-result.json or experiment-resume-result.json without model calls")
     selection.add_argument("--browse", action="store_true", help="Serve a read-only local viewer; never executes tasks")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")

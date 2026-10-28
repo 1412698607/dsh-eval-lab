@@ -1,5 +1,6 @@
 """Verify a stopped scheduler and execute only its provably unstarted cases."""
 from copy import deepcopy
+from contextlib import ExitStack
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -169,7 +170,7 @@ def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_str
         return _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream)
 
 
-def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None):
+def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None, _lock_stack=None):
     """Execute a verified plan while the caller retains the source batch lock."""
     resume_id = resume_id or str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "resumes").resolve() / resume_id
@@ -187,12 +188,21 @@ def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_a
         save_json(directory / path, cases[entry_id])
         remaining["cases"].append({"entryId": entry_id, "casePath": path})
     save_json(directory / "remaining.batch.json", remaining)
+    batch_id = str(uuid4())
     report = {"batchResumeResultFormatVersion": 1, "resumeId": resume_id, "resumeDirectory": str(directory),
               "sourceBatchResult": str(source), "sourceBatchId": saved["batchId"],
               "planFingerprint": plan["planFingerprint"], "startedAt": _now(), "finishedAt": None,
-              "status": "running", "outcome": None, "reusedEntries": plan["reusedEntries"], "batchResultPath": None}
+              "status": "running", "outcome": None, "reusedEntries": plan["reusedEntries"], "batchResultPath": None,
+              "batchBinding": {"batchId": batch_id, "resultPath": f"batches/{batch_id}/batch-result.json"}}
     save_json(directory / "resume-result.json", report)
-    result = run_batch(directory / "remaining.batch.json", directory / "batches", modules_dir, cancel_after_stream)
+    with ExitStack() as local_locks:
+        lock_owner = _lock_stack if _lock_stack is not None else local_locks
+        result = run_batch(directory / "remaining.batch.json", directory / "batches", modules_dir, cancel_after_stream,
+                           batch_id=batch_id, _lock_stack=lock_owner)
+        return _finish_resume(directory, report, result, plan, saved)
+
+
+def _finish_resume(directory, report, result, plan, saved):
     rows = {row["entryId"]: row for row in [*plan["reusedEntries"], *result["entries"]]}
     combined = [rows[row["entryId"]] for row in saved["entries"]]
     outcomes = {row["outcome"] for row in combined}

@@ -1,5 +1,6 @@
 """Verify an experiment and continue only its provably unstarted samples."""
 import hashlib
+from contextlib import ExitStack
 from pathlib import Path
 import re
 from uuid import UUID, uuid4
@@ -127,6 +128,9 @@ def _load_plan(source, batch_source, max_samples):
 def plan_experiment_resume(result_path, *, max_samples=None):
     require(max_samples is None or type(max_samples) is int and max_samples > 0, "max_samples must be a positive integer")
     source = Path(result_path).resolve()
+    if "experimentResumeResultFormatVersion" in load_json(source):
+        from .experiment_resume_chain import plan_chain
+        return plan_chain(source, max_samples=max_samples)
     batch_source = _binding(load_json(source), source.parent)
     # An uncreated batch cannot be assumed unstarted; never create a lock here.
     with batch_lock(batch_source.parent):
@@ -139,8 +143,13 @@ def resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_afte
             "Resume requires the expected plan SHA-256 from a fresh preview")
     require(max_samples is None or type(max_samples) is int and max_samples > 0, "max_samples must be a positive integer")
     source = Path(result_path).resolve()
+    if "experimentResumeResultFormatVersion" in load_json(source):
+        from .experiment_resume_chain import execute_chain
+        return execute_chain(source, runs_root, modules_dir, cancel_after_stream, max_samples=max_samples,
+                             expected_plan_sha256=expected_plan_sha256)
     batch_source = _binding(load_json(source), source.parent)
-    with batch_lock(batch_source.parent):
+    with ExitStack() as locks:
+        locks.enter_context(batch_lock(batch_source.parent))
         plan, batch_plan, saved_batch, cases = _load_plan(source, batch_source, max_samples)
         require(plan["eligibleForResume"], "Experiment cannot resume: " + "; ".join(plan["reasons"] +
                 [row["reason"] for row in plan["samples"] if row["disposition"] == "blocked"]))
@@ -160,7 +169,7 @@ def resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_afte
                   "newlyExecutedSummary": None}
         save_json(directory / "experiment-resume-result.json", report)
         result = _execute_resume(batch_source, batch_plan, saved_batch, cases, directory / "continuations",
-                                 modules_dir, cancel_after_stream, resume_id=batch_resume_id)
+                                 modules_dir, cancel_after_stream, resume_id=batch_resume_id, _lock_stack=locks)
         report.update(finishedAt=_now(), status=result["status"], outcome=result["outcome"],
                       newlyExecutedSummary=result["newlyExecutedSummary"])
         temporary = directory / f".experiment-resume-result-{uuid4()}.tmp"

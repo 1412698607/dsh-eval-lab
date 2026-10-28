@@ -11,9 +11,12 @@ from .report import _path
 from .resume import CLAIM_NAME, _digest
 
 
-def _terminal(saved, version):
-    require(isinstance(saved, dict) and type(saved.get(version)) is int and saved[version] == 1,
+def _terminal(saved, version, *, allow_unfinished=False, expected_version=1):
+    require(isinstance(saved, dict) and type(saved.get(version)) is int and saved[version] == expected_version,
             "Unsupported continuation result format")
+    if allow_unfinished and saved.get("status") == "running":
+        require(saved.get("finishedAt") is None and saved.get("outcome") is None, "Running continuation contains terminal facts")
+        return
     require(saved.get("status") in ("completed", "stopped", "interrupted", "error") and nonempty(saved.get("finishedAt")),
             "Report requires terminal continuation results")
 
@@ -35,9 +38,16 @@ def _check_files(directory, hashes, required):
 
 
 def load_resume_report(source):
+    if load_json(source).get("experimentResumeResultFormatVersion") == 2:
+        from .experiment_resume_chain import load_chain_inputs
+        return load_chain_inputs(source)
+    return load_resume_inputs(source)
+
+
+def load_resume_inputs(source, *, allow_unfinished=False):
     directory = source.parent
     resumed = load_json(source)
-    _terminal(resumed, "experimentResumeResultFormatVersion")
+    _terminal(resumed, "experimentResumeResultFormatVersion", allow_unfinished=allow_unfinished)
     _identity(resumed, directory)
     plan = load_json(directory / "resume-plan.json")
     require(isinstance(plan, dict) and type(plan.get("experimentResumePlanFormatVersion")) is int and plan["experimentResumePlanFormatVersion"] == 1
@@ -61,11 +71,11 @@ def load_resume_report(source):
 
     child_path = _path(directory, resumed["batchResumeResultPath"])
     child = load_json(child_path)
-    _terminal(child, "batchResumeResultFormatVersion")
+    _terminal(child, "batchResumeResultFormatVersion", allow_unfinished=allow_unfinished)
     _identity(child, child_path.parent)
     require(resumed["batchResumeResultPath"] == f"continuations/{child['resumeId']}/resume-result.json",
             "Unexpected batch continuation result path")
-    for key in ("sourceBatchResult", "sourceBatchId", "status", "outcome", "newlyExecutedSummary"):
+    for key in ("sourceBatchResult", "sourceBatchId", *(("status", "outcome", "newlyExecutedSummary") if resumed["status"] != "running" else ())):
         require(_digest(resumed[key]) == _digest(child[key]), f"Experiment/batch continuation {key} mismatch")
     claim = load_json(batch_path.parent / CLAIM_NAME)
     require(isinstance(claim, dict) and type(claim.get("resumeClaimFormatVersion")) is int and claim["resumeClaimFormatVersion"] == 1
@@ -92,14 +102,24 @@ def load_resume_report(source):
                  {batch_path, _path(batch_path.parent, batch["manifestPath"]),
                   *(_path(batch_path.parent, row["casePath"]) for row in batch["entries"])})
 
-    new_path = _path(child_path.parent, child["batchResultPath"])
+    if child.get("batchBinding") is not None:
+        binding = child["batchBinding"]
+        require(isinstance(binding, dict) and set(binding) == {"batchId", "resultPath"}
+                and isinstance(binding["batchId"], str) and str(UUID(binding["batchId"])) == binding["batchId"]
+                and binding["resultPath"] == f"batches/{binding['batchId']}/batch-result.json", "Invalid continuation batch binding")
+        require(child.get("batchResultPath") == binding["resultPath"] or child["status"] == "running" and child.get("batchResultPath") is None,
+                "Continuation observed/reserved batch mismatch")
+        new_path = _path(child_path.parent, binding["resultPath"])
+    else:
+        require(child["status"] != "running", "Unfinished legacy continuation lacks an explicit batch binding")
+        new_path = _path(child_path.parent, child["batchResultPath"])
     new_batch = load_json(new_path)
-    _terminal(new_batch, "batchResultFormatVersion")
+    _terminal(new_batch, "batchResultFormatVersion", allow_unfinished=allow_unfinished)
     new_id = new_batch["batchId"]
     require(isinstance(new_id, str) and str(UUID(new_id)) == new_id and new_id != batch["batchId"]
-            and child["batchResultPath"] == f"batches/{new_id}/batch-result.json"
+            and new_path == _path(child_path.parent, f"batches/{new_id}/batch-result.json")
             and Path(new_batch["batchDirectory"]).resolve() == new_path.parent, "New batch identity/path mismatch")
-    require(new_batch["status"] == child["status"] and new_batch["failurePolicy"] == manifest["failurePolicy"]
+    require((child["status"] == "running" or new_batch["status"] == child["status"]) and new_batch["failurePolicy"] == manifest["failurePolicy"]
             and new_batch["mode"] == "sequential" and new_batch["sourceManifest"] == str(child_path.parent / "remaining.batch.json"),
             "New batch source or scheduling mismatch")
     remaining = validate_batch(load_json(child_path.parent / "remaining.batch.json"))
@@ -154,20 +174,20 @@ def load_resume_report(source):
             pending_index += 1
             base, selected_batch, origin = new_path.parent, new_batch, "new"
         require(row["caseId"] == identity["caseId"] and _digest(row["requestedConfiguration"]) == _digest(identity["requestedConfiguration"])
-                and row["status"] in ("finished", "error", "skipped"), "Continuation sample metadata mismatch")
+                and row["status"] in (("finished", "error", "skipped", "pending", "running") if allow_unfinished else ("finished", "error", "skipped")), "Continuation sample metadata mismatch")
         for key, values in seen.items():
             value = row[key]
             require(value is None or nonempty(value) and value not in values, f"Duplicate or invalid continuation {key}")
             if value is not None:
                 values.add(value)
-        if row["status"] == "skipped":
+        if row["status"] in ("skipped", "pending"):
             require(all(row.get(key) is None for key in ("caseRunId", "runId", "sessionId", "source", "configuration", "outcome", "metrics",
                     "executionStatus", "recordingOutcome", "assertionOutcome", "caseDirectory", "evidencePath", "evaluationPath", "runtimeReport", "runDir")),
                     "Skipped continuation sample contains execution facts")
         else:
             require(nonempty(row["caseRunId"]) and row["caseDirectory"] == f"cases/{row['caseRunId']}", "Invalid case execution directory")
             for key, name in (("evidencePath", "evidence.json"), ("evaluationPath", "evaluation.json"), ("runtimeReport", "runtime.json")):
-                require(row.get(key) is None and row["status"] == "error" or row.get(key) == f"{row['caseDirectory']}/{name}",
+                require(row.get(key) is None and row["status"] in ("error", "running") or row.get(key) == f"{row['caseDirectory']}/{name}",
                         "Unexpected case artifact path")
         for key in ("casePath", "caseDirectory", "evidencePath", "evaluationPath", "runtimeReport", "runDir"):
             if row.get(key) is not None:

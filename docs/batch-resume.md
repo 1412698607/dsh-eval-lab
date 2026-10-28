@@ -50,6 +50,8 @@ API 为 `plan_batch_resume(result_path, *, max_samples=None)` 和 `resume_batch(
 
 ## 输出与复核
 
+[059](changes/2026-10-28-059-continuation-chains.md) 后，新批次续跑在启动前预留新批次 UUID 并保存 batchBinding，实际结果必须位于 batches/<reservedBatchId>/batch-result.json。预留不表示任务已执行，batchResultPath 仍在收尾后填写。新批次锁持有至批次续跑最终写入；由实验 / 连续续跑调用时延长至外层最终 checkpoint。实验层可显式选择已有续跑结果继续未开始项，纯批次报告入口范围保持不变。
+
 ```text
 runs/resumes/<resumeId>/
   resume-plan.json             本次重新复核的计划与源文件摘要

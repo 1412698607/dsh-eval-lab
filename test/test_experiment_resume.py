@@ -32,7 +32,7 @@ class ExperimentResumeTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="dsh-experiment-resume-")
         self.addCleanup(temporary.cleanup)
-        self.directory = Path(temporary.name)
+        self.directory = Path(temporary.name).resolve()
         self.manifest = {"experimentFormatVersion": 1, "experimentName": "resume matrix", "repetitions": 2,
                          "failurePolicy": "continue", "cases": [], "configurations": []}
         case = load_json(ROOT / "fixtures/evaluation/retry-read.case.json")

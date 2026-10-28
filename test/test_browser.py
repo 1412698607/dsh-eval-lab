@@ -150,15 +150,29 @@ class BrowserTests(unittest.TestCase):
         document = self.browser.document("runs:report/report.json")
         self.assertIsNone(next(link["id"] for link in document["links"] if link["label"] == "sourceResumeResult"))
 
-    def test_report_version_one_and_two_are_supported_but_future_or_coerced_versions_are_not(self):
+    def test_report_versions_one_to_three_are_supported_but_future_or_coerced_versions_are_not(self):
         path = self.runs / "report/report.json"
-        for version in (1, 2, 3, True, 2.0):
+        for version in (1, 2, 3, 4, True, 2.0):
             self.write(path, {"comparisonReportFormatVersion": version})
-            if type(version) is int and version in (1, 2):
+            if type(version) is int and version in (1, 2, 3):
                 self.assertEqual(self.browser.document("runs:report/report.json")["kind"], "report")
             else:
                 with self.subTest(version=version), self.assertRaises(ValueError):
                     self.browser.document("runs:report/report.json")
+
+    def test_version_three_links_include_every_batch_and_continuation_with_same_boundaries(self):
+        batch = self.write(self.runs / "batch/batch-result.json", {"batchResultFormatVersion": 1})
+        resumed = self.write(self.runs / "chain/experiment-resume-result.json", {"experimentResumeResultFormatVersion": 2})
+        data = {"comparisonReportFormatVersion": 3, "batchResultPaths": [str(batch)],
+                "resumeChain": [{"resultPath": str(resumed)}, {"resultPath": "//chain.invalid/private/result.json"}]}
+        self.write(self.runs / "report/report.json", data)
+        before = self.digest()
+        links = {row["label"]: row["id"] for row in self.browser.document("runs:report/report.json")["links"]}
+        self.assertEqual(links["批次 1 / batchResultPath"], "runs:batch/batch-result.json")
+        self.assertEqual(links["续跑 1 / resultPath"], "runs:chain/experiment-resume-result.json")
+        self.assertIsNone(links["续跑 2 / resultPath"])
+        self.assertEqual(self.browser.document(links["续跑 1 / resultPath"])["kind"], "experiment_resume")
+        self.assertEqual(self.digest(), before)
 
     def test_http_serves_saved_version_two_report_without_execution_or_writes(self):
         saved = {"comparisonReportFormatVersion": 2, "samples": [{"source": None, "executionOrigin": "new"}],

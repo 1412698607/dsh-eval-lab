@@ -287,6 +287,11 @@ def render_markdown(report):
     for config in report["configurations"]:
         lines.append(f"- {_cell(config['configurationId'])}：{_cell(json.dumps(config['configRef'], ensure_ascii=False))}")
     if report.get("resumeVerification"):
+        if report.get("resumeChain"):
+            lines.extend(["", "## 连续续跑来源", "", "| 轮次 | 续跑 ID | 保存结果 |", "| --- | --- | --- |"])
+            for index, item in enumerate(report["resumeChain"], 1):
+                lines.append(f"| {index} | {_cell(item['resumeId'])} | {_cell(item['resultPath'])} |")
+            lines.extend(["", "来源批次（原批次到本轮新增）：" + " / ".join(report["batchIds"]), ""])
         lines.extend(["", "## 历史复用与本次新增", "",
                       f"续跑关联复核：{report['resumeVerification']['status']}；逐样本证据仍分别重新检查。", "",
                       "历史复用的用量属于原执行；本次新增只统计新批次。两者合计描述原计划的样本，不能全部当作本次消耗。", "",
@@ -405,7 +410,9 @@ def generate_report(experiment_result_path, reports_root=None):
         report.update(metadata)
         report["reusedSummary"] = _summary([row for row in rows if row["executionOrigin"] == "reused"])
         report["newlyExecutedSummary"] = _summary([row for row in rows if row["executionOrigin"] == "new"])
-        report["limitations"].append("跨批次报告只整合一个显式实验续跑及其原批次 / 新批次；不合并任意实验或自动跟随再次续跑。")
+        report["limitations"].append("跨批次报告只读取所选续跑结果及其显式祖先链；不合并任意实验或自动查找后续续跑。"
+                                     if metadata.get("comparisonReportFormatVersion") == 3 else
+                                     "跨批次报告只整合一个显式实验续跑及其原批次 / 新批次；不合并任意实验或自动跟随再次续跑。")
     # All input checks and fresh evaluations finish before a new output directory is created.
     (directory / "evaluations").mkdir(parents=True, exist_ok=False)
     for name, fresh in evaluations:

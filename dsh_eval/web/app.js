@@ -137,7 +137,7 @@ function metricsTable(metrics, aggregate = false) {
 function sampleTable(data, links) {
   const rows = data.samples || data.entries;
   if (!Array.isArray(rows)) return;
-  const resumed = data.comparisonReportFormatVersion === 2;
+  const resumed = [2, 3].includes(data.comparisonReportFormatVersion);
   const body = rows.map((row, index) => {
     const link = links.find((item) => item.label === `${index + 1} / evaluationPath` && item.id);
     const name = row.sampleId || row.entryId || row.caseRunId;
@@ -167,7 +167,7 @@ function evidence(links) {
   const names = { casePath: "用例快照", evidencePath: "证据清单", evaluationPath: "评测结果", runtimeReport: "执行事实",
     manifestPath: "输入清单", batchResultPath: "批次结果", sourceExperimentResult: "原实验", sourceEvidencePath: "原证据", association: "本次运行",
     sourceResumeResult: "原实验续跑结果", sourceBatchResult: "来源批次", batchResumeResult: "批次续跑结果",
-    batchResumeResultPath: "下游批次续跑结果", resumeVerification: "保存的续跑关联" };
+    batchResumeResultPath: "下游批次续跑结果", resumeVerification: "保存的续跑关联", resultPath: "实验续跑结果" };
   function label(link) {
     return link.label.split(" / ").map((part) => names[part] || (part.endsWith(".jsonl") ? "事件轨迹" : part.endsWith(".status.json")
       ? "录制状态" : part === "run.json" ? "录制信息" : part === "runDir" ? "录制" : part)).join(" / ");
@@ -192,14 +192,23 @@ function renderDocument(documentData) {
     return;
   }
   if (documentData.kind === "markdown") { target.append(panel("报告文本", node("pre", documentData.text))); return; }
-  const resumed = data.comparisonReportFormatVersion === 2;
+  const resumed = [2, 3].includes(data.comparisonReportFormatVersion);
   if (data.summary) target.append(summary(data.summary));
   if (resumed) {
     const batches = Array.isArray(data.batchIds) ? data.batchIds : [];
+    const batchRows = data.comparisonReportFormatVersion === 3
+      ? batches.map((id, index) => [`批次 ${index + 1} · ${index === 0 ? "原批次" : index === batches.length - 1 ? "本轮新增" : "历史续跑"}`, id])
+      : [["原批次 ID", batches[0]], ["新批次 ID", batches[1]]];
     target.append(panel("续跑来源与保存的关联复核", table(["关联", "保存值"], [
-      ["原实验 ID", data.experimentId], ["实验续跑 ID", data.resumeId], ["原批次 ID", batches[0]], ["新批次 ID", batches[1]],
+      ["原实验 ID", data.experimentId], ["实验续跑 ID", data.resumeId], ...batchRows,
       ["原计划复核", display(data.planVerification?.status)], ["续跑关联复核", display(data.resumeVerification?.status)],
     ])));
+    if (data.comparisonReportFormatVersion === 3 && Array.isArray(data.resumeChain)) {
+      target.append(panel("连续续跑链", table(["轮次", "续跑 ID", "保存结果"], data.resumeChain.map((row, index) => {
+        const link = links.find((item) => item.label === `续跑 ${index + 1} / resultPath` && item.id);
+        return [index + 1, row.resumeId, link ? button("查看续跑结果", () => openDocument(link.id)) : "缺失或超出浏览目录"];
+      }))));
+    }
     const origins = [["历史复用", data.reusedSummary], ["本次新增", data.newlyExecutedSummary]];
     target.append(panel("历史复用与本次新增", append(node("div"),
       node("p", "历史复用的用量属于原执行；本次新增只统计新批次。以下为保存的报告，浏览不会重新复验。"),

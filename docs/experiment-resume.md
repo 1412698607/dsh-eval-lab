@@ -1,6 +1,6 @@
 # 实验级安全续跑
 
-更新：2026 年 10 月 27 日，Asia/Shanghai。`--resume-experiment --plan` 复核保存的实验 / 批次 / 单项证据，分类复用、未开始或阻断样本；`--run` 校验同一预览摘要后，仅执行明确未开始项。终态实验续跑结果已支持独立的跨批次离线报告，见 [056](changes/2026-10-27-056-experiment-resume-report.md)。 首版预检见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)，执行与无模型验证见 [055](changes/2026-10-27-055-experiment-resume-execution.md)。
+更新：2026 年 10 月 28 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)。
 
 ## 入口与返回值
 
@@ -85,10 +85,33 @@ experiment-resume-result.json 保存源实验 / 批次身份、实验与批次�
 
 newlyExecutedSummary 仅来自新批次，不能把复用的历史调用量计作本次新增。下游批次续跑结果已有 combinedSummary，但它不是配置配对报告。总体 outcome 保留历史 failed，即使全部新任务 passed 也不改为 passed；中断 / 未知或无法评测仍为 unevaluable。原 experiment-result.json 的 samples / summary / groups 和原始证据均不回填或覆盖；源批次只新增领取记录。
 
+## 连续续跑
+
+把最近一轮的 experiment-resume-result.json 显式传给同一个入口。下面的 --run 会执行配置中的模型；无模型验证使用测试中的确定性适配器：
+
+```powershell
+$source = 'runs/experiment-resumes/<previousResumeId>/experiment-resume-result.json'
+$plan = python -m dsh_eval --resume-experiment $source --plan --max-samples 4 | ConvertFrom-Json
+# 核对退出码、eligibleForResume、counts、samples 和 reasons。
+python -m dsh_eval --resume-experiment $source --run --max-samples 4 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root runs/experiment-resumes
+```
+
+原实验输入仍使用预检 / 结果版本 1。已有续跑结果作为输入时，输出 experimentResumePlanFormatVersion=2、experimentResumeResultFormatVersion=2，planFingerprint.version=2；executionSupported=true。参数组合和退出码不变，输入错误仍使用公共版本 1 错误 JSON。必须显式选择最新结果，入口不扫描目录寻找后续轮次，也不清除旧领取记录。
+
+新建批次续跑在启动 run_batch 之前保存 batchBinding={batchId,resultPath}，resultPath 固定为 batches/<reservedBatchId>/batch-result.json；batchResultPath 仍在完成后填写。绑定只表示预留身份，实际批次及其元信息必须已存在。原子结果写入前退出时，外层续跑可保留 running，预检通过显式绑定核对实际新批次，不将预留路径当作已执行事实。旧终态版本 1 续跑可沿已有 batchResultPath 继续；旧 running 续跑没有绑定时拒绝。
+
+预检按显式 sourceResumeResult 反向读取祖先链，拒绝循环、重复身份、未来版本及超过 32 个续跑结果的链。随后按原批次到最近批次的顺序取得全部内核锁，重读并核对链未变；每一批都走原批次预检及 fresh inspect / evaluate。所有历史已完成项重新复核，完整评测已保存的落后 checkpoint 可恢复；只有最近批次中明确未开始的项可以进入新批次。历史损坏或未知项、原 stop 失败策略、清理不明、最近批次已有领取或没有剩余项均阻断。达到 32 个续跑结果后仍可报告，但不再新增一轮。
+
+版本 2 计划保留全矩阵 samples、各样本实际 sourceBatchId / sourceBatchResult、counts、各批次完整 batchPlans，以及 sourceResumeResult / sourceResumeId、原实验身份和当前待续批次。maxSamples 只限制本轮未开始项。sourceFilesSha256 使用规范化绝对路径作键，覆盖祖先续跑结果 / 计划和全部批次元信息 / 冻结输入；各 batchPlans 的指纹另外覆盖其检查的证据。版本 2 摘要同时覆盖来源、上限、归档摘要、批次预检和完整样本分类，执行时在领取及 UUID / 输出之前重算比较。
+
+执行持有全部祖先锁和新批次锁直到批次续跑与外层实验续跑的最终 checkpoint。新一轮只领取最近批次，历史目录不改写；每轮都有新的执行身份。结果保存 sourceResumeResult / sourceResumeId、全矩阵启动 samplePlan、下游显式路径、newlyExecutedSummary 和全矩阵 combinedSummary。即使最后新增项全通过，历史 failed 仍保留。收尾写入失败释放锁并保留 running，后续复核实际证据；不自动补写成功。
+
+终态连续续跑结果可直接交给 --report，生成 comparisonReportFormatVersion=3 的 JSON / Markdown 和只读浏览。报告逐项重新复验原矩阵，reusedSummary 汇总本轮之前所有批次，newlyExecutedSummary 只含本轮新批次；batchIds / batchResultPaths 按时间顺序列出全部批次，resumeChain 列出全部续跑结果。配对仍按原用例 / 配置 / repeatIndex 与来源，不按执行轮次重新编号。
+
 ## 限制与后续
 
-终态 experiment-resume-result.json 可直接交给 --report，生成独立版本 2 报告；它仍是单独的续跑结果，不回填或冒充原终态实验。报告核对来源、领取及两层计划 / 下游批次，再按原矩阵逐项复验，区分历史复用与本次新增。命令和格式见 [配置报告](configuration-reports.md#实验续跑的跨批次报告)。[浏览器](result-browser.md) 已支持版本 2 保存报告及其原 / 新批次关联，不在浏览时重新复验。实验层连续续跑尚未实现。旧实验缺绑定、原目录搬迁、未知任务自动重试和模型会话恢复均未覆盖。原失败停止策略继续生效，不把 skipped 视为额外执行许可。
+终态结果仍独立保存，不回填或冒充原终态实验。报告核对来源、领取、各层计划和下游批次，再按原矩阵逐项复验，区分历史复用与本次新增。命令和格式见 [配置报告](configuration-reports.md#实验续跑的跨批次报告)。[浏览器](result-browser.md) 支持版本 2 / 3 保存报告，不在浏览时重新复验。旧实验缺绑定、原目录搬迁、未知任务自动重试和模型会话恢复均未覆盖。原失败停止策略继续生效，不把 skipped 视为额外执行许可。
 
-输出写入或进程中断可能留下 running 结果。若在领取之前中断，下游预留路径可能尚不存在，预留本身不表示执行；领取之后记录不会自动清除，同一原源不能自动再次启动，需沿保存路径检查下游结果。若新批次再次中断，不提供实验层自动连续续跑；按既有批次协议检查，不通过扫描目录猜测实验来源。内核锁和摘要不提供签名、多文件事务、fsync 或断电恢复保证。
+输出写入或进程中断可能留下 running 结果。若在领取之前中断，下游预留路径可能尚不存在；预留本身不表示执行，没有实际批次元信息就拒绝。领取后同一源不能重复启动，后续须显式选择最近一轮结果重新预检。内核锁和摘要不提供签名、多文件事务、fsync 或断电恢复保证。绝对归档路径要求保持有效；Windows 下宜使用较短的输出根，长路径行为没有全局兼容保证。
 
 当前验证使用合成适配器、真实 Python / Node 子进程、状态化环境和录制检查，没有真实模型续跑验收。真实验收仍需单独确定配置和任务规模。

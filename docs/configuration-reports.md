@@ -1,6 +1,6 @@
 # M4.2 离线配置比较报告
 
-更新：2026 年 10 月 27 日，Asia/Shanghai。普通实验保持 `comparisonReportFormatVersion=1`；终态实验续跑新增版本 2，明确多个批次与历史 / 新增用量。两种入口都重新核对计划及样本，生成独立 JSON / Markdown，不执行模型任务。
+更新：2026 年 10 月 28 日，Asia/Shanghai。普通实验保持 `comparisonReportFormatVersion=1`，首轮续跑报告保持版本 2，连续续跑使用版本 3。都重新核对计划及样本，生成独立 JSON / Markdown，不执行模型任务。
 
 [双配置八任务准备](guarded-comparison.md) 新增两用例各两轮的合成链路回归，验证各用例独立配对、异常配对排除、缺失指标与停止分母。它不提供第二模型的真实比较结论，报告协议和计算规则不变。
 
@@ -70,6 +70,14 @@ python -m dsh_eval --report 'runs/experiment-resumes/<resumeId>/experiment-resum
 配置配对可以跨执行来源，例如同一原 repeatIndex 的左侧已完成、右侧为本次新增；仍须同用例、同轮次、同 live / synthetic 来源，且两侧 verified / matched。reused / new 表示执行时间归属，不替代 live / synthetic 的证据来源。调用和 token 的全部样本合计含历史观察量，不能全部当作本次新增消耗。
 
 本批不合并多个实验、不自动跟随再次续跑，续跑来源不支持目录搬迁；普通版本 1 实验的整体搬迁能力保持原范围。[结果浏览器](result-browser.md) 已接入版本 2，展示保存的原 / 新批次关联与分开的历史 / 新增用量；浏览不重新复验，见 [057](changes/2026-10-27-057-resume-report-browser.md)。报告要求停止写入后的稳定来源，没有多文件事务、签名或断电保证。报告实现和无模型验证见 [056](changes/2026-10-27-056-experiment-resume-report.md)。
+
+## 连续续跑报告版本 3
+
+[059](changes/2026-10-28-059-continuation-chains.md) 让同一 --report 入口接受 experimentResumeResultFormatVersion=2 的终态结果。沿显式祖先链核对每轮计划、来源批次、领取、冻结输入、剩余顺序和身份，按完整原矩阵重新评测各样本。祖先续跑可保留崩溃时的 running；选定的最新结果及其下游必须终态。归档元信息 / 冻结输入冲突整份拒绝；历史录制 / 证据变化继续按逐样本复验处理，保留原分母。
+
+版本 3 保留版本 2 的统计字段，batchIds 依次包含原批次和全部后续批次，batchResultPaths 给出对应的显式绝对结果路径；resumeChain 按顺序保存每个 resumeId / resultPath。sourceResumeResult 指向本报告选定的最新续跑结果。reusedSummary 是该轮之前所有批次的复验统计，newlyExecutedSummary 只描述该轮新批次。savedSummary 是该轮保存的全矩阵 combinedSummary；summary 是报告本次重新复验值。两者都不是纯粹的本轮新增消耗。
+
+可以跨任意历史批次配对同一原用例 / 配置 / repeatIndex，仍须同 live / synthetic 来源并 verified / matched。报告不改变原轮次和计划数量，不扫描或自动跟随更新的续跑。最多读取 32 个续跑结果，循环、重复身份或未来版本拒绝；归档路径搬迁和任意跨实验合并不支持。浏览器支持版本 1 / 2 / 3，版本 3 可打开全部批次及祖先续跑，仍只读保存内容。
 
 ## 核对顺序与失败行为
 
