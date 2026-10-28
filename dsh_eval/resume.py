@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import sys
 from uuid import UUID, uuid4
 
 from .batch import _cleanup_confirmed, _now, input_fingerprint, run_batch
@@ -15,6 +16,22 @@ from .metrics import summarize
 from .runner import ROOT, save_json, validate_live_case
 
 CLAIM_NAME = ".batch-resume-claim.json"
+
+
+def _check_resume_output_root(runs_root, *, experiment=False):
+    """Reject the known Windows installer path limit before allocating or claiming."""
+    if sys.platform != "win32":
+        return
+    root = Path(runs_root or ROOT / "runs" / ("experiment-resumes" if experiment else "resumes")).resolve()
+    reserved = str(UUID(int=0))
+    directory = root / reserved
+    if experiment:
+        directory = directory / "continuations" / reserved
+    operation = (directory / "batches" / reserved / "cases" / reserved / "home" / "profiles" / "headless"
+                 / ".plugin-manager" / "logs" / "operation-XXXXXX")
+    length = len(str(operation).encode("utf-16-le")) // 2
+    require(length < 248, f"Windows Harness preparation path requires {length} UTF-16 code units (limit 247); "
+            "choose a shorter --runs-root; no continuation was claimed")
 
 
 def _digest(value):
@@ -172,6 +189,7 @@ def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_str
 
 def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None, _lock_stack=None):
     """Execute a verified plan while the caller retains the source batch lock."""
+    _check_resume_output_root(runs_root)
     resume_id = resume_id or str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "resumes").resolve() / resume_id
     require(not directory.exists(), "Resume directory already exists")

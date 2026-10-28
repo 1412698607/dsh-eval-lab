@@ -1,6 +1,6 @@
 # 批次级安全续跑
 
-更新：2026 年 10 月 27 日，Asia/Shanghai。首版复用既有 batch / runner / evaluate / inspect，仅对明确未开始的项创建新批次；原批次结果、输入和已执行任务不覆盖。当前验收是合成任务与真实子进程检查，没有新增真实模型任务。实现与验证见 [052](changes/2026-10-26-052-safe-batch-resume.md)。
+更新：2026 年 10 月 29 日，Asia/Shanghai。首版复用既有 batch / runner / evaluate / inspect，仅对明确未开始的项创建新批次；原批次结果、输入和已执行任务不覆盖。当前验收是合成任务与真实子进程检查，没有新增真实模型任务。实现与验证见 [052](changes/2026-10-26-052-safe-batch-resume.md)，领取前的 Windows 路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口
 
@@ -26,6 +26,8 @@ python -m dsh_eval --resume-batch $source --run --max-samples 2 --expected-plan-
 --max-samples 在此限制**本次待执行的新任务数**，不包含复用项；不是模型调用、token 或费用上限。--expected-plan-sha256 为执行必需参数，必须是 64 位十六进制。执行时先重新锁定 / 复核 / 比对，再创建身份、领取续跑资格和输出；变化或阻断先于任务启动拒绝。--host-modules / --cancel-after-stream 沿用原 runner；不接受 --evidence / --output，也不能与其他选择入口组合。
 
 API 为 `plan_batch_resume(result_path, *, max_samples=None)` 和 `resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None)`，位于 dsh_eval/resume.py。
+
+Windows 执行还会在领取之前检查实际输出根：为 resumeId / batchId / caseRunId 预留 UUID 长度，并计算到宿主安装临时目录 operation-XXXXXX 的完整路径，达到 248 个 UTF-16 单元即拒绝。报错返回退出 2，不创建身份 / 输出或领取文件，可以选用更短的绝对 `--runs-root` 后重新执行。`--plan` 不接收输出根，因此可续跑的源仍可能在执行时被路径保护拒绝；它也不保证宿主安装和远端模型可用。具体边界见 [Windows 输出根检查](experiment-resume.md#windows-输出根检查)。
 
 ## 判定与协调
 

@@ -48,6 +48,9 @@ class ExperimentResumeTests(unittest.TestCase):
         self.save(self.path, self.manifest)
         self.called = []
         for mock in (patch("dsh_eval.runner._prepare"),
+                     patch("dsh_eval.resume._check_resume_output_root"),  # Synthetic adapter never installs Harness.
+                     patch("dsh_eval.experiment_resume._check_resume_output_root"),
+                     patch("dsh_eval.experiment_resume_chain._check_resume_output_root"),
                      patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"),
                      patch("dsh_eval.batch.run_case", side_effect=self.synthetic_case)):
             mock.start()

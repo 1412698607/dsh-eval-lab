@@ -8,7 +8,7 @@ from .batch import _now, input_fingerprint
 from .batch_lock import batch_lock
 from .formats import load_json, nonempty, require, validate_batch, validate_case
 from .metrics import summarize
-from .resume import CLAIM_NAME, _digest, _execute_resume, _load_plan as load_batch_plan, _path
+from .resume import CLAIM_NAME, _check_resume_output_root, _digest, _execute_resume, _load_plan as load_batch_plan, _path
 from .resume_report import _check_files, _identity, _terminal, load_resume_inputs
 from .runner import ROOT, save_json
 
@@ -330,6 +330,7 @@ def execute_chain(source, runs_root, modules_dir, cancel_after_stream, *, max_sa
                 [row["reason"] for row in plan["samples"] if row["disposition"] == "blocked"]))
         require(plan["planFingerprint"]["sha256"] == expected_plan_sha256.lower(), "Experiment resume plan fingerprint mismatch")
         require(len(paths) < MAX_CONTINUATIONS, "Continuation chain exceeds 32 results")
+        _check_resume_output_root(runs_root, experiment=True)
         resume_id, batch_resume_id = str(uuid4()), str(uuid4())
         directory = Path(runs_root or ROOT / "runs" / "experiment-resumes").resolve() / resume_id
         directory.mkdir(parents=True, exist_ok=False)

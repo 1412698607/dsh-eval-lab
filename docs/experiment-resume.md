@@ -1,6 +1,6 @@
 # 实验级安全续跑
 
-更新：2026 年 10 月 28 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)。
+更新：2026 年 10 月 29 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口与返回值
 
@@ -26,6 +26,14 @@ python -m dsh_eval --resume-experiment $source --run --max-samples 6 --expected-
 ```
 
 执行 API 为 `resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None)`。摘要必填，接受 64 位十六进制并统一小写；不能用 batchPlanFingerprint 替代实验摘要。--host-modules / --cancel-after-stream 传给既有批次 / runner；--evidence / --output / --reports-root 不接受。执行结果使用 experimentResumeResultFormatVersion=1，passed / failed / unevaluable 分别退出 0 / 1 / 2；输入错误返回版本化 JSON 和退出 2，参数组合错误由 argparse 返回 2。
+
+## Windows 输出根检查
+
+Windows 的 `--run` 在源锁内重新复验 / 核对指纹之后、分配新 UUID 和创建输出或领取记录之前，计算当前输出根下的完整宿主安装临时目录。批次布局预留三层 UUID；实验首轮和连续续跑预留四层 UUID，包含 continuations / batches / cases，再追加 home/profiles/headless/.plugin-manager/logs/operation-XXXXXX。
+
+路径按 UTF-16 单元计量，预计目录达到 248 即退出 2，错误提示 `choose a shorter --runs-root; no continuation was claimed`。这是当前 Windows / Node 普通目录准备路径的保守保护：本机真实 mkdtemp 在 247 单元成功、248 单元失败。它没有接入 061 的扩展路径原型，不表示全局长路径支持。默认根或上方示例根在较深检出目录中也可能被拒绝，应显式选择足够短的绝对输出根，例如 `C:/r`，并按实际错误核对。
+
+拒绝后原源的领取状态和内容不变，可改用更短的根重新执行；不删除或重置旧领取。该检查不安装宿主或调用模型，也不验证目录权限、宿主 / 凭据 / 远端可用性。`--plan` 不接受输出根，因此 eligibleForResume 只描述源归档与调度条件，不能代替执行时的输出检查。其他平台不套用该 Windows 上限；既有计划摘要和结果格式不变。
 
 ## 显式绑定与证据复核
 

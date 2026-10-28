@@ -10,7 +10,7 @@ from .batch_lock import batch_lock
 from .experiment import ORDER, _expand_samples
 from .formats import fields, load_json, require, validate_batch, validate_case, validate_experiment
 from .report import _load_plan as load_terminal_experiment, _verify_plan_input
-from .resume import _digest, _execute_resume, _load_plan as load_batch_resume_plan, _path
+from .resume import _check_resume_output_root, _digest, _execute_resume, _load_plan as load_batch_resume_plan, _path
 from .runner import ROOT, save_json
 
 
@@ -154,6 +154,7 @@ def resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_afte
         require(plan["eligibleForResume"], "Experiment cannot resume: " + "; ".join(plan["reasons"] +
                 [row["reason"] for row in plan["samples"] if row["disposition"] == "blocked"]))
         require(plan["planFingerprint"]["sha256"] == expected_plan_sha256.lower(), "Experiment resume plan fingerprint mismatch")
+        _check_resume_output_root(runs_root, experiment=True)
         resume_id, batch_resume_id = str(uuid4()), str(uuid4())
         directory = Path(runs_root or ROOT / "runs" / "experiment-resumes").resolve() / resume_id
         directory.mkdir(parents=True, exist_ok=False)
