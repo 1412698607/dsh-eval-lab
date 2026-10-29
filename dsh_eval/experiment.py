@@ -76,7 +76,8 @@ def plan_experiment(experiment_path, *, max_samples=None):
 
 
 def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
-                   expected_plan_sha256=None):
+                   expected_plan_sha256=None, stop_after=None):
+    require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(expected_plan_sha256 is None or isinstance(expected_plan_sha256, str)
             and re.fullmatch(r"[0-9a-fA-F]{64}", expected_plan_sha256) is not None,
             "expected_plan_sha256 must contain exactly 64 hexadecimal characters")
@@ -108,7 +109,7 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     report = {"experimentResultFormatVersion": 1, "experimentId": experiment_id,
               "experimentName": manifest["experimentName"], "experimentDirectory": str(directory),
               "sourceManifest": str(source), "manifestPath": "experiment.json", "repetitions": manifest["repetitions"],
-              "maxSamples": max_samples,
+              "maxSamples": max_samples, "stopAfter": stop_after,
               "planFingerprint": fingerprint, "expectedPlanSha256": expected,
               "planInputPath": "plan-input.json",
               "resumeSupportVersion": 1,
@@ -121,7 +122,7 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     _checkpoint(directory, report)
     with ExitStack() as execution_locks:
         result = run_batch(directory / "expanded.batch.json", directory / "batches", modules_dir, cancel_after_stream,
-                           batch_id=reserved_batch_id, _lock_stack=execution_locks)
+                           batch_id=reserved_batch_id, _lock_stack=execution_locks, stop_after=stop_after)
         require(result["batchId"] == reserved_batch_id, "Experiment/reserved batch identity mismatch")
         batch_directory = Path(result["batchDirectory"])
         prefix = batch_directory.relative_to(directory)

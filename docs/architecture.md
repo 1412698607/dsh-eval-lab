@@ -265,7 +265,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；双配置 / 重复及其他渠道扩展仍待确定。
+分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；[065](changes/2026-10-29-065-live-two-config-comparison.md) 另完成两用例 / 两配置 / 两轮真实比较，完整十用例的扩大及其他渠道扩展仍待确定。
 
 组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。039 的修复提交云端实际通过 202 Python / 85 Node / 41 JS 语法、compileall 和合成 demo；038 的本地 202 Python 及 036 / 033 / 034 各批结果单独保留。真实组件、模型和子进程检查范围见 [进度](progress.md)，少量验收样本不构成模型表现或性能改善结论。
 
@@ -282,6 +282,8 @@ Python `supervise` 使用专用写线程串行输出工具响应和控制帧，�
 版本 2 用例允许空 arguments 匹配任意参数，结合工具名和结果内容检查发现行为；版本 1 保持非空约束。根目录 / docs 两条合成恢复路径均经过原有记录器及 fresh inspect，真实宿主桥接也已复验；本批未新增模型调用。详见 [修复记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
 
 ## M3.4 批次边界
+
+[063 任务边界停止](changes/2026-10-29-063-scheduler-boundary-stop.md) 增加 run_batch / run_experiment / resume_batch / resume_experiment 的可选 stop_after，贯通连续续跑。batch 在单项结果及清理检查、完成 checkpoint 之后且下一身份分配之前比较本轮计数；优先处理失败策略、清理不明、用户中断及 runner 错误。剩余项保持空身份，原矩阵、锁持有范围和领取协议不改。新结果可选 stopAfter，批次 stopReason=stop_after 经实验 / 续跑外层透传；结果版本保持兼容。它是独立运行控制，不进入原清单 / 预览 / 指纹，不限制任务内模型调用或费用。
 
 batch.py 在调用模型前校验并保存全部输入，逐项分配 caseRunId，调用原 run_case 后核对保存结果、batchId / caseId / caseRunId，记录配置和证据路径。runner 补批次身份透传、准备进程是否退出、执行适配器启动和人工中断事实，原录制协议不变。每项完成进程与写线程清理后才进入下一项；不能确认时停止，即使 failurePolicy=continue。
 

@@ -176,7 +176,8 @@ def plan_batch_resume(result_path, *, max_samples=None):
 
 
 def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
-                 expected_plan_sha256=None):
+                 expected_plan_sha256=None, stop_after=None):
+    require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(isinstance(expected_plan_sha256, str) and re.fullmatch(r"[0-9a-fA-F]{64}", expected_plan_sha256) is not None,
             "Resume requires the expected plan SHA-256 from a fresh preview")
     source = Path(result_path).resolve()
@@ -184,10 +185,11 @@ def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_str
         plan, saved, cases = _load_plan(source, max_samples)
         require(plan["canResume"], "Batch cannot resume: " + "; ".join(plan["reasons"] + [row["reason"] for row in plan["blockedEntries"]]))
         require(plan["planFingerprint"]["sha256"] == expected_plan_sha256.lower(), "Resume plan fingerprint mismatch")
-        return _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream)
+        return _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, stop_after=stop_after)
 
 
-def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None, _lock_stack=None):
+def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None, _lock_stack=None,
+                    stop_after=None):
     """Execute a verified plan while the caller retains the source batch lock."""
     _check_resume_output_root(runs_root)
     resume_id = resume_id or str(uuid4())
@@ -210,13 +212,14 @@ def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_a
     report = {"batchResumeResultFormatVersion": 1, "resumeId": resume_id, "resumeDirectory": str(directory),
               "sourceBatchResult": str(source), "sourceBatchId": saved["batchId"],
               "planFingerprint": plan["planFingerprint"], "startedAt": _now(), "finishedAt": None,
-              "status": "running", "outcome": None, "reusedEntries": plan["reusedEntries"], "batchResultPath": None,
+              "status": "running", "outcome": None, "stopAfter": stop_after,
+              "reusedEntries": plan["reusedEntries"], "batchResultPath": None,
               "batchBinding": {"batchId": batch_id, "resultPath": f"batches/{batch_id}/batch-result.json"}}
     save_json(directory / "resume-result.json", report)
     with ExitStack() as local_locks:
         lock_owner = _lock_stack if _lock_stack is not None else local_locks
         result = run_batch(directory / "remaining.batch.json", directory / "batches", modules_dir, cancel_after_stream,
-                           batch_id=batch_id, _lock_stack=lock_owner)
+                           batch_id=batch_id, _lock_stack=lock_owner, stop_after=stop_after)
         return _finish_resume(directory, report, result, plan, saved)
 
 
@@ -226,7 +229,7 @@ def _finish_resume(directory, report, result, plan, saved):
     outcomes = {row["outcome"] for row in combined}
     outcome = ("unevaluable" if result["status"] in ("error", "interrupted") or "unevaluable" in outcomes
                else "failed" if "failed" in outcomes else "passed" if outcomes == {"passed"} else "unevaluable")
-    report.update(finishedAt=_now(), status=result["status"], outcome=outcome,
+    report.update(finishedAt=_now(), status=result["status"], stopReason=result["stopReason"], outcome=outcome,
                   batchResultPath=(Path(result["batchDirectory"]).relative_to(directory) / "batch-result.json").as_posix(),
                   newlyExecutedSummary=summarize(result["entries"]), combinedSummary=summarize(combined))
     temporary = directory / f".resume-result-{uuid4()}.tmp"

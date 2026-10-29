@@ -21,6 +21,7 @@ def main(argv=None):
     mode.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
     mode.add_argument("--plan", action="store_true", help="Preview an experiment or continuation without executing tasks")
     parser.add_argument("--max-samples", type=int, help="Positive task-count cap for experiments or new continuation tasks")
+    parser.add_argument("--stop-after", type=int, help="Stop scheduling after N new tasks finish; run control, not a model-call or cost limit")
     parser.add_argument("--expected-plan-sha256", help="Require a matching preview fingerprint; mandatory for continuation --run")
     parser.add_argument("--runs-root", help="Run output parent; --browse reads existing results from this directory")
     parser.add_argument("--reports-root", help="Parent directory for new JSON/Markdown comparison reports")
@@ -30,6 +31,11 @@ def main(argv=None):
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
+    if args.stop_after is not None:
+        if not args.run or not (args.batch or args.experiment or args.resume_batch or args.resume_experiment):
+            parser.error("--stop-after requires --batch, --experiment, --resume-batch or --resume-experiment with --run")
+        if args.stop_after <= 0:
+            parser.error("--stop-after must be a positive integer")
     if args.expected_plan_sha256 is not None and not ((args.experiment or args.resume_batch or args.resume_experiment) and args.run):
         parser.error("--expected-plan-sha256 requires --experiment, --resume-batch or --resume-experiment with --run")
     if args.max_samples is not None:
@@ -72,20 +78,23 @@ def main(argv=None):
             from .experiment_resume import plan_experiment_resume, resume_experiment
             result = (plan_experiment_resume(args.resume_experiment, max_samples=args.max_samples) if args.plan else
                       resume_experiment(args.resume_experiment, args.runs_root, args.host_modules, args.cancel_after_stream,
-                                        max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256))
+                                        max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256,
+                                        stop_after=args.stop_after))
         elif args.resume_batch:
             from .resume import plan_batch_resume, resume_batch
             result = (plan_batch_resume(args.resume_batch, max_samples=args.max_samples) if args.plan else
                       resume_batch(args.resume_batch, args.runs_root, args.host_modules, args.cancel_after_stream,
-                                   max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256))
+                                   max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256,
+                                   stop_after=args.stop_after))
         elif args.experiment:
             from .experiment import plan_experiment, run_experiment
             result = (plan_experiment(args.experiment, max_samples=args.max_samples) if args.plan else
                       run_experiment(args.experiment, args.runs_root, args.host_modules, args.cancel_after_stream,
-                                     max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256))
+                                     max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256,
+                                     stop_after=args.stop_after))
         elif args.batch:
             from .batch import run_batch
-            result = run_batch(args.batch, args.runs_root, args.host_modules, args.cancel_after_stream)
+            result = run_batch(args.batch, args.runs_root, args.host_modules, args.cancel_after_stream, stop_after=args.stop_after)
         elif args.run:
             from .runner import run_case
             result = run_case(args.case, args.runs_root, args.host_modules, args.cancel_after_stream)

@@ -323,7 +323,7 @@ def plan_chain(source, *, max_samples=None):
         return _load_plan(source, context, paths, batches, max_samples)[0]
 
 
-def execute_chain(source, runs_root, modules_dir, cancel_after_stream, *, max_samples, expected_plan_sha256):
+def execute_chain(source, runs_root, modules_dir, cancel_after_stream, *, max_samples, expected_plan_sha256, stop_after=None):
     with _locked_chain(source) as (context, paths, batches, locks):
         plan, batch_plan, saved, cases, reused = _load_plan(source, context, paths, batches, max_samples)
         require(plan["eligibleForResume"], "Experiment cannot resume: " + "; ".join(plan["reasons"] +
@@ -340,18 +340,18 @@ def execute_chain(source, runs_root, modules_dir, cancel_after_stream, *, max_sa
                       "sourceBatchResult", "sourceBatchId", "maxSamples", "counts", "planFingerprint")},
                   "batchPlanFingerprint": batch_plan["planFingerprint"], "samplePlan": plan["samples"],
                   "batchResumeResultPath": f"continuations/{batch_resume_id}/resume-result.json",
-                  "startedAt": _now(), "finishedAt": None, "status": "running", "outcome": None,
+                  "startedAt": _now(), "finishedAt": None, "status": "running", "outcome": None, "stopAfter": stop_after,
                   "newlyExecutedSummary": None, "combinedSummary": None}
         save_json(directory / "experiment-resume-result.json", report)
         result = _execute_resume(batches[-1], batch_plan, saved, cases, directory / "continuations", modules_dir,
-                                 cancel_after_stream, resume_id=batch_resume_id, _lock_stack=locks)
+                                 cancel_after_stream, resume_id=batch_resume_id, _lock_stack=locks, stop_after=stop_after)
         child_batch = load_json(_path(_path(directory, report["batchResumeResultPath"]).parent, result["batchResultPath"]))
         rows = {**reused, **{row["entryId"]: row for row in child_batch["entries"]}}
         combined = [rows[row["sampleId"]] for row in plan["samples"]]
         outcomes = {row["outcome"] for row in combined}
         outcome = ("unevaluable" if result["status"] in ("error", "interrupted") or "unevaluable" in outcomes else
                    "failed" if "failed" in outcomes else "passed" if outcomes == {"passed"} else "unevaluable")
-        report.update(finishedAt=_now(), status=result["status"], outcome=outcome,
+        report.update(finishedAt=_now(), status=result["status"], stopReason=result["stopReason"], outcome=outcome,
                       newlyExecutedSummary=result["newlyExecutedSummary"], combinedSummary=summarize(combined))
         temporary = directory / f".experiment-resume-result-{uuid4()}.tmp"
         save_json(temporary, report)

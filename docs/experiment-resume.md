@@ -25,7 +25,9 @@ $plan = python -m dsh_eval --resume-experiment $source --plan --max-samples 6 | 
 python -m dsh_eval --resume-experiment $source --run --max-samples 6 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root runs/experiment-resumes
 ```
 
-执行 API 为 `resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None)`。摘要必填，接受 64 位十六进制并统一小写；不能用 batchPlanFingerprint 替代实验摘要。--host-modules / --cancel-after-stream 传给既有批次 / runner；--evidence / --output / --reports-root 不接受。执行结果使用 experimentResumeResultFormatVersion=1，passed / failed / unevaluable 分别退出 0 / 1 / 2；输入错误返回版本化 JSON 和退出 2，参数组合错误由 argparse 返回 2。
+执行 API 为 `resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None, stop_after=None)`。摘要必填，接受 64 位十六进制并统一小写；不能用 batchPlanFingerprint 替代实验摘要。--host-modules / --cancel-after-stream 传给既有批次 / runner；--evidence / --output / --reports-root 不接受。首轮执行结果使用 experimentResumeResultFormatVersion=1，连续续跑为版本 2，passed / failed / unevaluable 分别退出 0 / 1 / 2；输入错误返回版本化 JSON 和退出 2，参数组合错误由 argparse 返回 2。
+
+首轮与连续续跑的 `--run` 都支持 `--stop-after N`：仅计算本轮新执行项，达到阈值后在已完成检查点与下一项身份分配之间停止，保留完整原矩阵。结果增加可选 stopAfter / stopReason，下一轮需重新预检且显式传入停止参数，不沿用历史阈值。运行控制不进入预览或 expected 指纹；历史复用、单次领取、未知任务和原 stop 失败策略保持原规则。详见 [任务边界停止](batch-runner.md#任务边界停止)。
 
 ## Windows 输出根检查
 
@@ -116,10 +118,39 @@ python -m dsh_eval --resume-experiment $source --run --max-samples 4 --expected-
 
 终态连续续跑结果可直接交给 --report，生成 comparisonReportFormatVersion=3 的 JSON / Markdown 和只读浏览。报告逐项重新复验原矩阵，reusedSummary 汇总本轮之前所有批次，newlyExecutedSummary 只含本轮新批次；batchIds / batchResultPaths 按时间顺序列出全部批次，resumeChain 列出全部续跑结果。配对仍按原用例 / 配置 / repeatIndex 与来源，不按执行轮次重新编号。
 
+## 六任务真实验收入口
+
+[公开清单](../fixtures/evaluation/core/continuous-resume.experiment.json) 固定 direct-read / retry-once 两用例、deepseek-official / deepseek-flash 单配置、各三轮，共六项，failurePolicy=stop。以下命令会运行真实模型任务；每项预算 120 秒，准备 / 清理另有期限，不是模型调用数或费用硬限额。使用可写且通过当前 Windows 检查的短绝对输出根，省略本机专用路径与原始日志。
+
+```powershell
+$manifest = 'fixtures/evaluation/core/continuous-resume.experiment.json'
+$runsRoot = 'C:/r'
+$plan = python -m dsh_eval --experiment $manifest --plan --max-samples 6 | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $plan.valid -or $plan.counts.samples -ne 6) { throw 'Original plan rejected' }
+$original = python -m dsh_eval --experiment $manifest --run --max-samples 6 --stop-after 2 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root $runsRoot | ConvertFrom-Json
+if ($LASTEXITCODE -ne 2 -or $original.stopReason -ne 'stop_after' -or $original.summary.outcomes.passed -ne 2) { throw 'Original boundary not reached' }
+$source = Join-Path $original.experimentDirectory 'experiment-result.json'
+
+foreach ($remaining in 4, 2) {
+    $plan = python -m dsh_eval --resume-experiment $source --plan --max-samples $remaining | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or -not $plan.eligibleForResume -or $plan.counts.newSamples -ne $remaining) { throw 'Resume plan rejected' }
+    $continued = python -m dsh_eval --resume-experiment $source --run --max-samples $remaining --stop-after 2 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root $runsRoot | ConvertFrom-Json
+    $expectedExit = if ($remaining -eq 4) { 2 } else { 0 }
+    $expectedStatus = if ($remaining -eq 4) { 'stopped' } else { 'completed' }
+    if ($LASTEXITCODE -ne $expectedExit -or $continued.status -ne $expectedStatus -or $continued.newlyExecutedSummary.outcomes.passed -ne 2) { throw 'Resume boundary not reached' }
+    $source = Join-Path $continued.resumeDirectory 'experiment-resume-result.json'
+}
+python -m dsh_eval --report $source
+```
+
+`$source` 每轮显式更新为刚完成的结果，不重用已有领取的旧源。原实验和首次续跑仍保留 stopped / unevaluable；最终独立结果为 completed / passed，原矩阵不回填。报告重新 inspect 六项，按全部三批次核对样本；历史复用 4 / 本轮新增 2。初始计划六项不因 stop-after 2 而缩小。
+
+[064](changes/2026-10-29-064-live-continuation-acceptance.md) 的实际六项均 verified / matched / live，17 个已结算模型事件、11 次工具调用、已报告 totalTokens=108698，费用全部缺失。报告的 changedFields 只含 configurationMatch：批次行没有保存该字段，离线报告由原始请求路由重新解析为 matched；这不是路由发生变化。原有 147 份选定归档文件在报告、只读浏览及终态预检前后摘要不变。浏览验证覆盖服务读取层及六份完整分页轨迹，未追加页面点击验收；当前样本不提供双配置比较或模型总体表现结论。
+
 ## 限制与后续
 
 终态结果仍独立保存，不回填或冒充原终态实验。报告核对来源、领取、各层计划和下游批次，再按原矩阵逐项复验，区分历史复用与本次新增。命令和格式见 [配置报告](configuration-reports.md#实验续跑的跨批次报告)。[浏览器](result-browser.md) 支持版本 2 / 3 保存报告，不在浏览时重新复验。旧实验缺绑定、原目录搬迁、未知任务自动重试和模型会话恢复均未覆盖。原失败停止策略继续生效，不把 skipped 视为额外执行许可。
 
 输出写入或进程中断可能留下 running 结果。若在领取之前中断，下游预留路径可能尚不存在；预留本身不表示执行，没有实际批次元信息就拒绝。领取后同一源不能重复启动，后续须显式选择最近一轮结果重新预检。内核锁和摘要不提供签名、多文件事务、fsync 或断电恢复保证。绝对归档路径要求保持有效；Windows 下宜使用较短的输出根，长路径行为没有全局兼容保证。
 
-当前验证使用合成适配器、真实 Python / Node 子进程、状态化环境和录制检查，没有真实模型续跑验收。真实验收仍需单独确定配置和任务规模。
+合成适配器、Python / Node 子进程、状态化环境和录制检查的历史验收继续保留。064 新增 Windows / 当前宿主 / 单配置六任务的真实连续续跑范围；未知任务自动重试、模型会话恢复、跨实验合并和任意平台兼容仍未覆盖。

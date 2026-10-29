@@ -1,8 +1,8 @@
 # M4.1 重复试验与指标口径
 
-更新：2026 年 10 月 25 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
+更新：2026 年 10 月 29 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
 
-[双配置八任务准备](guarded-comparison.md) 固定两用例、两配置、两轮，提供第二配置为空的待填写模板；原模板校验拒绝，填妥后使用既有 --plan / cap / 指纹链路。该准备批次只有合成回归，没有真实双配置执行。
+[双配置八任务比较](guarded-comparison.md) 固定两用例、两配置、两轮，保留第二配置为空的待填写模板；原模板校验拒绝，填妥后使用既有 --plan / cap / 指纹链路。047 / 048 仅做合成准备，050 按 stop 策略执行四项后停止；065 另建 continue 实验，八项全部执行、七通过一失败，每用例两对 verified / matched / live，历史不回填。
 
 ## 无模型预检与计划预览
 
@@ -76,6 +76,8 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 该检查检测预览与运行读入数据的变化，不是签名、完整性认证或可直接执行的冻结计划。预览 / 运行的多文件读取没有事务锁，不保证各文件取自同一瞬间；指纹不覆盖宿主模块、模型服务、凭据、代码版本和运行控制参数（如 --host-modules / --cancel-after-stream / --runs-root）。不能用它证明实际模型路由、环境可用、任务成功或费用受限，实际事实仍由运行证据核对。实现和无模型验证见 [记录 042](changes/2026-10-25-042-experiment-plan-fingerprint.md)。
 
 ## 运行与输入
+
+实验 `--run` 支持 [任务边界停止](batch-runner.md#任务边界停止)：`--stop-after N` 在本轮 N 项完成 / 清理 / 检查点之后停止调度，原矩阵和 maxSamples 检查保持完整。结果增加可选 stopAfter，状态和 stopReason 由批次透传。参数只用于执行，不进入预览或指纹；需要再次续跑时显式指定本轮阈值。公开清单为 [continuous-resume.experiment.json](../fixtures/evaluation/core/continuous-resume.experiment.json)，[064](changes/2026-10-29-064-live-continuation-acceptance.md) 已完成单配置六任务的真实 2 / 2 / 2 验收；此前合成 / 准备检查与本次真实结果分开保留。
 
 实验级 [安全续跑](experiment-resume.md) 已实现 `--resume-experiment --plan / --run`；执行必需同一实验预览摘要，在源锁下重新复核并与批次入口共用领取保护，仅运行明确未开始项。新结果记录原矩阵身份、下游结果路径与新增摘要；终态续跑结果可生成独立的版本 2 跨批次配置报告，原实验不回填。新实验在首次 checkpoint 保存 resumeSupportVersion=1 与 batchBinding，明确预留批次身份和相对结果路径；只有实际批次存在并通过来源 / 输入核对后，预检才分类样本。原 batchId / batchResultPath 仍在下游批次返回后保存为观察结果。旧实验不自动补造绑定。
 

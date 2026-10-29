@@ -2,8 +2,11 @@
 
 按开发批次记录目标、代码变化、设计取舍和验证。当前插件版本为 `0.1.2`，完成录制、M2 / M3 受控评测闭环、M4 重复试验 / 指标与离线报告、M5 本地浏览和无模型 Windows CI 验收。当前状态见 [开发进度](docs/progress.md)。
 
-## 2026年10月29日 Windows 续跑输出路径保护
+## 2026年10月29日 双配置比较、连续续跑真实验收与 Windows 路径保护
 
+- [065](docs/changes/2026-10-29-065-live-two-config-comparison.md) 新建 DeepSeek Flash / 百炼 Qwen3.7-Plus 的两用例 / 两轮 continue 实验，八项全部执行、七通过一失败；失败为 Qwen 的 direct-read 第二轮返回 Markdown 加粗值。报告八项 verified / matched / live，每用例两对、零排除，153 份本轮归档及 96 份历史 050 文件摘要不变，八个专用 CLI PID 已退出。没有模型总体优劣、性能或费用改善结论。
+- [064](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 使用现有 deepseek-flash 执行原实验及两轮续跑各两项，最终六项通过，报告 verified / matched / live、历史复用 4 / 本轮新增 2。147 份选定归档摘要不变，六个专用 CLI PID 已退出；本批不改生产代码或格式，不扩张为双配置验收。
+- [063](docs/changes/2026-10-29-063-scheduler-boundary-stop.md) 增加批次、实验及连续续跑的 `--stop-after N`，在清理和完成检查点之后停止后续调度，保留完整矩阵、原失败策略和空身份的剩余项。六任务合成链路通过报告 / 浏览复验，公开六任务候选仅预览；两项真实 CLI 短路径离线准备通过，未新增模型任务。
 - [062](docs/changes/2026-10-29-062-resume-output-path-guard.md) 在创建新身份、输出和领取之前检查批次 / 首轮实验 / 连续续跑的预计宿主目录长度；Windows 目录达到 248 个 UTF-16 单元即明确拒绝，保留源的续跑资格。真实目录边界及无领取回归通过，未接入扩展路径原型或新增模型任务。
 
 ## 2026年10月28日 显式连续续跑

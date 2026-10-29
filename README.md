@@ -17,11 +17,13 @@
 - 预览输出版本化计划指纹；实际执行可带 `--expected-plan-sha256` 重新检查清单、全部用例和任务上限，输入变化时在创建目录或启动任务前拒绝。
 - 新实验保存参与指纹计算的原始计划输入快照，离线 JSON / Markdown 报告核对其与冻结用例、保存摘要的一致性；旧实验缺少快照时明确标为 unverified，见 [配置报告](docs/configuration-reports.md)。
 - [四任务真实验收](docs/guarded-acceptance.md) 已验证现有 deepseek-flash 的读取 / 恢复各两次，以及上限、预期指纹、保存快照和离线报告链路；首轮深目录准备失败保留，短目录下 4 个真实任务均通过。
-- [双配置八任务准备](docs/guarded-comparison.md) 提供待填写模板和无模型配对回归；原空模板会在启动前拒绝，实际比较状态见该文档。
+- [双配置八任务比较](docs/guarded-comparison.md) 保留空配置模板和无模型配对回归；065 已用 DeepSeek Flash / 百炼 Qwen3.7-Plus 新建 continue 实验，八项全部执行、七通过一失败，两个用例各形成两对 verified / matched / live 样本。失败保留原精确文本断言，不因正常执行或录制完整而判通过。
 - 用例可通过 [modelProviders](docs/evaluation-format.md#可选外部模型路由两个用例版本通用) 声明外部文本模型路由，随输入冻结并计入计划指纹；密钥仅按名称引用。`npm.cmd run check:model-providers -- <case.json>` 检查本机真实宿主的路由 / 目录注册和凭据存在性，不调用模型、不验证远端端点。
 - [批次级安全续跑](docs/batch-resume.md) 提供 `--resume-batch <batch-result.json> --plan` 无模型复核；显式执行仅安排已协调批次中明确未开始的任务，已完成项经重新 inspect / 评测后复用，未知项阻断。原结果不覆盖；实验层汇总回填尚未实现。
 - [实验级安全续跑](docs/experiment-resume.md) 的 `--resume-experiment <result.json> --plan / --run` 接受原实验或已有实验续跑结果；每轮比较预检摘要，只为明确未开始项创建新批次，未知项阻断。保留原用例 / 配置 / 轮次及全部历史证据，与批次入口共用锁和单次领取保护。终态结果可交给 --report，首轮报告版本 2、连续续跑版本 3，分开历史复用与本轮新增用量。
 - Windows 续跑执行在创建新身份和领取记录前检查宿主安装临时目录长度；路径过深时退出 2，提示缩短 `--runs-root`，保留源的续跑资格。`--plan` 仅检查源归档，不检查未来输出根，详见 [Windows 输出根检查](docs/experiment-resume.md#windows-输出根检查)。
+- 批次、实验与续跑的 `--run` 可用 `--stop-after N` 在本轮 N 项完成、清理及检查点保存后停止后续调度；保留完整矩阵和未开始项，支持重新预检续跑。参数是独立运行控制，不进入计划指纹，也不限制模型调用数或费用，见 [任务边界停止](docs/batch-runner.md#任务边界停止)。
+- [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
 - M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。Windows 无模型云端 CI 保留既有验收，版本 2 / 3 接入当前为本地验证。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
@@ -362,7 +364,7 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。`103c090` 包含 030 至 034，`4b97120` 包含 035 至 038 及三项修复，并已通过新的无模型云端验收。双配置与重复扩展、其他平台 / CLI / desktop / SDK 仍待确定范围；本轮没有新增模型任务。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。`103c090` 包含 030 至 034，`4b97120` 包含 035 至 038 及三项修复，并已通过新的无模型云端验收。[064](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 增加单配置六任务连续续跑，[065](docs/changes/2026-10-29-065-live-two-config-comparison.md) 增加两用例 / 两配置 / 两轮的完整八任务比较；完整十用例的双配置 / 重复扩大、其他平台 / CLI / desktop / SDK 仍待确定范围。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 

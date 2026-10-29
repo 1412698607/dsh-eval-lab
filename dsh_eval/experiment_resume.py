@@ -138,7 +138,8 @@ def plan_experiment_resume(result_path, *, max_samples=None):
 
 
 def resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
-                      expected_plan_sha256=None):
+                      expected_plan_sha256=None, stop_after=None):
+    require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(isinstance(expected_plan_sha256, str) and re.fullmatch(r"[0-9a-fA-F]{64}", expected_plan_sha256) is not None,
             "Resume requires the expected plan SHA-256 from a fresh preview")
     require(max_samples is None or type(max_samples) is int and max_samples > 0, "max_samples must be a positive integer")
@@ -146,7 +147,7 @@ def resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_afte
     if "experimentResumeResultFormatVersion" in load_json(source):
         from .experiment_resume_chain import execute_chain
         return execute_chain(source, runs_root, modules_dir, cancel_after_stream, max_samples=max_samples,
-                             expected_plan_sha256=expected_plan_sha256)
+                             expected_plan_sha256=expected_plan_sha256, stop_after=stop_after)
     batch_source = _binding(load_json(source), source.parent)
     with ExitStack() as locks:
         locks.enter_context(batch_lock(batch_source.parent))
@@ -164,14 +165,14 @@ def resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_afte
                   "sourceExperimentResult": str(source), "sourceExperimentId": plan["sourceExperimentId"],
                   "sourceBatchResult": str(batch_source), "sourceBatchId": plan["sourceBatchId"],
                   "planFingerprint": plan["planFingerprint"], "batchPlanFingerprint": plan["batchPlanFingerprint"],
-                  "maxSamples": max_samples, "counts": plan["counts"], "samplePlan": plan["samples"],
+                  "maxSamples": max_samples, "stopAfter": stop_after, "counts": plan["counts"], "samplePlan": plan["samples"],
                   "startedAt": _now(), "finishedAt": None, "status": "running", "outcome": None,
                   "batchResumeResultPath": f"continuations/{batch_resume_id}/resume-result.json",
                   "newlyExecutedSummary": None}
         save_json(directory / "experiment-resume-result.json", report)
         result = _execute_resume(batch_source, batch_plan, saved_batch, cases, directory / "continuations",
-                                 modules_dir, cancel_after_stream, resume_id=batch_resume_id, _lock_stack=locks)
-        report.update(finishedAt=_now(), status=result["status"], outcome=result["outcome"],
+                                 modules_dir, cancel_after_stream, resume_id=batch_resume_id, _lock_stack=locks, stop_after=stop_after)
+        report.update(finishedAt=_now(), status=result["status"], stopReason=result["stopReason"], outcome=result["outcome"],
                       newlyExecutedSummary=result["newlyExecutedSummary"])
         temporary = directory / f".experiment-resume-result-{uuid4()}.tmp"
         save_json(temporary, report)
