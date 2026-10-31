@@ -2,10 +2,31 @@
 
 按开发批次记录目标、代码变化、设计取舍和验证。当前插件版本为 `0.1.2`，完成录制、M2 / M3 受控评测闭环、M4 重复试验 / 指标与离线报告、M5 本地浏览和无模型 Windows CI 验收。当前状态见 [开发进度](docs/progress.md)。
 
-## 2026年10月27日 提交验收与实验续跑预检
+## 2026年10月29日 双配置比较、连续续跑真实验收与 Windows 路径保护
+
+- [065](docs/changes/2026-10-29-065-live-two-config-comparison.md) 新建 DeepSeek Flash / 百炼 Qwen3.7-Plus 的两用例 / 两轮 continue 实验，八项全部执行、七通过一失败；失败为 Qwen 的 direct-read 第二轮返回 Markdown 加粗值。报告八项 verified / matched / live，每用例两对、零排除，153 份本轮归档及 96 份历史 050 文件摘要不变，八个专用 CLI PID 已退出。没有模型总体优劣、性能或费用改善结论。
+- [064](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 使用现有 deepseek-flash 执行原实验及两轮续跑各两项，最终六项通过，报告 verified / matched / live、历史复用 4 / 本轮新增 2。147 份选定归档摘要不变，六个专用 CLI PID 已退出；本批不改生产代码或格式，不扩张为双配置验收。
+- [063](docs/changes/2026-10-29-063-scheduler-boundary-stop.md) 增加批次、实验及连续续跑的 `--stop-after N`，在清理和完成检查点之后停止后续调度，保留完整矩阵、原失败策略和空身份的剩余项。六任务合成链路通过报告 / 浏览复验，公开六任务候选仅预览；两项真实 CLI 短路径离线准备通过，未新增模型任务。
+- [062](docs/changes/2026-10-29-062-resume-output-path-guard.md) 在创建新身份、输出和领取之前检查批次 / 首轮实验 / 连续续跑的预计宿主目录长度；Windows 目录达到 248 个 UTF-16 单元即明确拒绝，保留源的续跑资格。真实目录边界及无领取回归通过，未接入扩展路径原型或新增模型任务。
+
+## 2026年10月28日 显式连续续跑
+
+- [061](docs/changes/2026-10-28-061-continuation-delivery-preflight.md) 核实 059 / 060 提交推送为 35cf770，精确提交的新 CI 全部 success，原始日志为 341 Python / 91 Node / 43 JS、编译和无模型示例通过；六项候选输入预览通过，真实 CLI 在续跑嵌套路径准备失败、短目录对照及扩展路径准备原型通过，尚未运行模型。
+- [060](docs/changes/2026-10-28-060-resume-ci-temp-paths.md) 复查连续续跑并定位 967ab43 云端的一项失败 / 四项错误；在真实 Windows 短路径下重现，规范化共享测试临时根，保留身份 / 摘要断言，并明确下一批真实验收顺序。
+- [059](docs/changes/2026-10-28-059-continuation-chains.md) 接受已有实验续跑结果再次预检 / 执行，启动前绑定新批次并持有祖先和新批次锁至收尾；只执行明确未开始项，版本 3 报告和浏览保留原矩阵及全部来源，分别统计历史 / 本轮用量。本批无模型验证。
+
+## 2026年10月27日 提交验收与实验安全续跑
 
 - [053](docs/changes/2026-10-27-053-resume-delivery-ci.md) 核对 e3dc29a 对应 CI 的 run / job / attempt、精确 SHA 和步骤成功状态；原始日志接口 403，具体云端数量保持未知。
 - [054](docs/changes/2026-10-27-054-experiment-resume-preflight.md) 增加实验初始批次绑定及 --resume-experiment --plan，复核原计划 / 展开与完整样本身份，未知项阻断；执行尚未实现，未新增模型任务。
+
+- [055](docs/changes/2026-10-27-055-experiment-resume-execution.md) 增加实验 --run、同锁摘要复核与共享批次领取；新目录保留原样本映射和新增摘要，原证据不覆盖，实验报告整合尚未实现。
+
+- [056](docs/changes/2026-10-27-056-experiment-resume-report.md) 让 --report 接受终态实验续跑结果，核对显式绑定并重新复验两个批次，版本 2 报告保留矩阵、来源与配对分母，分开历史复用 / 本次新增用量；未增加模型任务。
+
+- [057](docs/changes/2026-10-27-057-resume-report-browser.md) 接入版本 2 报告的只读浏览，展示原 / 新批次、样本归属、分开的历史 / 新增用量与来源跳转，保留版本 1 兼容和缺失 / 路径边界；未增加模型任务。
+
+- [058](docs/changes/2026-10-27-058-resume-lock-report-version.md) 将原批次锁持有至实验最终 checkpoint，阻止收尾期间提前续跑；离线续跑报告按归档核对插件版本，预检 / 执行继续要求当前安装版本匹配。补充并发收尾、异常解锁及升级兼容回归，未增加模型任务。
 
 ## 2026年10月26日 外部模型路由与双配置验收
 

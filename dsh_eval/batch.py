@@ -1,4 +1,5 @@
 """Sequential live cases, immutable input snapshots, and one active batch checkpoint."""
+from contextlib import ExitStack
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -48,7 +49,9 @@ def _outcome(report):
     return "unevaluable"
 
 
-def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None):
+def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None, _lock_stack=None,
+              stop_after=None):
+    require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(batch_id is None or isinstance(batch_id, str), "Reserved batch_id must be a UUID string")
     source = Path(batch_path).resolve()
     manifest = validate_batch(load_json(source))
@@ -62,7 +65,8 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
     report = {"batchResultFormatVersion": 1, "batchId": batch_id, "batchName": manifest["batchName"],
               "failurePolicy": manifest["failurePolicy"], "mode": "sequential", "batchDirectory": str(directory),
               "sourceManifest": str(source), "manifestPath": "batch.json", "status": "running",
-              "startedAt": _now(), "finishedAt": None, "stopReason": None, "outcome": None, "entries": []}
+              "startedAt": _now(), "finishedAt": None, "stopReason": None, "stopAfter": stop_after,
+              "outcome": None, "entries": []}
     frozen = {**manifest, "cases": []}
     for index, (entry, case_source, case) in enumerate(inputs):
         path = f"inputs/{index + 1:04}.case.json"
@@ -75,7 +79,10 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
             "executionStatus": None, "recordingOutcome": None, "assertionOutcome": None, "outcome": None,
             "source": None, "metrics": None})
     save_json(directory / "batch.json", frozen)
-    with batch_lock(directory, create=True):
+    with ExitStack() as local_locks:
+        # Experiments retain this same lock through their own final checkpoint.
+        lock_owner = _lock_stack if _lock_stack is not None else local_locks
+        lock_owner.enter_context(batch_lock(directory, create=True))
         report["resumeSupportVersion"] = 1
         report["inputFingerprint"] = input_fingerprint(frozen, [case for _entry, _path, case in inputs])
         _checkpoint(directory, report)
@@ -121,6 +128,9 @@ def _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream
                 report.update(status="error", stopReason="runner_error")
             _checkpoint(directory, report)
             if report["status"] != "running":
+                break
+            if report["stopAfter"] is not None and index + 1 >= report["stopAfter"] and index + 1 < len(report["entries"]):
+                report.update(status="stopped", stopReason="stop_after")
                 break
     except KeyboardInterrupt:
         report.update(status="interrupted", stopReason="user_interrupt")

@@ -1,8 +1,8 @@
 # M4.1 重复试验与指标口径
 
-更新：2026 年 10 月 25 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
+更新：2026 年 10 月 29 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
 
-[双配置八任务准备](guarded-comparison.md) 固定两用例、两配置、两轮，提供第二配置为空的待填写模板；原模板校验拒绝，填妥后使用既有 --plan / cap / 指纹链路。该准备批次只有合成回归，没有真实双配置执行。
+[双配置八任务比较](guarded-comparison.md) 固定两用例、两配置、两轮，保留第二配置为空的待填写模板；原模板校验拒绝，填妥后使用既有 --plan / cap / 指纹链路。047 / 048 仅做合成准备，050 按 stop 策略执行四项后停止；065 另建 continue 实验，八项全部执行、七通过一失败，每用例两对 verified / matched / live，历史不回填。
 
 ## 无模型预检与计划预览
 
@@ -27,7 +27,7 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 
 10 个用例条目 × 2 个配置条目 × 3 轮会列出 60 个任务，而不是声明 60 次模型调用。每项 budget 保留原 timeoutSeconds，它不是总退出硬期限或费用上限。recorderOverrides 只展示用例原始录制覆盖：未声明为 null，空对象为 {}，部分 / 完整覆盖保留声明值；不在 Python 预览中复制 Node 默认值或将原始输入补齐。实际录制有效值仍由宿主配置解析并写入 run.json。
 
-`--plan` 只用于 `--experiment`，与 `--run` 互斥；拒绝 --evidence、--output、--runs-root、--host-modules、--cancel-after-stream 及浏览 / 报告参数，包括空字符串选项值。预览只打印 JSON，不创建实验 / batch / workspace 目录，不安装宿主、调用 inspect、启动任务或生成执行 UUID、状态和 outcome。需要保存输出时由调用方处理 stdout；它不是可执行的冻结清单。
+本节说明 `--experiment --plan`，与 `--run` 互斥；拒绝 --evidence、--output、--runs-root、--host-modules、--cancel-after-stream 及浏览 / 报告参数，包括空字符串选项值。该预览只打印 JSON，不创建实验 / batch / workspace 目录，不安装宿主、调用 inspect、启动任务或生成执行 UUID、状态和 outcome。需要保存输出时由调用方处理 stdout；它不是可执行的冻结清单。续跑也有独立的 --plan，因需重新核对已有证据而会调用 inspect，见 [实验续跑](experiment-resume.md)。
 
 预览和 --run 共用同一套加载 / 预检及样本展开逻辑。预览不锁定源文件；后续 --run 仍会重新读取、校验并冻结当时输入，期间修改文件可能改变计划。原预览实现与无模型验证见 [记录 040](changes/2026-10-24-040-experiment-plan-preview.md)，可选任务数上限见下节。
 
@@ -37,7 +37,7 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --plan --max-samples 10
 ```
 
-`--max-samples N` 只适用于 `--experiment --plan` 或 `--experiment --run`，N 必须是正整数。默认不设上限，保持已有调用兼容。总任务数按 cases 条目数 × configurations 条目数 × repetitions 计算；重复引用同一用例、同一请求配置也分别计数。等于上限允许，超过则整份拒绝，不截断矩阵或自动减少重复次数。
+`--max-samples N` 在 `--experiment --plan / --run` 中限制原实验总任务数，N 必须是正整数。默认不设上限，保持已有调用兼容。总任务数按 cases 条目数 × configurations 条目数 × repetitions 计算；重复引用同一用例、同一请求配置也分别计数。等于上限允许，超过则整份拒绝，不截断矩阵或自动减少重复次数。续跑入口使用同名参数限制本次新增任务数，不包括复用项。
 
 共用加载函数先校验参数和实验清单，再直接乘法检查总数，通过后才读取用例、校验全部组合、展开任务。超限不生成 UUID 或运行目录，不调用宿主 / 模型。--plan 返回原计划错误 JSON（valid=false、modelCalled=false、error）/ 2；--run 沿用实验错误 JSON（outcome=unevaluable、error）/ 2，它是启动前拒绝，没有生成实验结果文件。非法值或无关模式由命令行解析器向 stderr 报错并返回 2。Python API 的 plan_experiment / run_experiment 使用仅关键字参数 max_samples=None，同样严格拒绝布尔值、零、负数和非整数。
 
@@ -77,7 +77,9 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 
 ## 运行与输入
 
-实验级 [续跑预检](experiment-resume.md) 已实现 `--resume-experiment --plan`，尚未实现对应 `--run`。新实验在首次 checkpoint 保存 resumeSupportVersion=1 与 batchBinding，明确预留批次身份和相对结果路径；只有实际批次存在并通过来源 / 输入核对后，预检才分类样本。原 batchId / batchResultPath 仍在下游批次返回后保存为观察结果。旧实验不自动补造绑定。
+实验 `--run` 支持 [任务边界停止](batch-runner.md#任务边界停止)：`--stop-after N` 在本轮 N 项完成 / 清理 / 检查点之后停止调度，原矩阵和 maxSamples 检查保持完整。结果增加可选 stopAfter，状态和 stopReason 由批次透传。参数只用于执行，不进入预览或指纹；需要再次续跑时显式指定本轮阈值。公开清单为 [continuous-resume.experiment.json](../fixtures/evaluation/core/continuous-resume.experiment.json)，[064](changes/2026-10-29-064-live-continuation-acceptance.md) 已完成单配置六任务的真实 2 / 2 / 2 验收；此前合成 / 准备检查与本次真实结果分开保留。
+
+实验级 [安全续跑](experiment-resume.md) 已实现 `--resume-experiment --plan / --run`；执行必需同一实验预览摘要，在源锁下重新复核并与批次入口共用领取保护，仅运行明确未开始项。新结果记录原矩阵身份、下游结果路径与新增摘要；终态续跑结果可生成独立的版本 2 跨批次配置报告，原实验不回填。新实验在首次 checkpoint 保存 resumeSupportVersion=1 与 batchBinding，明确预留批次身份和相对结果路径；只有实际批次存在并通过来源 / 输入核对后，预检才分类样本。原 batchId / batchResultPath 仍在下游批次返回后保存为观察结果。旧实验不自动补造绑定。
 
 下游新批次仍可按 [批次续跑](batch-resume.md) 显式复核 / 继续明确未开始项；它保存独立续跑结果和新批次，不回填原 experiment-result.json 的状态 / 汇总，不将不同执行身份自动合并成原实验报告。
 

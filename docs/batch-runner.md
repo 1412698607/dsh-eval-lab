@@ -1,6 +1,6 @@
 # M3.4 顺序批次回归
 
-更新：2026 年 10 月 19 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
+更新：2026 年 10 月 29 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
 
 ## 运行
 
@@ -15,6 +15,22 @@ python -m dsh_eval --batch fixtures/evaluation/recovery.batch.json --run
 `--batch` 必须同时提供 `--run`，不能组合 `--case`、`--evidence` 或 `--output`。`--runs-root` 为新批次目录的父目录，默认 `runs/batches`；每次追加新的 UUID 子目录。`--host-modules` 传给每一次宿主准备。可选 `--cancel-after-stream` 是验收控制，会对每个实际启动项的首流触发取消；默认不使用，配合 stop 策略可检查取消后跳过剩余项。
 
 stdout 输出批次 JSON。退出码：0 表示整批 passed；1 表示已明确存在普通任务 failed 且没有无法评测项或基础设施错误；2 表示 unevaluable、输入错误或输出失败。停止后尚未执行的项保持 skipped 和空结果，不推定任务成功或失败。
+
+## 任务边界停止
+
+`--stop-after N` 接受正整数，只用于 `--batch / --experiment / --resume-batch / --resume-experiment` 的 `--run`。省略时执行原调度策略；`--plan`、单用例、离线报告及浏览均不接受。Python 执行 API 使用可选关键字 `stop_after=None`，拒绝布尔、非整数和非正值，检查先于输出创建或续跑领取。
+
+本轮最多安排 N 项新任务。每项保存实际结果、确认清理并成功写入完成检查点后，若还有剩余项且已达到 N，保存 `status=stopped / stopReason=stop_after`，剩余项为 `skipped / skipReason=stop_after`，执行身份及结果保持 null。失败、无法评测但允许 continue 的尝试同样计数；失败停止策略、清理不明、用户中断和 runner 错误优先，检查点写入失败直接停止启动。N 等于或大于总项数时按正常终态收尾，stopReason=null。
+
+该参数保留完整冻结矩阵，按本轮新批次计数，历史复用项不计入 N。批次、实验与续跑结果可选增加 `stopAfter`（省略参数时 null），续跑结果额外透传下游 `stopReason`，格式版本不变，旧归档无这些字段仍可读取。原 `--max-samples` 继续核对全部计划 / 剩余任务数，不因停止阈值缩小分母。`stopAfter` 是运行控制，不进入输入清单、计划预览或指纹；expected SHA 只绑定原计划，不能证明本轮停止参数相同。它不限制一项任务内的模型请求数、token 或费用，也不替代未知执行的复核规则。
+
+六任务候选清单只读预览：
+
+```powershell
+python -m dsh_eval --experiment fixtures/evaluation/core/continuous-resume.experiment.json --plan --max-samples 6
+```
+
+实际调用模型时可在上述清单的 `--run` 中指定 `--stop-after 2`，再用本次结果重新预检两轮续跑，每轮仍显式指定该参数。每次续跑必须使用 fresh plan 的 expected SHA，并选取通过 [Windows 检查](experiment-resume.md#windows-输出根检查) 的短绝对输出根。停止成功本身不表示原实验全部通过；仍有 skipped 时通常为 unevaluable / 退出 2，已有普通失败时沿用原 outcome 规则。[063](changes/2026-10-29-063-scheduler-boundary-stop.md) 保留合成回归与离线准备历史；[064](changes/2026-10-29-064-live-continuation-acceptance.md) 已完成该单配置六任务的真实 2 / 2 / 2 连续续跑，最终报告六项 verified / matched / live，历史复用 4 / 本轮新增 2。命令见 [真实验收入口](experiment-resume.md#六任务真实验收入口)。
 
 ## 输入：batchFormatVersion 1
 
@@ -46,6 +62,8 @@ stdout 输出批次 JSON。退出码：0 表示整批 passed；1 表示已明确
 ## 隔离、关联与进度文件
 
 054 为实验绑定增加内部 API 的可选 batch_id：有效 UUID 在启动前确定并使用，新目录仍不覆盖；未指定时保留原自动生成行为。实验预留身份不代表已创建批次或调用模型；绑定的实际结果仍需 [实验预检](experiment-resume.md) 核对。
+
+[058](changes/2026-10-27-058-resume-lock-report-version.md) 增加内部 _lock_stack 参数，由实验的 ExitStack 保留 run_batch 取得的同一锁，直到实验最终 checkpoint 完成。普通调用省略该参数时仍自行取得 / 释放批次锁；没有跳过锁或先释放再重取。命令和保存格式不变。
 
 2026 年 10 月 26 日新增 [批次级安全续跑](batch-resume.md)：新批次额外保存 resumeSupportVersion=1、完整冻结输入的 inputFingerprint 和 `.batch-execution.lock`。原进程运行时持有内核锁；续跑复核后只对明确未开始的项创建新批次，原进度 / 终态不覆盖。旧批次不补造协调元信息，执行未知项不自动重跑；原失败策略继续有效。该范围不代表会话恢复、断电可靠或实验汇总自动整合。
 
@@ -80,6 +98,7 @@ python -m dsh_eval --case 'runs/batches/<batchId>/cases/<caseRunId>/case.json' -
 | batchDirectory / sourceManifest / manifestPath | 当前绝对输出目录、原始清单路径及保存的 batch.json 路径 |
 | startedAt / finishedAt | 实际观察的 UTC 时间；活动文件 finishedAt 为 null；不是性能统计 |
 | status / stopReason / outcome | 调度状态、停止原因与批次结论，分别解释 |
+| stopAfter | 可选运行停止阈值；新结果未指定时为 null，旧结果可无字段 |
 | entries | 保留输入顺序的逐项结果，不丢弃失败或 skipped 项 |
 
 每项保存 entryId、caseId、原始用例路径、冻结 casePath、requestedConfiguration，以及 status。开始执行时分配 caseRunId / caseDirectory；尚未启动项保持 null。caseRunId 可以表示已安排但尚未产生会话的尝试，不等于已经调用模型。

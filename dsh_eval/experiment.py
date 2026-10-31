@@ -1,4 +1,5 @@
 """Expand explicit repeated trials into the existing isolated sequential batch runner."""
+from contextlib import ExitStack
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
@@ -75,7 +76,8 @@ def plan_experiment(experiment_path, *, max_samples=None):
 
 
 def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
-                   expected_plan_sha256=None):
+                   expected_plan_sha256=None, stop_after=None):
+    require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(expected_plan_sha256 is None or isinstance(expected_plan_sha256, str)
             and re.fullmatch(r"[0-9a-fA-F]{64}", expected_plan_sha256) is not None,
             "expected_plan_sha256 must contain exactly 64 hexadecimal characters")
@@ -107,7 +109,7 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     report = {"experimentResultFormatVersion": 1, "experimentId": experiment_id,
               "experimentName": manifest["experimentName"], "experimentDirectory": str(directory),
               "sourceManifest": str(source), "manifestPath": "experiment.json", "repetitions": manifest["repetitions"],
-              "maxSamples": max_samples,
+              "maxSamples": max_samples, "stopAfter": stop_after,
               "planFingerprint": fingerprint, "expectedPlanSha256": expected,
               "planInputPath": "plan-input.json",
               "resumeSupportVersion": 1,
@@ -118,36 +120,37 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
               "finishedAt": None, "status": "running", "outcome": None, "batchId": None, "batchResultPath": None,
               "samples": samples, "summary": None, "groups": []}
     _checkpoint(directory, report)
-    result = run_batch(directory / "expanded.batch.json", directory / "batches", modules_dir, cancel_after_stream,
-                       batch_id=reserved_batch_id)
-    require(result["batchId"] == reserved_batch_id, "Experiment/reserved batch identity mismatch")
-    batch_directory = Path(result["batchDirectory"])
-    prefix = batch_directory.relative_to(directory)
-    require(len(result["entries"]) == len(samples), "Experiment/batch sample count mismatch")
-    seen = set()
-    for sample, row in zip(samples, result["entries"]):
-        require(row["entryId"] == sample["sampleId"] and row["caseId"] == sample["caseId"],
-                "Experiment/batch sample association mismatch")
-        expected = next(config["configRef"] for config in manifest["configurations"]
-                        if config["configurationId"] == sample["configurationId"])
-        require(row["requestedConfiguration"] == expected, "Experiment requested configuration mismatch")
-        require(row["caseRunId"] is None or row["caseRunId"] not in seen, "Duplicate experiment caseRunId")
-        if row["caseRunId"] is not None:
-            seen.add(row["caseRunId"])
-        sample.update(row)
-        sample["configurationMatch"] = ("unknown" if row["configuration"] is None else
-                                        "matched" if row["configuration"] == expected else "mismatched")
-        for key in ("casePath", "caseDirectory", "evaluationPath", "evidencePath", "runtimeReport", "runDir"):
-            if sample[key] is not None:
-                sample[key] = (prefix / sample[key]).as_posix()
-    report.update(batchId=result["batchId"], batchResultPath=(prefix / "batch-result.json").as_posix(),
-                  status=result["status"], stopReason=result["stopReason"], outcome=result["outcome"],
-                  finishedAt=datetime.now(timezone.utc).isoformat(), summary=summarize(samples))
-    for entry in manifest["cases"]:
-        for config in manifest["configurations"]:
-            rows = [sample for sample in samples if sample["caseEntryId"] == entry["entryId"]
-                    and sample["configurationId"] == config["configurationId"]]
-            report["groups"].append({"caseEntryId": entry["entryId"], "configurationId": config["configurationId"],
-                                     "requestedConfiguration": config["configRef"], "summary": summarize(rows)})
-    _checkpoint(directory, report)
+    with ExitStack() as execution_locks:
+        result = run_batch(directory / "expanded.batch.json", directory / "batches", modules_dir, cancel_after_stream,
+                           batch_id=reserved_batch_id, _lock_stack=execution_locks, stop_after=stop_after)
+        require(result["batchId"] == reserved_batch_id, "Experiment/reserved batch identity mismatch")
+        batch_directory = Path(result["batchDirectory"])
+        prefix = batch_directory.relative_to(directory)
+        require(len(result["entries"]) == len(samples), "Experiment/batch sample count mismatch")
+        seen = set()
+        for sample, row in zip(samples, result["entries"]):
+            require(row["entryId"] == sample["sampleId"] and row["caseId"] == sample["caseId"],
+                    "Experiment/batch sample association mismatch")
+            expected = next(config["configRef"] for config in manifest["configurations"]
+                            if config["configurationId"] == sample["configurationId"])
+            require(row["requestedConfiguration"] == expected, "Experiment requested configuration mismatch")
+            require(row["caseRunId"] is None or row["caseRunId"] not in seen, "Duplicate experiment caseRunId")
+            if row["caseRunId"] is not None:
+                seen.add(row["caseRunId"])
+            sample.update(row)
+            sample["configurationMatch"] = ("unknown" if row["configuration"] is None else
+                                            "matched" if row["configuration"] == expected else "mismatched")
+            for key in ("casePath", "caseDirectory", "evaluationPath", "evidencePath", "runtimeReport", "runDir"):
+                if sample[key] is not None:
+                    sample[key] = (prefix / sample[key]).as_posix()
+        report.update(batchId=result["batchId"], batchResultPath=(prefix / "batch-result.json").as_posix(),
+                      status=result["status"], stopReason=result["stopReason"], outcome=result["outcome"],
+                      finishedAt=datetime.now(timezone.utc).isoformat(), summary=summarize(samples))
+        for entry in manifest["cases"]:
+            for config in manifest["configurations"]:
+                rows = [sample for sample in samples if sample["caseEntryId"] == entry["entryId"]
+                        and sample["configurationId"] == config["configurationId"]]
+                report["groups"].append({"caseEntryId": entry["entryId"], "configurationId": config["configurationId"],
+                                         "requestedConfiguration": config["configRef"], "summary": summarize(rows)})
+        _checkpoint(directory, report)
     return report

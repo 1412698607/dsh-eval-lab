@@ -286,6 +286,24 @@ def render_markdown(report):
     lines.extend(["", "配置引用：", ""])
     for config in report["configurations"]:
         lines.append(f"- {_cell(config['configurationId'])}：{_cell(json.dumps(config['configRef'], ensure_ascii=False))}")
+    if report.get("resumeVerification"):
+        if report.get("resumeChain"):
+            lines.extend(["", "## 连续续跑来源", "", "| 轮次 | 续跑 ID | 保存结果 |", "| --- | --- | --- |"])
+            for index, item in enumerate(report["resumeChain"], 1):
+                lines.append(f"| {index} | {_cell(item['resumeId'])} | {_cell(item['resultPath'])} |")
+            lines.extend(["", "来源批次（原批次到本轮新增）：" + " / ".join(report["batchIds"]), ""])
+        lines.extend(["", "## 历史复用与本次新增", "",
+                      f"续跑关联复核：{report['resumeVerification']['status']}；逐样本证据仍分别重新检查。", "",
+                      "历史复用的用量属于原执行；本次新增只统计新批次。两者合计描述原计划的样本，不能全部当作本次消耗。", "",
+                      "| 执行来源 | 计划 / 尝试 / 跳过 | 可评测通过 | 来源 |", "| --- | --- | --- | --- |"])
+        for label, summary in (("历史复用", report["reusedSummary"]), ("本次新增", report["newlyExecutedSummary"])):
+            lines.append(f"| {label} | {summary['planned']} / {summary['attempted']} / {summary['skipped']} | "
+                         f"{_rate(summary['evaluablePassRate'])} | {_cell(summary['sourceCounts'])} |")
+        lines.extend(["", "| 指标 | 历史复用 | 本次新增 |", "| --- | --- | --- |"])
+        for key in METRICS:
+            old, new = report['reusedSummary']['metrics'][key], report['newlyExecutedSummary']['metrics'][key]
+            lines.append(f"| {key} | 累计 {_value(old['observedTotal'])}；{_metric(old)} | "
+                         f"累计 {_value(new['observedTotal'])}；{_metric(new)} |")
     for group in report["groups"]:
         lines.extend(["", f"### 指标：{_cell(group['caseEntryId'])} / {_cell(group['configurationId'])}", "",
                       "以下为全部计划项中可观测子集；实际匹配分布与分来源统计另存于 JSON。", "",
@@ -323,7 +341,10 @@ def render_markdown(report):
                     relative = target.as_posix()
                 links.append(f"[{label}]({quote(relative, safe='/.:')})")
         explanation = "; ".join(row["reasons"] + ([row["configurationReason"]] if row["configurationReason"] else []))
-        lines.append(f"| {_cell(row['sampleId'])} | {row['verification']} | {row['outcome']}：{row['executionStatus']} / {row['recordingOutcome']} / "
+        label = row['sampleId']
+        if row.get("executionOrigin"):
+            label += " / " + ("历史复用" if row["executionOrigin"] == "reused" else "本次新增")
+        lines.append(f"| {_cell(label)} | {row['verification']} | {row['outcome']}：{row['executionStatus']} / {row['recordingOutcome']} / "
                      f"{row['assertionOutcome']} | {row['configurationMatch']} | {_cell(', '.join(row['changedFields']))} | "
                      f"{' / '.join(links)} {_cell(explanation)} |")
     return "\n".join(lines) + "\n"
@@ -331,12 +352,19 @@ def render_markdown(report):
 
 def generate_report(experiment_result_path, reports_root=None):
     source = Path(experiment_result_path).resolve()
-    saved, manifest, cases = _load_plan(source)
-    plan_verification = _verify_plan_input(source.parent, saved, manifest, cases)
+    metadata = {}
+    if "experimentResumeResultFormatVersion" in load_json(source):
+        from .resume_report import load_resume_report
+        saved, manifest, cases, plan_verification, sample_inputs, metadata = load_resume_report(source)
+    else:
+        saved, manifest, cases = _load_plan(source)
+        plan_verification = _verify_plan_input(source.parent, saved, manifest, cases)
+        sample_inputs = ((sample, source.parent, saved["batchId"], {}) for sample in saved["samples"])
     rows, evaluations = [], []
-    for sample in saved["samples"]:
+    for sample, base, batch_id, provenance in sample_inputs:
         expected = {**cases[sample["caseEntryId"]], "configRef": sample["requestedConfiguration"]}
-        row, fresh = _recheck(sample, expected, source.parent, saved["batchId"])
+        row, fresh = _recheck(sample, expected, base, batch_id)
+        row.update(provenance)
         if fresh is not None:
             row["evaluationPath"] = f"evaluations/{len(rows) + 1:06}.json"
             evaluations.append((row["evaluationPath"], fresh))
@@ -350,6 +378,9 @@ def generate_report(experiment_result_path, reports_root=None):
                            "matchedSummary": _summary([row for row in subset if row["verification"] == "verified" and row["configurationMatch"] == "matched"]),
                            "bySource": {source: _summary([row for row in subset if (row["source"] or "unknown") == source])
                                         for source in sorted({row["source"] or "unknown" for row in subset})}})
+            if metadata:
+                groups[-1]["byExecutionOrigin"] = {origin: _summary([row for row in subset if row["executionOrigin"] == origin])
+                                                    for origin in ("reused", "new")}
     comparisons = []
     for entry in manifest["cases"]:
         for left, right in combinations(manifest["configurations"], 2):
@@ -375,6 +406,13 @@ def generate_report(experiment_result_path, reports_root=None):
                               "样本量、观测范围与指标覆盖只描述本次实验；未计算置信区间、显著性或配置优胜结论。",
                               "重复按固定顺序执行，未随机化，不能保证样本独立或排除时间与服务波动。",
                               "调用计数为已结算录制事件，token 为已报告 usage；耗时含准备与清理，费用保持缺失。"]}
+    if metadata:
+        report.update(metadata)
+        report["reusedSummary"] = _summary([row for row in rows if row["executionOrigin"] == "reused"])
+        report["newlyExecutedSummary"] = _summary([row for row in rows if row["executionOrigin"] == "new"])
+        report["limitations"].append("跨批次报告只读取所选续跑结果及其显式祖先链；不合并任意实验或自动查找后续续跑。"
+                                     if metadata.get("comparisonReportFormatVersion") == 3 else
+                                     "跨批次报告只整合一个显式实验续跑及其原批次 / 新批次；不合并任意实验或自动跟随再次续跑。")
     # All input checks and fresh evaluations finish before a new output directory is created.
     (directory / "evaluations").mkdir(parents=True, exist_ok=False)
     for name, fresh in evaluations:

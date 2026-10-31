@@ -20,7 +20,9 @@ TRACE_LINE_BYTES = 65536
 BLOCKED = {"home", "workspace", "node_modules", "private-notes", "secrets", "credentials", "__pycache__"}
 FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_manifest", (1,)),
            "experimentFormatVersion": ("experiment_manifest", (1,)), "batchResultFormatVersion": ("batch", (1,)),
-           "experimentResultFormatVersion": ("experiment", (1,)), "comparisonReportFormatVersion": ("report", (1,)),
+           "experimentResultFormatVersion": ("experiment", (1,)), "comparisonReportFormatVersion": ("report", (1, 2, 3)),
+           "experimentResumeResultFormatVersion": ("experiment_resume", (1, 2)),
+           "batchResumeResultFormatVersion": ("batch_resume", (1,)),
            "evaluationFormatVersion": ("evaluation", (1, 2)), "evidenceFormatVersion": ("evidence", (1, 2)),
            "runtimeFormatVersion": ("runtime", (1,)), "formatVersion": ("recording", (1, 2)),
            "statusFormatVersion": ("recording", (1,))}
@@ -186,7 +188,8 @@ class ArtifactBrowser:
                     return
             links.append({"label": label, "id": self.reference(target), "path": value})
         path_keys = ("casePath", "evidencePath", "evaluationPath", "runtimeReport", "manifestPath", "batchResultPath",
-                     "sourceExperimentResult", "sourceEvidencePath")
+                     "sourceExperimentResult", "sourceEvidencePath", "sourceResumeResult", "sourceBatchResult",
+                     "batchResumeResultPath", "batchResumeResult")
         def collect(value, prefix=""):
             if not isinstance(value, dict):
                 return
@@ -195,6 +198,12 @@ class ArtifactBrowser:
             add(prefix + "runDir", value.get("runDir"), True)
         collect(data)
         collect(data.get("association"), "association / ")
+        collect(data.get("resumeVerification"), "resumeVerification / ")
+        for index, value in enumerate(data.get("batchResultPaths", []) if isinstance(data.get("batchResultPaths"), list) else [], 1):
+            add(f"批次 {index} / batchResultPath", value)
+        for index, row in enumerate(data.get("resumeChain", []) if isinstance(data.get("resumeChain"), list) else [], 1):
+            if isinstance(row, dict):
+                add(f"续跑 {index} / resultPath", row.get("resultPath"))
         for key in ("entries", "samples", "cases"):
             rows = data.get(key)
             if isinstance(rows, list):

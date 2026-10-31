@@ -164,7 +164,7 @@ class ExperimentFingerprintTests(unittest.TestCase):
                     redirect_stdout(io.StringIO()):
                 self.assertEqual(main(["--experiment", str(self.path), "--run", "--max-samples", "8",
                                        "--expected-plan-sha256", "a" * 64]), code)
-            self.assertEqual(run.call_args.kwargs, {"max_samples": 8, "expected_plan_sha256": "a" * 64})
+            self.assertEqual(run.call_args.kwargs, {"max_samples": 8, "expected_plan_sha256": "a" * 64, "stop_after": None})
 
     def test_cli_malformed_hash_returns_input_error_without_runtime_or_output(self):
         before = self.snapshot()

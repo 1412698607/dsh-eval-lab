@@ -10,9 +10,17 @@ M6.2 配置传递修复增加用例顶层可选 recorder 对象，由 Python 严
 
 ## 执行流程与模块
 
-[054 实验续跑预检](changes/2026-10-27-054-experiment-resume-preflight.md) 为初始实验 checkpoint 增加显式 batchBinding，将预留 UUID 传给原批次调度器，实际批次返回后才填写原观察字段。experiment_resume.py 在该批次锁下复核原 plan-input / 指纹、完整展开与来源，再复用批次预检进行证据分类，保留 caseEntryId / configurationId / repeatIndex。此模块只读，不安装宿主、分配身份或执行任务，实验续跑和报告整合另计。
+[054 实验续跑预检](changes/2026-10-27-054-experiment-resume-preflight.md) 为初始实验 checkpoint 增加显式 batchBinding，将预留 UUID 传给原批次调度器，实际批次返回后才填写原观察字段。experiment_resume.py 在该批次锁下复核原 plan-input / 指纹、完整展开与来源，再复用批次预检进行证据分类，保留 caseEntryId / configurationId / repeatIndex。预检本身不安装宿主、分配身份或执行任务。
+
+[055 实验续跑执行](changes/2026-10-27-055-experiment-resume-execution.md) 提取同锁下的实验预检及共用批次续跑核心。--run 重新复核实验摘要，在身份 / 输出创建前拒绝变化和阻断；实验层先保存分类及下游预留结果路径，再由批次核心排他领取、冻结剩余项、执行并保存新增摘要。源批次锁保持到返回，两个入口共享同一领取记录。新增 experimentResumeResultFormatVersion=1，不修改原实验或记录协议；samplePlan 只表示启动映射，下游才是新执行事实；055 当时尚无跨批次报告，后续扩展见 056。
+
+[056 跨批次实验报告](changes/2026-10-27-056-experiment-resume-report.md) 复用 _load_inputs 校验冻结实验与矩阵，resume_report.py 核对实验续跑 / 批次续跑 / 领取的显式绑定及保存的两层计划摘要，要求原计划和源元信息字节不变，再验证新批次输入、顺序与跨批次执行身份。证据文件不因旧摘要变化而整份丢弃，逐项交回原 _recheck / evaluate / inspect；坏证据保留原分母并排除配对。新报告 comparisonReportFormatVersion=2，batchId=null、batchIds 及逐样本来源说明两个批次，reusedSummary / newlyExecutedSummary 与分组 byExecutionOrigin 都来自本次复验。普通实验继续版本 1；当前浏览器版本 2 接入见 057。
+
+[058 协调与兼容修复](changes/2026-10-27-058-resume-lock-report-version.md) 由 run_experiment 的 ExitStack 持有 run_batch 已取得的同一内核锁，覆盖批次执行、实验关联 / 汇总和最终 checkpoint；不在两阶段之间释放并重新加锁。批次独立调用仍自行管理锁，异常退出由上下文释放，结果格式不变。_load_inputs 只核对归档身份、矩阵及冻结输入；续跑预检再由批次加载器检查当前安装版本 / headless 限制。离线报告不执行运行环境校验，但仍逐项核对归档配置与录制插件版本、实际请求路由及证据。
 
 [052 批次续跑](changes/2026-10-26-052-safe-batch-resume.md) 在 Python 批次层增加内核独占锁和冻结输入指纹。resume.py 在同一源锁下复核已完成录制、断言、身份和退出，校验预览摘要，并以排他领取文件限制同一源只创建一次续跑；新批次只含明确未开始项。原终态、输入和已完成用例保持不变。未知执行 / 清理或原 stop 失败策略阻断；没有模型状态恢复、实验层结果合并或 fsync 承诺。协议见 [批次续跑](batch-resume.md)。
+
+[062 输出路径保护](changes/2026-10-29-062-resume-output-path-guard.md) 在源锁内完成证据及预期摘要核对后、创建新 UUID / 输出 / 领取之前检查 Windows 的预计宿主安装临时目录。批次入口计算三层 UUID，实验首轮 / 连续入口计算四层 UUID；按绝对路径的 UTF-16 单元计量，达到 248 即拒绝。批次执行核心再次检查，预检与结果格式不变；该保护不提供通用长路径支持，也不清除已有领取。
 
 [外部模型路由 050](changes/2026-10-26-050-external-model-providers.md) 增加可选 case.modelProviders：Python 在创建身份前严格校验，既有完整用例冻结和计划指纹覆盖该声明；Node 准备时再次校验并写入隔离 profile 的 llm-pi-ai config.providers 与 setup.json.modelProviders。仅支持显式 HTTPS Chat Completions 文本模型，密钥按 apiKeyEnv 引用原凭据服务，不复制到用例。实验仍只覆盖 configRef；报告的路由匹配仍来自 request/header，不把端点声明当远端身份认证。check:model-providers 只检查本机组件与凭据元信息，不发起生成或远端发现。
 
@@ -56,11 +64,16 @@ inspect --run <目录>
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
-| `dsh_eval/__main__.py` | 评测 / 实验预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 仅用于实验且与 --run 互斥，原任务 0 / 1 / 2 不变 |
+| `dsh_eval/__main__.py` | 评测 / 实验及续跑预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
 | `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
+| `dsh_eval/batch.py` | 冻结输入与顺序调度；独立调用管理批次锁，实验内部通过 _lock_stack 保留同一锁至实验收尾 |
+| `dsh_eval/experiment_resume.py` | 显式批次绑定及实验 / 批次同锁复核；比较实验摘要后调用共用续跑核心，保存独立结果和原样本映射 |
+| `dsh_eval/experiment_resume_chain.py` | 显式祖先链校验、顺序持有各批次锁、全矩阵预检 / 执行及版本 3 报告输入；只为最近批次的未开始项领取 |
+| `dsh_eval/resume.py` | 批次预检、同源排他领取和新批次执行核心；共用原 runner / inspect / evaluate，不重试未知项 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
-| `dsh_eval/report.py` | 核对终态实验 / 冻结用例 / 样本关联，重新 evaluate，按实际路由与来源配对，独立 JSON / Markdown |
+| `dsh_eval/report.py` | 普通实验版本 1 / 实验续跑版本 2 报告，重新 evaluate 并按路由 / 来源 / 轮次配对；续跑分开历史与新增用量 |
+| `dsh_eval/resume_report.py` | 只读核对续跑的两层计划、源元信息、领取、批次和原矩阵绑定，为共用报告器提供逐样本证据根 |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
 | `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`4b97120` 的 41 JS 语法 / 85 Node / 202 Python / compileall / 合成 demo 云端全部通过，旧 M5 验收保留 |
 | `scripts/case-host.js` | 实际 CLI 的独立 profile 安装与专用 headless 子进程、协议 / IPC 观察、退出报告 |
@@ -70,7 +83,13 @@ inspect --run <目录>
 
 ## 输出与数据格式
 
+[059](changes/2026-10-28-059-continuation-chains.md) 新增 experimentResumePlanFormatVersion=2 / experimentResumeResultFormatVersion=2 和 comparisonReportFormatVersion=3，原实验及首轮续跑格式保持兼容。连续计划保存所有批次预检、祖先归档 SHA-256、原矩阵分类和当前来源；执行在祖先锁内重算摘要，使用原批次续跑核心领取最新源并运行剩余项。批次续跑新增启动时的 batchBinding，锁保持到外层结果写入。链按 sourceResumeResult 迭代加载，最多 32 个结果，拒绝循环 / 重复身份；没有目录扫描、旧领取重置或未知任务重试。
+
+离线报告共用静态归档加载和原 _recheck / 配对逻辑，版本 3 将每个原样本对应到其实际批次 / 证据根；祖先可保留 running，选定最新结果仍须终态。batchIds / batchResultPaths 和 resumeChain 保留所有来源，历史 / 本轮新增用量分开。浏览继续只读，新增链接沿原根目录规则解析，不调用 inspect 或执行器。
+
 M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=...` 读取一个已保存 JSON / Markdown 或一页 JSONL。目录索引带 `browserFormatVersion: 1`，只是读取响应，没有新持久化结果格式；不会写入文件、刷新摘要或改变评测状态。浏览 API 不调用原 evaluate / inspect / runner，旧结果可过时，与 M4.2 的主动离线复验是两个入口。
+
+浏览器同时接受比较报告版本 1 / 2；版本 2 按保存的 batchIds、executionOrigin、sourceBatchResult、reusedSummary / newlyExecutedSummary 及 groups.byExecutionOrigin 展示多个批次和历史 / 新增分区。显式 sourceResumeResult、resumeVerification.batchResumeResult 及两层续跑的来源路径沿用同一范围检查后成为关联链接；续跑结果仅作为关联文档，不新增列表类别或执行入口。普通报告布局与浏览响应版本不变，见 [记录 057](changes/2026-10-27-057-resume-report-browser.md)。
 
 服务固定绑定 127.0.0.1，以启动时随机令牌、Host / Origin 检查及根目录解析限制访问，扫描不跟随符号目录 / junction。内容用文本节点呈现，默认排除独立 home / workspace 和私人目录。该方案复用现有 JSON 与原证据位置，无前端依赖和数据库；代价是没有实时一致快照、远程多用户访问或编辑 / 运行功能。容量、分页和已验证边界见 [结果浏览](result-browser.md)。
 
@@ -246,7 +265,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；双配置 / 重复及其他渠道扩展仍待确定。
+分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；[065](changes/2026-10-29-065-live-two-config-comparison.md) 另完成两用例 / 两配置 / 两轮真实比较，完整十用例的扩大及其他渠道扩展仍待确定。
 
 组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。039 的修复提交云端实际通过 202 Python / 85 Node / 41 JS 语法、compileall 和合成 demo；038 的本地 202 Python 及 036 / 033 / 034 各批结果单独保留。真实组件、模型和子进程检查范围见 [进度](progress.md)，少量验收样本不构成模型表现或性能改善结论。
 
@@ -263,6 +282,8 @@ Python `supervise` 使用专用写线程串行输出工具响应和控制帧，�
 版本 2 用例允许空 arguments 匹配任意参数，结合工具名和结果内容检查发现行为；版本 1 保持非空约束。根目录 / docs 两条合成恢复路径均经过原有记录器及 fresh inspect，真实宿主桥接也已复验；本批未新增模型调用。详见 [修复记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
 
 ## M3.4 批次边界
+
+[063 任务边界停止](changes/2026-10-29-063-scheduler-boundary-stop.md) 增加 run_batch / run_experiment / resume_batch / resume_experiment 的可选 stop_after，贯通连续续跑。batch 在单项结果及清理检查、完成 checkpoint 之后且下一身份分配之前比较本轮计数；优先处理失败策略、清理不明、用户中断及 runner 错误。剩余项保持空身份，原矩阵、锁持有范围和领取协议不改。新结果可选 stopAfter，批次 stopReason=stop_after 经实验 / 续跑外层透传；结果版本保持兼容。它是独立运行控制，不进入原清单 / 预览 / 指纹，不限制任务内模型调用或费用。
 
 batch.py 在调用模型前校验并保存全部输入，逐项分配 caseRunId，调用原 run_case 后核对保存结果、batchId / caseId / caseRunId，记录配置和证据路径。runner 补批次身份透传、准备进程是否退出、执行适配器启动和人工中断事实，原录制协议不变。每项完成进程与写线程清理后才进入下一项；不能确认时停止，即使 failurePolicy=continue。
 

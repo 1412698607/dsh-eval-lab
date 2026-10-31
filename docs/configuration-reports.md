@@ -1,6 +1,6 @@
 # M4.2 离线配置比较报告
 
-更新：2026 年 10 月 25 日，Asia/Shanghai。`comparisonReportFormatVersion=1`。读取一个已经结束的 M4.1 实验，重新核对计划输入 / 指纹及样本并生成独立 JSON / Markdown，不执行模型任务。
+更新：2026 年 10 月 28 日，Asia/Shanghai。普通实验保持 `comparisonReportFormatVersion=1`，首轮续跑报告保持版本 2，连续续跑使用版本 3。都重新核对计划及样本，生成独立 JSON / Markdown，不执行模型任务。
 
 [双配置八任务准备](guarded-comparison.md) 新增两用例各两轮的合成链路回归，验证各用例独立配对、异常配对排除、缺失指标与停止分母。它不提供第二模型的真实比较结论，报告协议和计算规则不变。
 
@@ -16,7 +16,7 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 
 `--report` 与 `--case` / `--batch` / `--experiment` 互斥，不能使用 `--run`、`--evidence`、`--output`、`--runs-root` 或宿主运行控制。退出码 0 表示报告成功生成；样本 failed / unevaluable、无法配对仍可正常生成报告。输入结构、关联或写入错误返回 2。原有运行 / 离线评测退出码不变。
 
-输入必须为终态 completed / stopped / interrupted / error 且含 finishedAt；running 不接受。当前仅支持一个现有版本 1 实验及其完整目录，不合并多个实验，不用新公共用例替换历史快照。增加待比较配置应在实验清单中填写不同 configRef，并执行新的实验；不同 configurationId 指向同一 configRef 时，报告不会把它们当作不同模型。
+普通实验输入必须为终态 completed / stopped / interrupted / error 且含 finishedAt；running 不接受。支持一个现有版本 1 实验及其完整目录，或下节所述的单个显式实验续跑，不合并任意实验，不用新公共用例替换历史快照。增加待比较配置应在实验清单中填写不同 configRef，并执行新的实验；不同 configurationId 指向同一 configRef 时，报告不会把它们当作不同模型。
 
 默认创建 `runs/reports/<reportId>/`：
 
@@ -29,6 +29,55 @@ evaluations/000001.json            本次重新 inspect 和断言的结果
 每次新建 UUID 目录，文件以排他创建方式写入；不覆盖原实验、旧 evaluation 或已有报告。stdout 输出报告 JSON，包含 reportDirectory。写入错误可能留下未完成的新报告目录，不支持原子发布、断电保证或续写。整个目录仍在忽略的 runs 内，包含私人任务与本机证据路径，不作为公开夹具。
 
 命令行 JSON stdout 固定 UTF-8，重定向时不随 Windows 系统代码页改变。JSON 的 generatedAt 保存 UTC，Markdown 显示 Asia/Shanghai 时间。Markdown 将缺失数值显示为“缺失”、浮点数显示六位有效数字；完整原数值在 JSON 中保留，不参与重新舍入后的统计。
+
+## 实验续跑的跨批次报告
+
+055 产生的终态实验续跑结果可以直接交给同一个入口：
+
+```powershell
+python -m dsh_eval --report 'runs/experiment-resumes/<resumeId>/experiment-resume-result.json' --reports-root runs/reports
+```
+
+它读取一个显式关联的原实验、原批次、批次续跑及新批次，生成版本 2 的 report.json / report.md。原实验可能因中断仍为 running；实验续跑、下层批次续跑及新批次本身必须终态且状态一致。纯批次 resume-result.json 没有用例 / 配置 / 轮次矩阵，不是该入口的输入。成功返回 0，结构 / 关联错误仍使用公共版本 1 错误 JSON / 退出 2，不创建新报告目录或运行模型。
+
+在 inspect 和输出之前核对：
+
+1. 实验续跑与 resume-plan.json 的身份、来源、摘要、上限、分类和样本映射一致。重新验证原计划快照与完整矩阵，并要求保存的原实验 / 冻结输入 / 源元信息字节摘要一致。
+2. 下层续跑必须位于显式的 continuations/<batchResumeId>/resume-result.json，源批次领取记录的身份 / 目录与它一致；下层保存的计划摘要、原批次 / 待执行与复用项、上限和计数必须对应。
+3. 新批次的来源、身份、输入指纹、剩余清单 / 冻结输入、顺序和原 sampleId 对应，不重复或遗漏原矩阵位置。跨两个批次的 caseRunId / runId / sessionId 不能重复。路径继续采用包含关系检查；skipped 不允许带实际执行 / 来源 / 指标事实。
+
+核对绑定后，历史复用项和新增项都交给同一 _recheck / evaluate / Node inspect 流程，分别使用其实际批次 ID 和证据根。原 checkpoint 落后但完整评测已保存的复用项，按受控 caseDirectory 补出固定文件位置后再检查证据，不扫描目录猜测运行。
+
+[058 修复](changes/2026-10-27-058-resume-lock-report-version.md) 后，共用归档加载器只做静态结构与一致性检查，不调用 validate_live_case 或要求归档 pluginVersion 等于当前 package.json。本地插件升级后，已有续跑结果仍可重新生成报告；保存配置、录制插件版本和实际请求路由的逐项核对继续有效。当前安装版本及 headless 限制仍用于续跑预检 / 执行，生成报告成功不表示可在当前环境继续执行。
+
+保存的预检摘要含历史录制文件的旧摘要，但报告不会要求这些证据字节保持不变而拒绝整份输入；录制 / evidence / runtime / 已执行 case 快照的当前问题按原逐样本规则重新判定，保留原计划 / 尝试分母。元信息、计划、绑定或冻结输入冲突则整份拒绝。配置或实际 request/header 不匹配、来源不同、坏录制等仍排除对应配对。
+
+版本 2 新增或调整：
+
+| 字段 | 含义 |
+| --- | --- |
+| sourceResumeResult / resumeId | 本次报告读取的实验续跑结果及其身份 |
+| sourceExperimentResult / experimentId | 原实验来源与身份；原文件不修改 |
+| batchId / batchIds | 单一 batchId 为 null；batchIds 顺序为原批次、新批次 |
+| resumeVerification | 保存的两层续跑计划摘要、显式关联的下层结果及结构复核状态；不代表任务通过 |
+| samples.executionOrigin | reused / new；与各样本 sourceBatchId / sourceBatchResult 一起说明实际证据来源 |
+| reusedSummary / newlyExecutedSummary | 都由本次逐项复验重新计算；前者是历史任务，后者仅含新批次，包括其错误 / 跳过 |
+| groups.byExecutionOrigin | 同一用例 / 配置内分别统计 reused / new，保留零分母和指标缺失 |
+| savedSummary / summary | 下层保存的 combinedSummary / 本次重新复验的全部原计划样本汇总 |
+
+原 samplePlan / counts 只是启动计划，不作为最终执行状态。最终新项状态取自实际新批次，再重新复验；历史 failed 不会因为新任务 passed 而消失。Markdown 显示历史 / 新增的分母、指标累计值、均值、范围、覆盖及逐样本来源，缺失费用保持“缺失”。普通批次摘要、源汇总和旧 evaluation 均不回填。
+
+配置配对可以跨执行来源，例如同一原 repeatIndex 的左侧已完成、右侧为本次新增；仍须同用例、同轮次、同 live / synthetic 来源，且两侧 verified / matched。reused / new 表示执行时间归属，不替代 live / synthetic 的证据来源。调用和 token 的全部样本合计含历史观察量，不能全部当作本次新增消耗。
+
+本批不合并多个实验、不自动跟随再次续跑，续跑来源不支持目录搬迁；普通版本 1 实验的整体搬迁能力保持原范围。[结果浏览器](result-browser.md) 已接入版本 2，展示保存的原 / 新批次关联与分开的历史 / 新增用量；浏览不重新复验，见 [057](changes/2026-10-27-057-resume-report-browser.md)。报告要求停止写入后的稳定来源，没有多文件事务、签名或断电保证。报告实现和无模型验证见 [056](changes/2026-10-27-056-experiment-resume-report.md)。
+
+## 连续续跑报告版本 3
+
+[059](changes/2026-10-28-059-continuation-chains.md) 让同一 --report 入口接受 experimentResumeResultFormatVersion=2 的终态结果。沿显式祖先链核对每轮计划、来源批次、领取、冻结输入、剩余顺序和身份，按完整原矩阵重新评测各样本。祖先续跑可保留崩溃时的 running；选定的最新结果及其下游必须终态。归档元信息 / 冻结输入冲突整份拒绝；历史录制 / 证据变化继续按逐样本复验处理，保留原分母。
+
+版本 3 保留版本 2 的统计字段，batchIds 依次包含原批次和全部后续批次，batchResultPaths 给出对应的显式绝对结果路径；resumeChain 按顺序保存每个 resumeId / resultPath。sourceResumeResult 指向本报告选定的最新续跑结果。reusedSummary 是该轮之前所有批次的复验统计，newlyExecutedSummary 只描述该轮新批次。savedSummary 是该轮保存的全矩阵 combinedSummary；summary 是报告本次重新复验值。两者都不是纯粹的本轮新增消耗。
+
+可以跨任意历史批次配对同一原用例 / 配置 / repeatIndex，仍须同 live / synthetic 来源并 verified / matched。报告不改变原轮次和计划数量，不扫描或自动跟随更新的续跑。最多读取 32 个续跑结果，循环、重复身份或未来版本拒绝；归档路径搬迁和任意跨实验合并不支持。浏览器支持版本 1 / 2 / 3，版本 3 可打开全部批次及祖先续跑，仍只读保存内容。
 
 ## 核对顺序与失败行为
 

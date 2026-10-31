@@ -9,7 +9,8 @@ const words = { passed: "通过", failed: "未通过", unevaluable: "无法评�
   stopped: "已停止", interrupted: "已中断", error: "出错", finished: "已结束", skipped: "已跳过", generated: "已生成",
   complete: "完整", invalid: "无效", unverified: "未核验", not_run: "未执行", insufficient_evidence: "证据不足",
   timed_out: "超时", cancelled: "已取消", runtime_error: "运行错误", unknown: "未知", live: "真实运行声明",
-  synthetic: "合成声明", matched: "匹配", mismatched: "不匹配", verified: "复验已处理", rejected: "关联被拒绝", unavailable: "不可用" };
+  synthetic: "合成声明", matched: "匹配", mismatched: "不匹配", verified: "复验已处理", rejected: "关联被拒绝", unavailable: "不可用",
+  reused: "历史复用", new: "本次新增" };
 const metricNames = { modelCalls: "已结算模型调用", toolCalls: "工具调用", inputTokens: "输入 token", outputTokens: "输出 token",
   totalTokens: "总 token", elapsedSeconds: "运行耗时（秒）", cost: "费用" };
 let token = new URLSearchParams(location.hash.slice(1)).get("token");
@@ -136,11 +137,18 @@ function metricsTable(metrics, aggregate = false) {
 function sampleTable(data, links) {
   const rows = data.samples || data.entries;
   if (!Array.isArray(rows)) return;
+  const resumed = [2, 3].includes(data.comparisonReportFormatVersion);
   const body = rows.map((row, index) => {
     const link = links.find((item) => item.label === `${index + 1} / evaluationPath` && item.id);
     const name = row.sampleId || row.entryId || row.caseRunId;
     const identity = append(node("div"), link ? button(name, () => openDocument(link.id)) : node("span", name),
       node("div", `${row.caseId || ""} · 重复 ${row.repeatIndex ?? "—"}`, "subtext"), badge(row.status));
+    const origin = append(node("div"), node("div", display(row.executionOrigin || "unknown")),
+      node("div", row.sourceBatchId ?? "批次缺失", "subtext"));
+    if (resumed) {
+      const batch = links.find((item) => item.label === `${index + 1} / sourceBatchResult` && item.id);
+      if (batch) origin.append(button("查看来源批次", () => openDocument(batch.id)));
+    }
     const config = append(node("div"), node("div", row.configurationId || row.requestedConfiguration?.model || "缺失"),
       node("div", `请求 ${row.requestedConfiguration?.provider || "缺失"} / ${row.requestedConfiguration?.model || "缺失"}`, "subtext"), badge(row.configurationMatch),
       node("div", `实际 ${row.configuration?.provider || "缺失"} / ${row.configuration?.model || "缺失"}`, "subtext"));
@@ -150,14 +158,16 @@ function sampleTable(data, links) {
     if (row.saved) result.append(node("div", "原保存结论：" + display(row.saved.outcome), "subtext"));
     const error = typeof row.error === "string" ? row.error : [row.error?.type, row.error?.message].filter(Boolean).join(": ");
     if (row.reasons?.length || row.error) result.append(node("div", error || row.reasons?.join("；") || "未知错误", "subtext"));
-    return [identity, config, display(row.source), badge(row.executionStatus), badge(row.recordingOutcome), badge(row.assertionOutcome), result];
+    return [identity, ...(resumed ? [origin] : []), config, display(row.source), badge(row.executionStatus), badge(row.recordingOutcome), badge(row.assertionOutcome), result];
   });
-  return panel("逐次结果", table(["样本", "请求 / 实际配置", "来源声明", "执行", "录制", "断言", "任务结论"], body));
+  return panel("逐次结果", table(["样本", ...(resumed ? ["执行归属"] : []), "请求 / 实际配置", "来源声明", "执行", "录制", "断言", "任务结论"], body));
 }
 function evidence(links) {
   if (!links.length) return;
   const names = { casePath: "用例快照", evidencePath: "证据清单", evaluationPath: "评测结果", runtimeReport: "执行事实",
-    manifestPath: "输入清单", batchResultPath: "批次结果", sourceExperimentResult: "原实验", sourceEvidencePath: "原证据", association: "本次运行" };
+    manifestPath: "输入清单", batchResultPath: "批次结果", sourceExperimentResult: "原实验", sourceEvidencePath: "原证据", association: "本次运行",
+    sourceResumeResult: "原实验续跑结果", sourceBatchResult: "来源批次", batchResumeResult: "批次续跑结果",
+    batchResumeResultPath: "下游批次续跑结果", resumeVerification: "保存的续跑关联", resultPath: "实验续跑结果" };
   function label(link) {
     return link.label.split(" / ").map((part) => names[part] || (part.endsWith(".jsonl") ? "事件轨迹" : part.endsWith(".status.json")
       ? "录制状态" : part === "run.json" ? "录制信息" : part === "runDir" ? "录制" : part)).join(" / ");
@@ -182,7 +192,37 @@ function renderDocument(documentData) {
     return;
   }
   if (documentData.kind === "markdown") { target.append(panel("报告文本", node("pre", documentData.text))); return; }
+  const resumed = [2, 3].includes(data.comparisonReportFormatVersion);
   if (data.summary) target.append(summary(data.summary));
+  if (resumed) {
+    const batches = Array.isArray(data.batchIds) ? data.batchIds : [];
+    const batchRows = data.comparisonReportFormatVersion === 3
+      ? batches.map((id, index) => [`批次 ${index + 1} · ${index === 0 ? "原批次" : index === batches.length - 1 ? "本轮新增" : "历史续跑"}`, id])
+      : [["原批次 ID", batches[0]], ["新批次 ID", batches[1]]];
+    target.append(panel("续跑来源与保存的关联复核", table(["关联", "保存值"], [
+      ["原实验 ID", data.experimentId], ["实验续跑 ID", data.resumeId], ...batchRows,
+      ["原计划复核", display(data.planVerification?.status)], ["续跑关联复核", display(data.resumeVerification?.status)],
+    ])));
+    if (data.comparisonReportFormatVersion === 3 && Array.isArray(data.resumeChain)) {
+      target.append(panel("连续续跑链", table(["轮次", "续跑 ID", "保存结果"], data.resumeChain.map((row, index) => {
+        const link = links.find((item) => item.label === `续跑 ${index + 1} / resultPath` && item.id);
+        return [index + 1, row.resumeId, link ? button("查看续跑结果", () => openDocument(link.id)) : "缺失或超出浏览目录"];
+      }))));
+    }
+    const origins = [["历史复用", data.reusedSummary], ["本次新增", data.newlyExecutedSummary]];
+    target.append(panel("历史复用与本次新增", append(node("div"),
+      node("p", "历史复用的用量属于原执行；本次新增只统计新批次。以下为保存的报告，浏览不会重新复验。"),
+      table(["执行归属", "计划 / 尝试 / 跳过", "全尝试通过", "可评测通过", "可评测覆盖", "来源声明 / 样本"],
+        origins.map(([label, value]) => [label, `${value?.planned ?? "缺失"} / ${value?.attempted ?? "缺失"} / ${value?.skipped ?? "缺失"}`,
+          countRate(value?.attemptedPassRate), countRate(value?.evaluablePassRate), countRate(value?.evaluableCoverage),
+          Object.entries(value?.sourceCounts || {}).map(([source, count]) => `${display(source)} / ${count}`).join("；") || "缺失"])))));
+    target.append(panel("历史与新增用量（分别统计）", table(["观测指标", "历史观测累计", "历史观测 / 缺失", "本次新增累计", "新增观测 / 缺失"],
+      Object.entries(metricNames).map(([key, label]) => {
+        const old = data.reusedSummary?.metrics?.[key], fresh = data.newlyExecutedSummary?.metrics?.[key];
+        return [label, number(old?.observedTotal), `${old?.observedSamples ?? "缺失"} / ${old?.missingSamples ?? "缺失"}`,
+          number(fresh?.observedTotal), `${fresh?.observedSamples ?? "缺失"} / ${fresh?.missingSamples ?? "缺失"}`];
+      }))));
+  }
   if (documentData.kind === "case") {
     target.append(panel("任务", node("p", data.input)), append(node("div", null, "two-columns"),
       panel("配置与预算", json({ configuration: data.configRef, budget: data.budget })), panel("初始环境", json(data.environment))), panel("必要断言", json(data.assertions)));
@@ -196,7 +236,7 @@ function renderDocument(documentData) {
   }
   const samples = sampleTable(data, links);
   if (samples) target.append(samples);
-  if (data.summary?.metrics) target.append(panel("汇总指标与缺失覆盖", metricsTable(data.summary.metrics, true)));
+  if (data.summary?.metrics) target.append(panel(resumed ? "全部原计划样本的汇总指标（含历史复用）" : "汇总指标与缺失覆盖", metricsTable(data.summary.metrics, true)));
   if (data.comparisons) {
     target.append(panel("配置比较 · 描述本次实验", table(["配置对 / 用例", "来源声明", "共同配对 / 原计划", "排除", "通过比例差（右 − 左）", "说明"], data.comparisons.map((row) => [
       `${row.leftConfigurationId} → ${row.rightConfigurationId} / ${row.caseEntryId}`, display(row.source),
@@ -210,10 +250,11 @@ function renderDocument(documentData) {
             number(metric.left?.observedMean), number(metric.right?.observedMean), number(metric.meanDifference),
             number(metric.minDifference) + " .. " + number(metric.maxDifference)]))));
     }
-    if (data.savedSummary) target.append(panel("原实验保存的汇总指标", metricsTable(data.savedSummary.metrics, true)));
+    if (data.savedSummary) target.append(panel(resumed ? "续跑结果保存的合并汇总指标" : "原实验保存的汇总指标", metricsTable(data.savedSummary.metrics, true)));
   }
-  if (data.groups?.length) target.append(panel("按用例 / 配置分组的分母与覆盖", table(["用例 / 配置", "原计划", "全尝试通过", "可评测通过", "可评测覆盖", "复验匹配子集", "来源声明 / 样本"],
+  if (data.groups?.length) target.append(panel("按用例 / 配置分组的分母与覆盖", table(["用例 / 配置", "原计划", ...(resumed ? ["历史复用 / 本次新增"] : []), "全尝试通过", "可评测通过", "可评测覆盖", "复验匹配子集", "来源声明 / 样本"],
     data.groups.map((group) => [`${group.caseEntryId} / ${group.configurationId}`, group.summary?.planned,
+      ...(resumed ? [`${group.byExecutionOrigin?.reused?.planned ?? "缺失"} / ${group.byExecutionOrigin?.new?.planned ?? "缺失"}`] : []),
       countRate(group.summary?.attemptedPassRate), countRate(group.summary?.evaluablePassRate), countRate(group.summary?.evaluableCoverage),
       group.matchedSummary?.planned ?? "缺失", Object.entries(group.bySource || group.summary?.sourceCounts || {}).map(([source, value]) => `${display(source)} / ${typeof value === "number" ? value : value.planned}`).join("；") || "缺失"]))));
   if (data.limitations?.length) target.append(panel("解释边界", append(node("div"), ...data.limitations.map((item) => node("p", item)))));

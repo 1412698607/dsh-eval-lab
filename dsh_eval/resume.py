@@ -1,9 +1,11 @@
 """Verify a stopped scheduler and execute only its provably unstarted cases."""
 from copy import deepcopy
+from contextlib import ExitStack
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import sys
 from uuid import UUID, uuid4
 
 from .batch import _cleanup_confirmed, _now, input_fingerprint, run_batch
@@ -14,6 +16,22 @@ from .metrics import summarize
 from .runner import ROOT, save_json, validate_live_case
 
 CLAIM_NAME = ".batch-resume-claim.json"
+
+
+def _check_resume_output_root(runs_root, *, experiment=False):
+    """Reject the known Windows installer path limit before allocating or claiming."""
+    if sys.platform != "win32":
+        return
+    root = Path(runs_root or ROOT / "runs" / ("experiment-resumes" if experiment else "resumes")).resolve()
+    reserved = str(UUID(int=0))
+    directory = root / reserved
+    if experiment:
+        directory = directory / "continuations" / reserved
+    operation = (directory / "batches" / reserved / "cases" / reserved / "home" / "profiles" / "headless"
+                 / ".plugin-manager" / "logs" / "operation-XXXXXX")
+    length = len(str(operation).encode("utf-16-le")) // 2
+    require(length < 248, f"Windows Harness preparation path requires {length} UTF-16 code units (limit 247); "
+            "choose a shorter --runs-root; no continuation was claimed")
 
 
 def _digest(value):
@@ -158,7 +176,8 @@ def plan_batch_resume(result_path, *, max_samples=None):
 
 
 def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
-                 expected_plan_sha256=None):
+                 expected_plan_sha256=None, stop_after=None):
+    require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(isinstance(expected_plan_sha256, str) and re.fullmatch(r"[0-9a-fA-F]{64}", expected_plan_sha256) is not None,
             "Resume requires the expected plan SHA-256 from a fresh preview")
     source = Path(result_path).resolve()
@@ -166,37 +185,54 @@ def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_str
         plan, saved, cases = _load_plan(source, max_samples)
         require(plan["canResume"], "Batch cannot resume: " + "; ".join(plan["reasons"] + [row["reason"] for row in plan["blockedEntries"]]))
         require(plan["planFingerprint"]["sha256"] == expected_plan_sha256.lower(), "Resume plan fingerprint mismatch")
-        resume_id = str(uuid4())
-        directory = Path(runs_root or ROOT / "runs" / "resumes").resolve() / resume_id
-        require(not directory.exists(), "Resume directory already exists")
-        # Creation is exclusive, and happens before any remaining task can start.
-        # A crash leaves a claim requiring inspection, rather than automatic reuse.
-        save_json(source.parent / CLAIM_NAME, {"resumeClaimFormatVersion": 1, "resumeId": resume_id,
-                                             "resumeDirectory": str(directory), "claimedAt": _now()})
-        (directory / "inputs").mkdir(parents=True, exist_ok=False)
-        save_json(directory / "resume-plan.json", plan)
-        remaining = {"batchFormatVersion": 1, "batchName": saved["batchName"] + " continuation",
-                     "failurePolicy": saved["failurePolicy"], "cases": []}
-        for index, entry_id in enumerate(plan["pendingEntryIds"], 1):
-            path = f"inputs/{index:04}.case.json"
-            save_json(directory / path, cases[entry_id])
-            remaining["cases"].append({"entryId": entry_id, "casePath": path})
-        save_json(directory / "remaining.batch.json", remaining)
-        report = {"batchResumeResultFormatVersion": 1, "resumeId": resume_id, "resumeDirectory": str(directory),
-                  "sourceBatchResult": str(source), "sourceBatchId": saved["batchId"],
-                  "planFingerprint": plan["planFingerprint"], "startedAt": _now(), "finishedAt": None,
-                  "status": "running", "outcome": None, "reusedEntries": plan["reusedEntries"], "batchResultPath": None}
-        save_json(directory / "resume-result.json", report)
-        result = run_batch(directory / "remaining.batch.json", directory / "batches", modules_dir, cancel_after_stream)
-        rows = {row["entryId"]: row for row in [*plan["reusedEntries"], *result["entries"]]}
-        combined = [rows[row["entryId"]] for row in saved["entries"]]
-        outcomes = {row["outcome"] for row in combined}
-        outcome = ("unevaluable" if result["status"] in ("error", "interrupted") or "unevaluable" in outcomes
-                   else "failed" if "failed" in outcomes else "passed" if outcomes == {"passed"} else "unevaluable")
-        report.update(finishedAt=_now(), status=result["status"], outcome=outcome,
-                      batchResultPath=(Path(result["batchDirectory"]).relative_to(directory) / "batch-result.json").as_posix(),
-                      newlyExecutedSummary=summarize(result["entries"]), combinedSummary=summarize(combined))
-        temporary = directory / f".resume-result-{uuid4()}.tmp"
-        save_json(temporary, report)
-        temporary.replace(directory / "resume-result.json")
-        return report
+        return _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, stop_after=stop_after)
+
+
+def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None, _lock_stack=None,
+                    stop_after=None):
+    """Execute a verified plan while the caller retains the source batch lock."""
+    _check_resume_output_root(runs_root)
+    resume_id = resume_id or str(uuid4())
+    directory = Path(runs_root or ROOT / "runs" / "resumes").resolve() / resume_id
+    require(not directory.exists(), "Resume directory already exists")
+    # Creation is exclusive, and happens before any remaining task can start.
+    # A crash leaves a claim requiring inspection, rather than automatic reuse.
+    save_json(source.parent / CLAIM_NAME, {"resumeClaimFormatVersion": 1, "resumeId": resume_id,
+                                         "resumeDirectory": str(directory), "claimedAt": _now()})
+    (directory / "inputs").mkdir(parents=True, exist_ok=False)
+    save_json(directory / "resume-plan.json", plan)
+    remaining = {"batchFormatVersion": 1, "batchName": saved["batchName"] + " continuation",
+                 "failurePolicy": saved["failurePolicy"], "cases": []}
+    for index, entry_id in enumerate(plan["pendingEntryIds"], 1):
+        path = f"inputs/{index:04}.case.json"
+        save_json(directory / path, cases[entry_id])
+        remaining["cases"].append({"entryId": entry_id, "casePath": path})
+    save_json(directory / "remaining.batch.json", remaining)
+    batch_id = str(uuid4())
+    report = {"batchResumeResultFormatVersion": 1, "resumeId": resume_id, "resumeDirectory": str(directory),
+              "sourceBatchResult": str(source), "sourceBatchId": saved["batchId"],
+              "planFingerprint": plan["planFingerprint"], "startedAt": _now(), "finishedAt": None,
+              "status": "running", "outcome": None, "stopAfter": stop_after,
+              "reusedEntries": plan["reusedEntries"], "batchResultPath": None,
+              "batchBinding": {"batchId": batch_id, "resultPath": f"batches/{batch_id}/batch-result.json"}}
+    save_json(directory / "resume-result.json", report)
+    with ExitStack() as local_locks:
+        lock_owner = _lock_stack if _lock_stack is not None else local_locks
+        result = run_batch(directory / "remaining.batch.json", directory / "batches", modules_dir, cancel_after_stream,
+                           batch_id=batch_id, _lock_stack=lock_owner, stop_after=stop_after)
+        return _finish_resume(directory, report, result, plan, saved)
+
+
+def _finish_resume(directory, report, result, plan, saved):
+    rows = {row["entryId"]: row for row in [*plan["reusedEntries"], *result["entries"]]}
+    combined = [rows[row["entryId"]] for row in saved["entries"]]
+    outcomes = {row["outcome"] for row in combined}
+    outcome = ("unevaluable" if result["status"] in ("error", "interrupted") or "unevaluable" in outcomes
+               else "failed" if "failed" in outcomes else "passed" if outcomes == {"passed"} else "unevaluable")
+    report.update(finishedAt=_now(), status=result["status"], stopReason=result["stopReason"], outcome=outcome,
+                  batchResultPath=(Path(result["batchDirectory"]).relative_to(directory) / "batch-result.json").as_posix(),
+                  newlyExecutedSummary=summarize(result["entries"]), combinedSummary=summarize(combined))
+    temporary = directory / f".resume-result-{uuid4()}.tmp"
+    save_json(temporary, report)
+    temporary.replace(directory / "resume-result.json")
+    return report
