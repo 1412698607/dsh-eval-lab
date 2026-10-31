@@ -2,6 +2,12 @@
 
 按开发批次记录目标、代码变化、设计取舍和验证。当前插件版本为 `0.1.2`，完成录制、M2 / M3 受控评测闭环、M4 重复试验 / 指标与离线报告、M5 本地浏览和无模型 Windows CI 验收。当前状态见 [开发进度](docs/progress.md)。
 
+## 2026年10月31日 已观测 token 调度停止与基线状态同步
+
+- [067](docs/changes/2026-10-31-067-observed-token-scheduling-stop.md) 为批次、实验及首轮 / 连续续跑增加 `--stop-after-tokens N`，在任务边界按本轮报告的 totalTokens 停止后续调度；用量不可用同样停止，保存已观测 / 缺失覆盖。原计划、指纹、失败策略和续跑领取保持原义；只做无模型验证，不形成任务内 token / 费用硬限额。
+
+- [066](docs/changes/2026-10-31-066-baseline-ci-status-sync.md) 核实本地与远端基线均为 9252c3e，063–065 已提交推送；精确 SHA 的 push / PR 两次无模型 CI 运行、作业及全部步骤 success，具体云端测试数量未读取。同步当前进度、README 与路线图，保留历史记录和真实样本结论，后续路径 / 用量加固及完整集扩大仍按需确定范围。
+
 ## 2026年10月29日 双配置比较、连续续跑真实验收与 Windows 路径保护
 
 - [065](docs/changes/2026-10-29-065-live-two-config-comparison.md) 新建 DeepSeek Flash / 百炼 Qwen3.7-Plus 的两用例 / 两轮 continue 实验，八项全部执行、七通过一失败；失败为 Qwen 的 direct-read 第二轮返回 Markdown 加粗值。报告八项 verified / matched / live，每用例两对、零排除，153 份本轮归档及 96 份历史 050 文件摘要不变，八个专用 CLI PID 已退出。没有模型总体优劣、性能或费用改善结论。

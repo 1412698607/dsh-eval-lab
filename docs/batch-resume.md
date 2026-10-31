@@ -1,6 +1,6 @@
 # 批次级安全续跑
 
-更新：2026 年 10 月 29 日，Asia/Shanghai。首版复用既有 batch / runner / evaluate / inspect，仅对明确未开始的项创建新批次；原批次结果、输入和已执行任务不覆盖。[052](changes/2026-10-26-052-safe-batch-resume.md) 的首版验收为合成任务与真实子进程检查；[064](changes/2026-10-29-064-live-continuation-acceptance.md) 已通过实验连续续跑验收共用批次核心，没有额外执行独立 --resume-batch CLI 的真实模型任务。领取前的 Windows 路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
+更新：2026 年 10 月 31 日，Asia/Shanghai。首版复用既有 batch / runner / evaluate / inspect，仅对明确未开始的项创建新批次；原批次结果、输入和已执行任务不覆盖。[052](changes/2026-10-26-052-safe-batch-resume.md) 的首版验收为合成任务与真实子进程检查；[064](changes/2026-10-29-064-live-continuation-acceptance.md) 已通过实验连续续跑验收共用批次核心，没有额外执行独立 --resume-batch CLI 的真实模型任务。领取前的 Windows 路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口
 
@@ -25,11 +25,13 @@ python -m dsh_eval --resume-batch $source --run --max-samples 2 --expected-plan-
 
 --max-samples 在此限制**本次待执行的新任务数**，不包含复用项；不是模型调用、token 或费用上限。--expected-plan-sha256 为执行必需参数，必须是 64 位十六进制。执行时先重新锁定 / 复核 / 比对，再创建身份、领取续跑资格和输出；变化或阻断先于任务启动拒绝。--host-modules / --cancel-after-stream 沿用原 runner；不接受 --evidence / --output，也不能与其他选择入口组合。
 
-API 为 `plan_batch_resume(result_path, *, max_samples=None)` 和 `resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None, stop_after=None)`，位于 dsh_eval/resume.py。
+API 为 `plan_batch_resume(result_path, *, max_samples=None)` 和 `resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None, stop_after=None, stop_after_tokens=None)`，位于 dsh_eval/resume.py。
 
 Windows 执行还会在领取之前检查实际输出根：为 resumeId / batchId / caseRunId 预留 UUID 长度，并计算到宿主安装临时目录 operation-XXXXXX 的完整路径，达到 248 个 UTF-16 单元即拒绝。报错返回退出 2，不创建身份 / 输出或领取文件，可以选用更短的绝对 `--runs-root` 后重新执行。`--plan` 不接收输出根，因此可续跑的源仍可能在执行时被路径保护拒绝；它也不保证宿主安装和远端模型可用。具体边界见 [Windows 输出根检查](experiment-resume.md#windows-输出根检查)。
 
 ## 判定与协调
+
+`--stop-after-tokens N` 按本轮新批次报告的 totalTokens 停止后续调度；达到阈值或用量不可用时不启动下一项。结果保存 stopAfterTokens / tokenUsage，源阈值和历史用量不自动继承，复用项不进入本轮累计；该控制不进入预览指纹。下一轮仍须 fresh plan、单次领取和清理复核；它不能恢复未知执行或解除原失败策略，也不是任务内 token 硬限额，详见 [按已观测 token 停止调度](batch-runner.md#按已观测-token-停止调度)。
 
 `--resume-batch --run` 可加 `--stop-after N`，只计算新批次中的尝试，复用项不计数。完整剩余清单仍冻结，maxSamples 检查不变；达到阈值后保存 stopAfter / stopReason 并保留无执行身份的 skipped 项，可显式选择下游新批次结果重新预检。该参数不解除原失败停止策略或单次领取，也不进入预览指纹。字段、优先级及退出码见 [任务边界停止](batch-runner.md#任务边界停止)。
 

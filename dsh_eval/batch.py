@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from .batch_lock import batch_lock
 from .formats import load_json, require, validate_batch
+from .metrics import number
 from .runner import ROOT, run_case, save_json, validate_live_case
 
 
@@ -49,9 +50,20 @@ def _outcome(report):
     return "unevaluable"
 
 
+def _token_usage(entries):
+    attempted = [entry for entry in entries if entry["status"] in ("finished", "error")]
+    values = [(entry.get("metrics") or {}).get("totalTokens") for entry in attempted]
+    observed = [value for value in values if type(value) is int and number(value)]
+    total = sum(observed) if observed else None
+    return {"observedSamples": len(observed), "missingSamples": len(attempted) - len(observed),
+            "observedTotal": total if number(total) else None}
+
+
 def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None, _lock_stack=None,
-              stop_after=None):
+              stop_after=None, stop_after_tokens=None):
     require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
+    require(stop_after_tokens is None or type(stop_after_tokens) is int and stop_after_tokens > 0,
+            "stop_after_tokens must be a positive integer")
     require(batch_id is None or isinstance(batch_id, str), "Reserved batch_id must be a UUID string")
     source = Path(batch_path).resolve()
     manifest = validate_batch(load_json(source))
@@ -66,6 +78,7 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
               "failurePolicy": manifest["failurePolicy"], "mode": "sequential", "batchDirectory": str(directory),
               "sourceManifest": str(source), "manifestPath": "batch.json", "status": "running",
               "startedAt": _now(), "finishedAt": None, "stopReason": None, "stopAfter": stop_after,
+              "stopAfterTokens": stop_after_tokens, "tokenUsage": None if stop_after_tokens is None else _token_usage([]),
               "outcome": None, "entries": []}
     frozen = {**manifest, "cases": []}
     for index, (entry, case_source, case) in enumerate(inputs):
@@ -126,9 +139,19 @@ def _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream
                 # An unexpected runner/result failure cannot establish isolation for the next case.
                 active.update(status="error", outcome="unevaluable", error={"type": type(error).__name__, "message": str(error)})
                 report.update(status="error", stopReason="runner_error")
+            if report["stopAfterTokens"] is not None:
+                report["tokenUsage"] = _token_usage(report["entries"])
             _checkpoint(directory, report)
             if report["status"] != "running":
                 break
+            if report["stopAfterTokens"] is not None and index + 1 < len(report["entries"]):
+                usage = report["tokenUsage"]
+                if usage["missingSamples"] or usage["observedTotal"] is None:
+                    report.update(status="stopped", stopReason="token_usage_unavailable")
+                elif usage["observedTotal"] >= report["stopAfterTokens"]:
+                    report.update(status="stopped", stopReason="stop_after_tokens")
+                if report["status"] != "running":
+                    break
             if report["stopAfter"] is not None and index + 1 >= report["stopAfter"] and index + 1 < len(report["entries"]):
                 report.update(status="stopped", stopReason="stop_after")
                 break
@@ -141,6 +164,8 @@ def _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream
     for entry in report["entries"]:
         if entry["status"] == "pending":
             entry.update(status="skipped", skipReason=report["stopReason"])
+    if report["stopAfterTokens"] is not None:
+        report["tokenUsage"] = _token_usage(report["entries"])
     report.update(finishedAt=_now(), outcome=_outcome(report))
     _checkpoint(directory, report)
     return report

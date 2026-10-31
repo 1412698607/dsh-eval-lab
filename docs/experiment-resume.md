@@ -1,6 +1,6 @@
 # 实验级安全续跑
 
-更新：2026 年 10 月 29 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
+更新：2026 年 10 月 31 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口与返回值
 
@@ -25,9 +25,13 @@ $plan = python -m dsh_eval --resume-experiment $source --plan --max-samples 6 | 
 python -m dsh_eval --resume-experiment $source --run --max-samples 6 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root runs/experiment-resumes
 ```
 
-执行 API 为 `resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None, stop_after=None)`。摘要必填，接受 64 位十六进制并统一小写；不能用 batchPlanFingerprint 替代实验摘要。--host-modules / --cancel-after-stream 传给既有批次 / runner；--evidence / --output / --reports-root 不接受。首轮执行结果使用 experimentResumeResultFormatVersion=1，连续续跑为版本 2，passed / failed / unevaluable 分别退出 0 / 1 / 2；输入错误返回版本化 JSON 和退出 2，参数组合错误由 argparse 返回 2。
+执行 API 为 `resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None, stop_after=None, stop_after_tokens=None)`。摘要必填，接受 64 位十六进制并统一小写；不能用 batchPlanFingerprint 替代实验摘要。--host-modules / --cancel-after-stream 传给既有批次 / runner；--evidence / --output / --reports-root 不接受。首轮执行结果使用 experimentResumeResultFormatVersion=1，连续续跑为版本 2，passed / failed / unevaluable 分别退出 0 / 1 / 2；输入错误返回版本化 JSON 和退出 2，参数组合错误由 argparse 返回 2。
 
 首轮与连续续跑的 `--run` 都支持 `--stop-after N`：仅计算本轮新执行项，达到阈值后在已完成检查点与下一项身份分配之间停止，保留完整原矩阵。结果增加可选 stopAfter / stopReason，下一轮需重新预检且显式传入停止参数，不沿用历史阈值。运行控制不进入预览或 expected 指纹；历史复用、单次领取、未知任务和原 stop 失败策略保持原规则。详见 [任务边界停止](batch-runner.md#任务边界停止)。
+
+## 已观测 token 停止
+
+首轮与连续续跑也支持 `--stop-after-tokens N`：只累计本轮新批次报告的 totalTokens，用量缺失 / 不可用或达到阈值后停止安排下一项；结果透传 stopAfterTokens / tokenUsage。历史复用不计入本轮累计，下一轮重新选择阈值，不继承源控制或修改历史用量。预览、指纹和完整原矩阵保持原义；任务可超出阈值，不是费用或任务内 token 硬限额。字段与优先级见 [按已观测 token 停止调度](batch-runner.md#按已观测-token-停止调度)。
 
 ## Windows 输出根检查
 

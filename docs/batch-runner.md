@@ -1,6 +1,6 @@
 # M3.4 顺序批次回归
 
-更新：2026 年 10 月 29 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
+更新：2026 年 10 月 31 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
 
 ## 运行
 
@@ -31,6 +31,30 @@ python -m dsh_eval --experiment fixtures/evaluation/core/continuous-resume.exper
 ```
 
 实际调用模型时可在上述清单的 `--run` 中指定 `--stop-after 2`，再用本次结果重新预检两轮续跑，每轮仍显式指定该参数。每次续跑必须使用 fresh plan 的 expected SHA，并选取通过 [Windows 检查](experiment-resume.md#windows-输出根检查) 的短绝对输出根。停止成功本身不表示原实验全部通过；仍有 skipped 时通常为 unevaluable / 退出 2，已有普通失败时沿用原 outcome 规则。[063](changes/2026-10-29-063-scheduler-boundary-stop.md) 保留合成回归与离线准备历史；[064](changes/2026-10-29-064-live-continuation-acceptance.md) 已完成该单配置六任务的真实 2 / 2 / 2 连续续跑，最终报告六项 verified / matched / live，历史复用 4 / 本轮新增 2。命令见 [真实验收入口](experiment-resume.md#六任务真实验收入口)。
+
+## 按已观测 token 停止调度
+
+`--stop-after-tokens N` 接受正整数，只用于批次、实验及两类续跑的 `--run`，Python API 对应 `stop_after_tokens=None`。省略时不启用用量停止；拒绝布尔值、非整数和非正值，校验先于文件读取、输出创建和续跑领取。预览、单用例、报告和浏览不接受该参数。
+
+每项结果保存、清理确认及完成检查点成功后，累计**本轮新批次**已结束尝试的 `metrics.totalTokens`。尚有未开始项时：
+
+- 用量全部可用且已观测总和达到或超过 N，保存 `status=stopped / stopReason=stop_after_tokens`。
+- 任一已结束尝试的 totalTokens 缺失、不是有效非负整数，或总和超出有限数值范围，保存 `status=stopped / stopReason=token_usage_unavailable`，不继续安排下一项。
+- 剩余项为 skipped，skipReason 与 stopReason 相同，执行身份和结果保持 null；全部项均已结束时按正常终态收尾，stopReason=null，用量缺失仍如实保留。
+
+批次、实验、批次续跑和实验首轮 / 连续续跑结果新增可选 `stopAfterTokens` 与 `tokenUsage`，旧结果可无这两个字段。未启用时二者为 null；启用时 tokenUsage 包含 `observedSamples`、`missingSamples`、`observedTotal`，只统计本轮已结束尝试，不含未开始项或历史复用项。observedTotal 是已观测值之和；没有有效值或求和超范围时为 null。缺失不按零补齐，不根据 inputTokens + outputTokens 推算 totalTokens；真正报告的零值有效。
+
+优先处理用户中断、清理不明、runner 错误和原 failurePolicy。其后先判断用量不可用，再判断 token 阈值，最后判断 `--stop-after` 的任务数阈值；两种控制可同时设置，首先满足的边界停止后续调度。完成检查点写入失败不会启动下一项。
+
+该参数保留完整计划，不进入输入清单、预览或指纹，也不能绕过 `--max-samples`。每轮续跑需要重新预检，并显式选择本轮停止参数；阈值和已观测累计不从源结果自动继承，历史缺失用量也不补造。它仅在任务边界生效，当前任务可超出 N；不能限制任务内请求或强制 token / 步骤 / 费用硬限额，不同厂商的 usage 口径仍可能不同。实现及无模型验证见 [067](changes/2026-10-31-067-observed-token-scheduling-stop.md)。
+
+以下为可能调用真实模型的运行示例，先用 `--plan` 核对原完整规模，再显式执行：
+
+```powershell
+$manifest = 'fixtures/evaluation/core/continuous-resume.experiment.json'
+$plan = python -m dsh_eval --experiment $manifest --plan --max-samples 6 | ConvertFrom-Json
+python -m dsh_eval --experiment $manifest --run --max-samples 6 --stop-after-tokens 100000 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root C:/r
+```
 
 ## 输入：batchFormatVersion 1
 
@@ -99,6 +123,7 @@ python -m dsh_eval --case 'runs/batches/<batchId>/cases/<caseRunId>/case.json' -
 | startedAt / finishedAt | 实际观察的 UTC 时间；活动文件 finishedAt 为 null；不是性能统计 |
 | status / stopReason / outcome | 调度状态、停止原因与批次结论，分别解释 |
 | stopAfter | 可选运行停止阈值；新结果未指定时为 null，旧结果可无字段 |
+| stopAfterTokens / tokenUsage | 可选本轮已观测 token 停止阈值及覆盖 / 总和；未启用时 null，旧结果可无字段，见上文 |
 | entries | 保留输入顺序的逐项结果，不丢弃失败或 skipped 项 |
 
 每项保存 entryId、caseId、原始用例路径、冻结 casePath、requestedConfiguration，以及 status。开始执行时分配 caseRunId / caseDirectory；尚未启动项保持 null。caseRunId 可以表示已安排但尚未产生会话的尝试，不等于已经调用模型。

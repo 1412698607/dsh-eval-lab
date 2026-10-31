@@ -1,6 +1,6 @@
 # M4.1 重复试验与指标口径
 
-更新：2026 年 10 月 29 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
+更新：2026 年 10 月 31 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
 
 [双配置八任务比较](guarded-comparison.md) 固定两用例、两配置、两轮，保留第二配置为空的待填写模板；原模板校验拒绝，填妥后使用既有 --plan / cap / 指纹链路。047 / 048 仅做合成准备，050 按 stop 策略执行四项后停止；065 另建 continue 实验，八项全部执行、七通过一失败，每用例两对 verified / matched / live，历史不回填。
 
@@ -44,6 +44,10 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 新计划及实验结果以 maxSamples 记录本次参数，未指定为 null；输入清单格式不变，不能将 maxSamples 加入 experiment.json。它是当次调用的保护，不写入冻结清单，重新运行冻结清单仍需显式传入。预览后修改输入，实际 --run 会重新计算并检查；只在 --plan 使用该参数不能限制下一次未带参数的 --run。
 
 该上限只约束计划任务数：单任务仍可多次调用模型，超时不是费用预算，modelCalls / totalTokens / cost 估算继续为 null。清单本身仍须完整读取 / 校验，单个用例大小和调用方选用的上限没有内建硬限制；不设上限时仍会完整展开矩阵。实现与无模型验证见 [记录 041](changes/2026-10-25-041-experiment-sample-limit.md)。
+
+## 已观测 token 停止
+
+`--run` 还可显式设置 `--stop-after-tokens N`，在任务完成、清理及检查点保存后，按本轮报告的 totalTokens 停止后续调度；用量不可用同样停止。结果新增可选 stopAfterTokens / tokenUsage，不进入预览、指纹或完整任务数上限，历史复用不计入本轮累计。该参数不限制当前任务内的调用或费用，详见 [按已观测 token 停止调度](batch-runner.md#按已观测-token-停止调度)。
 
 ## 计划指纹与执行前一致性检查
 
