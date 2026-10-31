@@ -24,6 +24,7 @@
 - Windows 单用例、批次、实验及续跑执行在创建新身份与输出前检查完整宿主安装目录长度；路径过深时退出 2，提示缩短 `--runs-root`。续跑检查仍先于领取，保留源资格；`--plan` 不检查未来输出根，详见 [Windows 输出根预检](docs/output-paths.md)。
 - 批次、实验与续跑的 `--run` 可用 `--stop-after N` 在本轮 N 项完成、清理及检查点保存后停止后续调度；保留完整矩阵和未开始项，支持重新预检续跑。参数是独立运行控制，不进入计划指纹，也不限制模型调用数或费用，见 [任务边界停止](docs/batch-runner.md#任务边界停止)。
 - 同一批次 / 实验 / 续跑入口可用 `--stop-after-tokens N`，在任务边界按本轮新任务报告的 totalTokens 停止后续调度；用量不可用时同样停止，保存已观测 / 缺失覆盖。阈值不限制当前任务，续跑重新计量且需显式设置，详见 [已观测 token 停止](docs/batch-runner.md#按已观测-token-停止调度)。
+- [完整十用例双配置比较](docs/changes/2026-11-01-072-full-core-two-config-comparison.md) 已以 DeepSeek Flash / 百炼 Qwen3.7-Plus 执行两轮共四十项，39 通过 / 1 失败，零跳过 / 基础设施错误；独立报告全部 verified / matched / live，各用例两对、零排除。失败保留原精确断言，完整矩阵只描述本次观测，不推断总体优胜、显著性或成本 / 性能改善。
 - [四任务真实用量停止验收](docs/changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash 按 1 / 1 / 2 完成两用例各两轮，前两段 token 阈值 1、末段 100000。独立版本 3 报告四项 verified / matched / live，历史复用与末轮新增各两项；只验证当前短根及单配置，不提供任务内硬限额或总体模型优劣结论。
 - [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。

@@ -1,10 +1,12 @@
-# 双配置八任务比较
+# 双配置比较：八任务历史与完整集验收
 
-更新：2026 年 10 月 29 日，Asia/Shanghai。047 / 048 完成模板和无模型回归，050 首次真实计划按失败停止，065 另建 continue 实验完成两用例 / 两配置 / 两轮共八项实际执行。均复用现有 experiment / batch / runner / report，没有新增调度器或数据格式；原模板保持未填写 / stop 策略。
+更新：2026 年 11 月 1 日，Asia/Shanghai。047 / 048 完成模板和无模型回归，050 首次真实计划按失败停止，065 另建 continue 实验完成两用例 / 两配置 / 两轮共八项实际执行。均复用现有 experiment / batch / runner / report，没有新增调度器或数据格式；原模板保持未填写 / stop 策略。
 
 2026 年 10 月 26 日首次真实比较单列于 [050](changes/2026-10-26-050-external-model-providers.md)：DeepSeek Flash / 百炼 Qwen3.7-Plus，计划八项，实际第一轮四项中三通过、一失败，按 stop 策略跳过后四项。失败为恢复用例的最终值带 Markdown 反引号，工具重试与正常结束均通过；四实际样本录制 complete、路由 matched、独立复核 verified，每用例仅一对。下文 047 / 048 合成历史保留，原模板仍未填写，不将本次描述为八项全部执行或模型优劣结论。
 
 2026 年 10 月 29 日 [065](changes/2026-10-29-065-live-two-config-comparison.md) 使用新的输入副本和实验身份，将 failurePolicy 显式选为 continue，八项全部执行、七通过一失败。DeepSeek Flash 为四通过，Qwen3.7-Plus 为三通过一失败；两个用例各有两对 verified / matched / live 样本。065 没有续跑、改写或解除 050 的旧失败停止，旧结果不合并进新比较。
+
+[072](changes/2026-11-01-072-full-core-two-config-comparison.md) 另完成十用例 / 两配置 / 两轮的四十项真实任务，39 通过 / 1 失败，全部 verified / matched / live；每用例两对、零排除。原八任务模板和 050 / 065 历史保持原样，本文件下文先保留原准备范围，再单列完整集运行方式。
 
 ## 范围与待填写项
 
@@ -78,6 +80,72 @@ python -m dsh_eval --report $source
 唯一失败是 sample-000006，Qwen 的 direct-read 第二轮返回 `**core-direct**`，工具读取及正常结束均通过，final_text 因要求纯文本 `core-direct` 而失败。没有移除 Markdown 标记、改弱断言或重跑替换样本。总体通过 7 / 8、可评测覆盖 8 / 8；这些是当前八项的分母，不是模型总体成功率。
 
 本次记录 26 个已结算模型事件、18 次工具调用、totalTokens=168061，费用八项均缺失。153 份本轮选定归档、三份输入及 96 份历史 050 输入 / 归档文件摘要不变；八个专用 CLI PID 均已退出。只读浏览读取层可访问 80 份文档及八份轨迹 / 238 行，未追加页面点击验收。逐项与逐配置用量、耗时和条件配对差值见 065；固定顺序、每用例仅两对及厂商 usage / 缓存口径限制了跨配置解释，不推断优胜、费用或性能改善。
+
+## 072 完整十用例双配置比较
+
+[072](changes/2026-11-01-072-full-core-two-config-comparison.md) 将已选两套配置扩展到十个固定用例、各两轮，共四十个计划任务。原 050、065 和 071 的结果保持独立，不从旧实验挑选成功样本拼成新比较。新输入只在公开用例副本添加相同 modelProviders，保持提示、环境、故障计数、预算和断言不变。
+
+在忽略目录准备新的 provider 声明文件，按 [外部模型路由格式](evaluation-format.md#可选外部模型路由两个用例版本通用) 填写选定端点、模型目录及 apiKeyEnv 引用，不写入密钥值。下面是输入构造示例，不调用模型；`runs/selected-model-providers.json` 需要先由本机实际配置准备，不能直接使用占位地址执行。
+
+```python
+import json
+from pathlib import Path
+from uuid import uuid4
+
+template = Path("fixtures/evaluation/core/core.experiment.json")
+inputs = Path("runs/full-core-comparison") / str(uuid4())
+inputs.mkdir(parents=True, exist_ok=False)
+providers = json.loads(Path("runs/selected-model-providers.json").read_text(encoding="utf-8"))
+manifest = json.loads(template.read_text(encoding="utf-8"))
+for row in manifest["cases"]:
+    case = json.loads((template.parent / row["casePath"]).read_text(encoding="utf-8"))
+    case["modelProviders"] = providers
+    (inputs / row["casePath"]).write_text(json.dumps(case), encoding="utf-8")
+config = manifest["configurations"][0]["configRef"]
+manifest.update(experimentName="full-core-two-config-20261101", repetitions=2,
+                failurePolicy="continue", configurations=[
+                    {"configurationId": "baseline", "configRef": config},
+                    {"configurationId": "candidate", "configRef": {
+                        **config, "provider": "bailian", "model": "qwen3.7-plus"}}])
+path = inputs / "comparison.experiment.json"
+path.write_text(json.dumps(manifest), encoding="utf-8")
+```
+
+对新 direct-read 副本先执行现有 `check:model-providers` 注册 / 凭据检查，再以 `plan_experiment(path, max_samples=40)` 核对 10 / 2 / 40 和原计划指纹。预览不验证远端模型版本、可用性或未来 token 用量。
+
+以下为核心执行入口，会调用真实模型；先确认上述输入及任务规模，再选择可写且通过路径检查的短根。每段最多十项、本段已观测 token 阈值 300000，任务仍可超出阈值；人工中断、未知执行和清理不明不能靠改写状态继续。
+
+```python
+from dsh_eval.experiment import plan_experiment, run_experiment
+from dsh_eval.experiment_resume import plan_experiment_resume, resume_experiment
+from dsh_eval.report import generate_report
+
+root = Path("C:/r")
+plan = plan_experiment(path, max_samples=40)
+assert plan["valid"] and plan["counts"]["samples"] == 40
+result = run_experiment(path, root, max_samples=40, stop_after=10,
+                        stop_after_tokens=300000,
+                        expected_plan_sha256=plan["planFingerprint"]["sha256"])
+source = Path(result["experimentDirectory"]) / "experiment-result.json"
+attempted = result["summary"]["attempted"]
+while result["status"] == "stopped" and attempted < 40:
+    remaining = 40 - attempted
+    plan = plan_experiment_resume(source, max_samples=remaining)
+    assert plan["eligibleForResume"] and plan["counts"]["newSamples"] == remaining
+    result = resume_experiment(source, root, max_samples=remaining, stop_after=10,
+                               stop_after_tokens=300000,
+                               expected_plan_sha256=plan["planFingerprint"]["sha256"])
+    attempted += result["newlyExecutedSummary"]["attempted"]
+    source = Path(result["resumeDirectory"]) / "experiment-resume-result.json"
+assert result["status"] == "completed" and attempted == 40
+report = generate_report(source, root)
+```
+
+实际四段各执行十项，前三段均由任务数阈值停止，末轮完成矩阵；本轮 token 阈值未触发。四十项全部 completed / complete，39 passed / 1 failed，零跳过 / 基础设施错误；版本 3 独立报告原计划 verified、四十项 verified / matched / live，每用例两对、零排除。DeepSeek 为 20 / 20，Qwen 为 19 / 20；唯一失败是 current-over-archive 第一轮的 `**core-current**` 未满足纯文本断言，失败保留在配对中。
+
+历史复用三十项 totalTokens=647789，末轮新增十项为 243240；总计 modelCalls=136、toolCalls=106、totalTokens=891029，费用全部缺失。1211 份选定输入 / 来源文件（含 314 份既有基线）及 42 份报告 / 复验文件摘要不变；读取层覆盖 448 个文件、四十份轨迹 / 1247 行，无预览错误。四十份运行清单 sealed，验收时相关 CLI 均已退出；任务身份以四十个独立 caseRunId / runId / sessionId 关联，PID 允许复用。
+
+这两个代码块是从公开输入复现核心流程的示例，未作为独立脚本再次执行四十项任务。实际 API 调用、逐用例 / 配置指标与差值边界见 072；报告仍按每个用例、同轮次和同来源配对，普通失败参与，不合并成统一模型优胜结论。
 
 ## 报告验收与边界
 
