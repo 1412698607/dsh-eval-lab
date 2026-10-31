@@ -58,6 +58,8 @@ $plan = python -m dsh_eval --experiment $manifest --plan --max-samples 6 | Conve
 python -m dsh_eval --experiment $manifest --run --max-samples 6 --stop-after-tokens 100000 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root C:/r
 ```
 
+[071 四任务真实验收](changes/2026-11-01-071-live-token-stop-acceptance.md) 已通过普通实验及两轮续跑验证共用批次核心：单配置四项按 1 / 1 / 2 执行，前两段因已观测 token 达标停止，最后完成原矩阵。独立报告四项 verified / matched / live，历史与新增用量分开；本批未额外执行独立批次 CLI 的真实模型任务。
+
 ## 输入：batchFormatVersion 1
 
 ```json

@@ -153,6 +153,49 @@ python -m dsh_eval --report $source
 
 [064](changes/2026-10-29-064-live-continuation-acceptance.md) 的实际六项均 verified / matched / live，17 个已结算模型事件、11 次工具调用、已报告 totalTokens=108698，费用全部缺失。报告的 changedFields 只含 configurationMatch：批次行没有保存该字段，离线报告由原始请求路由重新解析为 matched；这不是路由发生变化。原有 147 份选定归档文件在报告、只读浏览及终态预检前后摘要不变。浏览验证覆盖服务读取层及六份完整分页轨迹，未追加页面点击验收；当前样本不提供双配置比较或模型总体表现结论。
 
+## 四任务真实用量停止验收
+
+[071](changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash、两个用例各两轮完成四项真实任务。全新输入副本只修改实验名称与 failurePolicy=continue，原提示、环境、预算和精确断言不变；原清单 stop 策略及历史归档保留。
+
+以下为复现核心流程的 Python 入口，会调用配置的真实模型。先核对完整四任务计划；使用可写且通过检查的短绝对根。记录中的离线准备、摘要与进程审计另外执行，不把此示例称为已逐字执行的独立脚本。
+
+```python
+import json
+import shutil
+from pathlib import Path
+from uuid import uuid4
+from dsh_eval.experiment import plan_experiment, run_experiment
+from dsh_eval.experiment_resume import plan_experiment_resume, resume_experiment
+from dsh_eval.report import generate_report
+
+template = Path("fixtures/evaluation/core/guarded-acceptance.experiment.json")
+inputs = Path("runs/token-acceptance-inputs") / str(uuid4())
+inputs.mkdir(parents=True, exist_ok=False)
+manifest = json.loads(template.read_text(encoding="utf-8"))
+for row in manifest["cases"]:
+    shutil.copyfile(template.parent / row["casePath"], inputs / row["casePath"])
+manifest.update(experimentName="observed-token-acceptance-20261101", failurePolicy="continue")
+path = inputs / "acceptance.experiment.json"
+path.write_text(json.dumps(manifest), encoding="utf-8")
+root = Path("C:/r")
+plan = plan_experiment(path, max_samples=4)
+assert plan["valid"] and plan["counts"]["samples"] == 4
+result = run_experiment(path, root, max_samples=4, stop_after=2, stop_after_tokens=1,
+                        expected_plan_sha256=plan["planFingerprint"]["sha256"])
+assert result["stopReason"] == "stop_after_tokens" and result["summary"]["attempted"] == 1
+source = Path(result["experimentDirectory"]) / "experiment-result.json"
+for remaining, threshold in ((3, 1), (2, 100000)):
+    plan = plan_experiment_resume(source, max_samples=remaining)
+    assert plan["eligibleForResume"] and plan["counts"]["newSamples"] == remaining
+    result = resume_experiment(source, root, max_samples=remaining, stop_after=2,
+                               stop_after_tokens=threshold,
+                               expected_plan_sha256=plan["planFingerprint"]["sha256"])
+    source = Path(result["resumeDirectory"]) / "experiment-resume-result.json"
+report = generate_report(source, root)
+```
+
+实际三段为 1 / 1 / 2 项，tokenUsage.observedTotal 分别为 19063 / 19206 / 38470；前两段 stopReason=stop_after_tokens，末轮 completed / passed。独立版本 3 报告四项 verified / matched / live，历史复用两项 / 38269 token，末轮新增两项 / 38470 token。四个专用 CLI PID 已退出，115 份选定输入 / 来源文件及六份报告 / 复验文件摘要不变。该验收仅为当前单配置和短根范围，不提供模型总体表现或任务内 token / 费用硬限额结论。
+
 ## 限制与后续
 
 终态结果仍独立保存，不回填或冒充原终态实验。报告核对来源、领取、各层计划和下游批次，再按原矩阵逐项复验，区分历史复用与本次新增。命令和格式见 [配置报告](configuration-reports.md#实验续跑的跨批次报告)。[浏览器](result-browser.md) 支持版本 2 / 3 保存报告，不在浏览时重新复验。旧实验缺绑定、原目录搬迁、未知任务自动重试和模型会话恢复均未覆盖。原失败停止策略继续生效，不把 skipped 视为额外执行许可。

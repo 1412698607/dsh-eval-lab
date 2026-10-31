@@ -37,6 +37,8 @@ python -m dsh_eval --batch fixtures/evaluation/recovery.batch.json --run --runs-
 
 ## 验证与限制
 
+[071](changes/2026-11-01-071-live-token-stop-acceptance.md) 另在通过检查的短根执行两个用例的四层 UUID 真实 CLI 离线准备，进程均退出；随后普通实验及首轮 / 连续续跑完成四项真实任务，报告和来源关联通过复验。这补充当前短根的端到端证据，未新增独立单用例 / 批次 CLI 的模型验收，也不代表扩展路径或全部 Windows 写入路径已兼容。
+
 [069](changes/2026-11-01-069-execution-output-path-preflight.md) 增加普通入口的前置检查，并让续跑共用同一实现。定向验证覆盖五种布局的 247 / 248 和非 BMP 边界、默认根、创建身份前拒绝、输入 / 指纹优先、真实 Python CLI 无输出拒绝及真实 Node 临时目录边界。旧续跑的无领取、源摘要不变和重新预检行为继续验证。
 
 合成宿主测试不安装真实 Harness，夹具会显式替换该物理安装限制；专用路径测试保留真实检查。合成测试不代表真实模型或长目录宿主端到端验收。

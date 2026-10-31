@@ -24,9 +24,10 @@
 - Windows 单用例、批次、实验及续跑执行在创建新身份与输出前检查完整宿主安装目录长度；路径过深时退出 2，提示缩短 `--runs-root`。续跑检查仍先于领取，保留源资格；`--plan` 不检查未来输出根，详见 [Windows 输出根预检](docs/output-paths.md)。
 - 批次、实验与续跑的 `--run` 可用 `--stop-after N` 在本轮 N 项完成、清理及检查点保存后停止后续调度；保留完整矩阵和未开始项，支持重新预检续跑。参数是独立运行控制，不进入计划指纹，也不限制模型调用数或费用，见 [任务边界停止](docs/batch-runner.md#任务边界停止)。
 - 同一批次 / 实验 / 续跑入口可用 `--stop-after-tokens N`，在任务边界按本轮新任务报告的 totalTokens 停止后续调度；用量不可用时同样停止，保存已观测 / 缺失覆盖。阈值不限制当前任务，续跑重新计量且需显式设置，详见 [已观测 token 停止](docs/batch-runner.md#按已观测-token-停止调度)。
+- [四任务真实用量停止验收](docs/changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash 按 1 / 1 / 2 完成两用例各两轮，前两段 token 阈值 1、末段 100000。独立版本 3 报告四项 verified / matched / live，历史复用与末轮新增各两项；只验证当前短根及单配置，不提供任务内硬限额或总体模型优劣结论。
 - [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
-- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。当前已提交实现基线为 `4145995`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 068](docs/changes/2026-10-31-068-token-stop-delivery-ci.md)；9252c3e 的验收保留历史，具体云端测试数量未读取。
+- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。最新已验收实现为 `c7b627a`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)；旧验收保留历史，具体云端测试数量未读取。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
@@ -107,7 +108,7 @@ npm.cmd test
 npm.cmd run demo
 ```
 
-`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及历史 CI 见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md) / [046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。当前已推送实现基线为 `4145995`；本轮复查与该精确 SHA 的 JavaScript 语法、Node 测试、Python 测试、compileall 和无模型示例 CI 结果见 [交付验收 068](docs/changes/2026-10-31-068-token-stop-delivery-ci.md)，具体云端测试数量未读取。
+`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及历史 CI 见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md) / [046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。最新已推送实现为 `c7b627a`；该精确 SHA 的 JavaScript 语法、Node 测试、Python 测试、compileall 和无模型示例 CI 步骤全部成功，见 [交付验收 070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)，具体云端测试数量未读取。
 
 真实组件接入检查：
 

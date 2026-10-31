@@ -53,6 +53,8 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 
 ## 计划指纹与执行前一致性检查
 
+[071](changes/2026-11-01-071-live-token-stop-acceptance.md) 已完成新四任务输入的真实用量停止验收，maxSamples 原始为 4、两轮剩余为 3 / 2；三段实际执行 1 / 1 / 2。前两段阈值 1、末段 100000，每段重新核对预览摘要；完整原矩阵和历史用量保留。仅一个配置，不扩大为双配置或完整十用例结论。
+
 预览输出 planFingerprint.version=1 / sha256。需要后续执行与本次预览的输入一致时，保存这个摘要，运行时传入 --expected-plan-sha256；不传保持旧行为。以下第一条只预览，第二条是实际运行示例，会调用配置的真实模型，需先安排实际规模：
 
 ```powershell
