@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
-import sys
 from uuid import UUID, uuid4
 
 from .batch import _cleanup_confirmed, _now, input_fingerprint, run_batch
@@ -14,24 +13,15 @@ from .evaluate import evaluate
 from .formats import load_json, nonempty, require, validate_batch
 from .metrics import summarize
 from .runner import ROOT, save_json, validate_live_case
+from . import output_paths
 
 CLAIM_NAME = ".batch-resume-claim.json"
 
 
 def _check_resume_output_root(runs_root, *, experiment=False):
     """Reject the known Windows installer path limit before allocating or claiming."""
-    if sys.platform != "win32":
-        return
-    root = Path(runs_root or ROOT / "runs" / ("experiment-resumes" if experiment else "resumes")).resolve()
-    reserved = str(UUID(int=0))
-    directory = root / reserved
-    if experiment:
-        directory = directory / "continuations" / reserved
-    operation = (directory / "batches" / reserved / "cases" / reserved / "home" / "profiles" / "headless"
-                 / ".plugin-manager" / "logs" / "operation-XXXXXX")
-    length = len(str(operation).encode("utf-16-le")) // 2
-    require(length < 248, f"Windows Harness preparation path requires {length} UTF-16 code units (limit 247); "
-            "choose a shorter --runs-root; no continuation was claimed")
+    output_paths.check_output_root(runs_root or ROOT / "runs" / ("experiment-resumes" if experiment else "resumes"),
+                                   kind="resume-experiment" if experiment else "resume-batch")
 
 
 def _digest(value):

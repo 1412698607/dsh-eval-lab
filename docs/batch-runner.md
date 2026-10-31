@@ -1,6 +1,6 @@
 # M3.4 顺序批次回归
 
-更新：2026 年 10 月 31 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
+更新：2026 年 11 月 1 日，Asia/Shanghai。Python 顺序调度复用单用例 runner、状态化环境和 Node 宿主；插件保持 0.1.2。批次输入 / 结果格式为版本 1，用例 / 证据 / 单项结果继续支持既有版本。
 
 ## 运行
 
@@ -17,6 +17,8 @@ python -m dsh_eval --batch fixtures/evaluation/recovery.batch.json --run
 stdout 输出批次 JSON。退出码：0 表示整批 passed；1 表示已明确存在普通任务 failed 且没有无法评测项或基础设施错误；2 表示 unevaluable、输入错误或输出失败。停止后尚未执行的项保持 skipped 和空结果，不推定任务成功或失败。
 
 ## 任务边界停止
+
+Windows 批次执行会在校验全部用例之后、新 batchId 与冻结输出之前检查完整两层 UUID 安装布局；单项仍检查自己的实际路径。过深时整批以输入错误 / 退出 2 拒绝，不先创建部分批次。详见 [输出根预检](output-paths.md)。
 
 `--stop-after N` 接受正整数，只用于 `--batch / --experiment / --resume-batch / --resume-experiment` 的 `--run`。省略时执行原调度策略；`--plan`、单用例、离线报告及浏览均不接受。Python 执行 API 使用可选关键字 `stop_after=None`，拒绝布尔、非整数和非正值，检查先于输出创建或续跑领取。
 

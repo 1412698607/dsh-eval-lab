@@ -283,6 +283,8 @@ Python `supervise` 使用专用写线程串行输出工具响应和控制帧，�
 
 ## M3.4 批次边界
 
+[069 输出路径预检](changes/2026-11-01-069-execution-output-path-preflight.md) 使用 output_paths.py 共用五种执行布局的 Windows 安装目录长度检查。普通单用例、批次及实验在输入 / 配置校验后、新身份与输出之前调用；实验仍先检查任务数上限与预期指纹。续跑保留原包装入口，在源复核之后、新身份 / 输出 / 领取之前调用同一检查。按绝对解析路径的 UTF-16 单元预留一至四层 UUID 及 operation-XXXXXX，达到 248 单元即拒绝。它是已知普通宿主目录限制的前置拒绝，不是扩展路径或归档迁移支持；输入、结果、指纹和录制格式不变。
+
 [067 已观测 token 调度停止](changes/2026-10-31-067-observed-token-scheduling-stop.md) 在同一批次边界增加 stop_after_tokens。调度器只统计本轮已结束尝试的有效整数 totalTokens，在完成检查点后、下一身份分配前判断缺失 / 溢出或达到阈值；原失败策略、清理和中断原因优先。批次及所有外层结果以可选 stopAfterTokens / tokenUsage 保存阈值、已观测 / 缺失样本数与已观测总和；格式版本不变。续跑只传递本次显式控制，新批次重新累计，不从祖先结果继承阈值或把复用用量计入本轮。预览 / 输入指纹和报告原分母不变，不在任务内截断调用，也不形成 token / 费用硬限额。
 
 [063 任务边界停止](changes/2026-10-29-063-scheduler-boundary-stop.md) 增加 run_batch / run_experiment / resume_batch / resume_experiment 的可选 stop_after，贯通连续续跑。batch 在单项结果及清理检查、完成 checkpoint 之后且下一身份分配之前比较本轮计数；优先处理失败策略、清理不明、用户中断及 runner 错误。剩余项保持空身份，原矩阵、锁持有范围和领取协议不改。新结果可选 stopAfter，批次 stopReason=stop_after 经实验 / 续跑外层透传；结果版本保持兼容。它是独立运行控制，不进入原清单 / 预览 / 指纹，不限制任务内模型调用或费用。

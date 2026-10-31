@@ -33,6 +33,7 @@ class ReportTests(unittest.TestCase):
                          "configurations": [{"configurationId": name, "configRef": {**self.case["configRef"], "model": name}}
                                             for name in ("first", "second")]}
         for target, options in (("dsh_eval.runner._prepare", {}),
+                                ("dsh_eval.output_paths.check_output_root", {}),
                                 ("dsh_eval.runner.ADAPTER", {"new": ROOT / "scripts/fixtures/batch-adapter.js"})):
             mocked = patch(target, **options)
             mocked.start()

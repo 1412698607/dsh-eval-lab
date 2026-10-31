@@ -10,6 +10,7 @@ from .batch_lock import batch_lock
 from .formats import load_json, require, validate_batch
 from .metrics import number
 from .runner import ROOT, run_case, save_json, validate_live_case
+from . import output_paths
 
 
 def _now():
@@ -70,7 +71,9 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
     # Validate all cases before creating a run or calling a model, then freeze inputs.
     inputs = [(entry, (source.parent / entry["casePath"]).resolve(),
                validate_live_case(load_json(source.parent / entry["casePath"]))) for entry in manifest["cases"]]
-    batch_id = str(UUID(batch_id)) if batch_id is not None else str(uuid4())
+    batch_id = str(UUID(batch_id)) if batch_id is not None else None
+    output_paths.check_output_root(runs_root or ROOT / "runs" / "batches", kind="batch")
+    batch_id = batch_id or str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "batches").resolve() / batch_id
     (directory / "inputs").mkdir(parents=True, exist_ok=False)
     (directory / "cases").mkdir()

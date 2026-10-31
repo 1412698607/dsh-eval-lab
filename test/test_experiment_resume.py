@@ -48,6 +48,7 @@ class ExperimentResumeTests(unittest.TestCase):
         self.save(self.path, self.manifest)
         self.called = []
         for mock in (patch("dsh_eval.runner._prepare"),
+                     patch("dsh_eval.output_paths.check_output_root"),  # No real Harness installation in this fixture.
                      patch("dsh_eval.resume._check_resume_output_root"),  # Synthetic adapter never installs Harness.
                      patch("dsh_eval.experiment_resume._check_resume_output_root"),
                      patch("dsh_eval.experiment_resume_chain._check_resume_output_root"),

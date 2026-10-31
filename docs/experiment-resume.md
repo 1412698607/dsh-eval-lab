@@ -1,6 +1,6 @@
 # 实验级安全续跑
 
-更新：2026 年 10 月 31 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
+更新：2026 年 11 月 1 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口与返回值
 
@@ -34,6 +34,8 @@ python -m dsh_eval --resume-experiment $source --run --max-samples 6 --expected-
 首轮与连续续跑也支持 `--stop-after-tokens N`：只累计本轮新批次报告的 totalTokens，用量缺失 / 不可用或达到阈值后停止安排下一项；结果透传 stopAfterTokens / tokenUsage。历史复用不计入本轮累计，下一轮重新选择阈值，不继承源控制或修改历史用量。预览、指纹和完整原矩阵保持原义；任务可超出阈值，不是费用或任务内 token 硬限额。字段与优先级见 [按已观测 token 停止调度](batch-runner.md#按已观测-token-停止调度)。
 
 ## Windows 输出根检查
+
+069 将此检查收敛到共用实现，并补齐普通单用例、批次及实验的创建输出前检查；续跑的三层 / 四层布局、源复验顺序和无领取边界保持原义。完整覆盖表及限制见 [Windows 输出根预检](output-paths.md)。
 
 Windows 的 `--run` 在源锁内重新复验 / 核对指纹之后、分配新 UUID 和创建输出或领取记录之前，计算当前输出根下的完整宿主安装临时目录。批次布局预留三层 UUID；实验首轮和连续续跑预留四层 UUID，包含 continuations / batches / cases，再追加 home/profiles/headless/.plugin-manager/logs/operation-XXXXXX。
 

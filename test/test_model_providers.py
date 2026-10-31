@@ -135,6 +135,7 @@ class ModelProviderTests(unittest.TestCase):
                 self.assertEqual(load_json(batch_path.parent / "experiment-result.json")["batchBinding"]["batchId"], options["batch_id"])
                 raise ValueError("stop before actual execution")
 
-            with patch("dsh_eval.experiment.run_batch", side_effect=examine_frozen):
+            with patch("dsh_eval.output_paths.check_output_root"), \
+                    patch("dsh_eval.experiment.run_batch", side_effect=examine_frozen):
                 with self.assertRaisesRegex(ValueError, "stop before actual execution"):
                     run_experiment(path, directory / "outputs", max_samples=2, expected_plan_sha256=digest)

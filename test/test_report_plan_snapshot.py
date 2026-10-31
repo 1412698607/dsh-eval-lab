@@ -32,7 +32,8 @@ class ReportPlanSnapshotTests(unittest.TestCase):
         self.source = self.directory / "experiment.json"
         self.save(self.source, self.manifest)
         self.preview = plan_experiment(self.source, max_samples=2)
-        with patch("dsh_eval.runner._prepare"), patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
+        with patch("dsh_eval.output_paths.check_output_root"), patch("dsh_eval.runner._prepare"), \
+                patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
             self.saved = run_experiment(self.source, self.directory / "experiments", max_samples=2,
                                         expected_plan_sha256=self.preview["planFingerprint"]["sha256"])
         self.assertEqual(self.saved["outcome"], "passed")

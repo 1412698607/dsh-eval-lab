@@ -1,10 +1,12 @@
 # M4.1 重复试验与指标口径
 
-更新：2026 年 10 月 31 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
+更新：2026 年 11 月 1 日，Asia/Shanghai。实验输入、结果及 metrics 均为版本 1；独立预览使用 experimentPlanFormatVersion=1。Python 共用加载 / 预检和计划展开逻辑，再按显式模式打印预览或交给已有 M3.4 顺序批次；隔离、取消、超时及清理策略继续由原 batch / runner 执行。
 
 [双配置八任务比较](guarded-comparison.md) 固定两用例、两配置、两轮，保留第二配置为空的待填写模板；原模板校验拒绝，填妥后使用既有 --plan / cap / 指纹链路。047 / 048 仅做合成准备，050 按 stop 策略执行四项后停止；065 另建 continue 实验，八项全部执行、七通过一失败，每用例两对 verified / matched / live，历史不回填。
 
 ## 无模型预检与计划预览
+
+Windows 实际 `--run` 在全部用例 / 配置、任务数上限和 expected 指纹通过后、新身份及输出之前检查完整三层 UUID 宿主安装布局。预览不检查未来输出根；路径拒绝不改变原矩阵或指纹。详见 [输出根预检](output-paths.md)。
 
 在仓库根目录运行，只需 Python，不安装 Harness 或读取模型凭据：
 

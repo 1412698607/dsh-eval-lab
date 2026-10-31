@@ -414,7 +414,8 @@ class BrowserTests(unittest.TestCase):
                     "configurations": [{"configurationId": model, "configRef": {**self.case["configRef"], "model": model}}
                                        for model in ("first", "second")]}
         path = self.write(self.cases / "experiment.json", manifest)
-        with patch("dsh_eval.runner._prepare"), patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
+        with patch("dsh_eval.output_paths.check_output_root"), patch("dsh_eval.runner._prepare"), \
+                patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
             experiment = run_experiment(path, self.runs / "experiments")
         directory = Path(experiment["experimentDirectory"])
         batch = load_json(directory / experiment["batchResultPath"])

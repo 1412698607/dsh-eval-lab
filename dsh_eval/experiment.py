@@ -12,6 +12,7 @@ from .batch import run_batch
 from .formats import load_json, require, validate_case, validate_experiment
 from .metrics import summarize
 from .runner import ROOT, save_json, validate_live_case
+from . import output_paths
 
 ORDER = "repeat-case-configuration"
 
@@ -88,6 +89,7 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     fingerprint = _plan_fingerprint(manifest, inputs, max_samples)
     require(expected is None or expected == fingerprint["sha256"],
             f"Experiment plan fingerprint mismatch: expected {expected}, actual {fingerprint['sha256']}")
+    output_paths.check_output_root(runs_root or ROOT / "runs" / "experiments", kind="experiment")
     experiment_id = str(uuid4())
     reserved_batch_id = str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "experiments").resolve() / experiment_id

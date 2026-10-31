@@ -21,7 +21,7 @@
 - 用例可通过 [modelProviders](docs/evaluation-format.md#可选外部模型路由两个用例版本通用) 声明外部文本模型路由，随输入冻结并计入计划指纹；密钥仅按名称引用。`npm.cmd run check:model-providers -- <case.json>` 检查本机真实宿主的路由 / 目录注册和凭据存在性，不调用模型、不验证远端端点。
 - [批次级安全续跑](docs/batch-resume.md) 提供 `--resume-batch <batch-result.json> --plan` 无模型复核；显式执行仅安排已协调批次中明确未开始的任务，已完成项经重新 inspect / 评测后复用，未知项阻断。原结果不覆盖；实验层汇总回填尚未实现。
 - [实验级安全续跑](docs/experiment-resume.md) 的 `--resume-experiment <result.json> --plan / --run` 接受原实验或已有实验续跑结果；每轮比较预检摘要，只为明确未开始项创建新批次，未知项阻断。保留原用例 / 配置 / 轮次及全部历史证据，与批次入口共用锁和单次领取保护。终态结果可交给 --report，首轮报告版本 2、连续续跑版本 3，分开历史复用与本轮新增用量。
-- Windows 续跑执行在创建新身份和领取记录前检查宿主安装临时目录长度；路径过深时退出 2，提示缩短 `--runs-root`，保留源的续跑资格。`--plan` 仅检查源归档，不检查未来输出根，详见 [Windows 输出根检查](docs/experiment-resume.md#windows-输出根检查)。
+- Windows 单用例、批次、实验及续跑执行在创建新身份与输出前检查完整宿主安装目录长度；路径过深时退出 2，提示缩短 `--runs-root`。续跑检查仍先于领取，保留源资格；`--plan` 不检查未来输出根，详见 [Windows 输出根预检](docs/output-paths.md)。
 - 批次、实验与续跑的 `--run` 可用 `--stop-after N` 在本轮 N 项完成、清理及检查点保存后停止后续调度；保留完整矩阵和未开始项，支持重新预检续跑。参数是独立运行控制，不进入计划指纹，也不限制模型调用数或费用，见 [任务边界停止](docs/batch-runner.md#任务边界停止)。
 - 同一批次 / 实验 / 续跑入口可用 `--stop-after-tokens N`，在任务边界按本轮新任务报告的 totalTokens 停止后续调度；用量不可用时同样停止，保存已观测 / 缺失覆盖。阈值不限制当前任务，续跑重新计量且需显式设置，详见 [已观测 token 停止](docs/batch-runner.md#按已观测-token-停止调度)。
 - [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
@@ -383,7 +383,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 24 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 11 月 1 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 
