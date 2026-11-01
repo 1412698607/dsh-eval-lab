@@ -1,5 +1,7 @@
 # M4.2 离线配置比较报告
 
+跨实验的旧基线 / 新候选判定使用 [基线回归比较](baseline-regression.md) 的独立 `--compare-baseline ... --candidate ...` 入口，重新复验后列出逐项变化，并提供 0 / 1 / 2 门禁退出码。本页 `--report` 保留描述性报告语义，不因普通样本失败返回回归失败码。
+
 [072](changes/2026-11-01-072-full-core-two-config-comparison.md) 已在四个来源批次上独立生成版本 3 报告：完整十用例 / 两配置 / 两轮共四十项 verified / matched / live，39 passed / 1 failed，每用例两对、零排除。报告分开历史复用三十项与末轮新增十项；任务失败仍参与配对，完整覆盖不等于模型总体优胜或统计显著。
 
 更新：2026 年 11 月 1 日，Asia/Shanghai。普通实验保持 `comparisonReportFormatVersion=1`，首轮续跑报告保持版本 2，连续续跑使用版本 3。都重新核对计划及样本，生成独立 JSON / Markdown，不执行模型任务。

@@ -28,7 +28,7 @@
 - [四任务真实用量停止验收](docs/changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash 按 1 / 1 / 2 完成两用例各两轮，前两段 token 阈值 1、末段 100000。独立版本 3 报告四项 verified / matched / live，历史复用与末轮新增各两项；只验证当前短根及单配置，不提供任务内硬限额或总体模型优劣结论。
 - [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
-- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。最新已验收实现为 `c7b627a`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)；旧验收保留历史，具体云端测试数量未读取。
+- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。最新已验收实现为 `e185a8e`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 084](docs/changes/2026-11-01-084-behavior-assertion-delivery-ci.md)；旧验收保留历史，具体云端测试数量未读取。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
@@ -351,6 +351,16 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 新建 `runs/reports/<reportId>/report.json`、`report.md` 及逐项复验结果，原实验不覆写。报告先核对冻结任务 / 环境 / 预算 / 断言、身份、实际请求路由和来源，再按同用例与重复编号计算右侧减左侧的描述性差值。保留全部计划分母、匹配覆盖、缺失及溢出原因，不混用合成 / live 来源。只有一个配置也可生成报告，但没有配置间差值；不同 ID 指向同一 configRef 也不视为不同模型。
 
 `--reports-root` 可指定新报告目录的父目录。命令行 JSON stdout 固定 UTF-8。退出码 0 只表示报告生成成功，任务分类在报告中分别保留；输入或输出错误为 2。当前支持一个实验，不计算置信区间、显著性或赢家。格式、配对条件和不确定性范围见 [配置报告](docs/configuration-reports.md)。
+
+## 基线回归比较
+
+比较两个独立实验的选定配置，重新复验证据，不调用模型：
+
+```powershell
+python -m dsh_eval --compare-baseline 'runs/experiments/<baseline-id>/experiment-result.json' --candidate 'runs/experiments/<candidate-id>/experiment-result.json' --output 'runs/regression.json'
+```
+
+按用例 entryId 和重复编号列出通过变失败、失败变通过、保持通过 / 失败，以及缺失 / 不可比项。默认要求完整任务输入和配置一致；多配置时用 `--baseline-config` / `--candidate-config` 选择，配置字段变化须显式 `--allow-config-change model` 等放行。退出码 **0** 表示完整可比且无退化，**1** 表示完整可比且发现退化，**2** 表示缺失、不可比或输入错误；返回 2 时仍保留已确认的退化。现有 `--report` 退出规则不变。格式、续跑输入和边界见 [基线回归比较](docs/baseline-regression.md)。
 
 ## 当前边界
 

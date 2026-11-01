@@ -19,7 +19,7 @@ from dsh_eval.report import generate_report
 from dsh_eval.runner import ROOT
 
 
-class ReportTests(unittest.TestCase):
+class ReportFixture:
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dsh-report-")
         self.addCleanup(self.temporary.cleanup)
@@ -114,6 +114,8 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         self.save(evidence_path, evidence)
         self.persist()
 
+
+class ReportTests(ReportFixture, unittest.TestCase):
     def test_fresh_paired_report_is_separate_and_never_overwrites_sources(self):
         self.experiment()
         for index, sample in enumerate(self.saved["samples"]):

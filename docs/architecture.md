@@ -64,7 +64,7 @@ inspect --run <目录>
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、五种断言、执行 / 录制 / 断言分类 |
-| `dsh_eval/__main__.py` | 评测 / 实验及续跑预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 与 --run 互斥，原任务 0 / 1 / 2 不变 |
+| `dsh_eval/__main__.py` | 评测 / 实验及续跑预览 / 运行 / 报告 / 基线比较 / 浏览入口、UTF-8 stdout；--plan 与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
 | `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
 | `dsh_eval/batch.py` | 冻结输入与顺序调度；独立调用管理批次锁，实验内部通过 _lock_stack 保留同一锁至实验收尾 |
@@ -73,6 +73,7 @@ inspect --run <目录>
 | `dsh_eval/resume.py` | 批次预检、同源排他领取和新批次执行核心；共用原 runner / inspect / evaluate，不重试未知项 |
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 普通实验版本 1 / 实验续跑版本 2 报告，重新 evaluate 并按路由 / 来源 / 轮次配对；续跑分开历史与新增用量 |
+| `dsh_eval/regression.py` | 两个独立实验选择配置，复用报告输入加载与 fresh _recheck，校验任务 / 配置 / 来源 / 身份，输出逐项变化和门禁结论 |
 | `dsh_eval/resume_report.py` | 只读核对续跑的两层计划、源元信息、领取、批次和原矩阵绑定，为共用报告器提供逐样本证据根 |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
 | `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`4b97120` 的 41 JS 语法 / 85 Node / 202 Python / compileall / 合成 demo 云端全部通过，旧 M5 验收保留 |
@@ -82,6 +83,8 @@ inspect --run <目录>
 | `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
 ## 输出与数据格式
+
+[085 基线回归比较](changes/2026-11-01-085-baseline-regression.md) 新增 regressionComparisonFormatVersion=1，使用原 report._load_report_inputs 核对普通实验或显式续跑链，再对选定配置逐样本 _recheck。以 caseEntryId / repeatIndex 的并集对齐；完整 case 除 configRef 外严格相同，允许变化的 configRef 字段须显式声明。计划未复核、共享原实验 / 执行身份、来源或实际路由不匹配均不能判为完整可比。输出 saved 与新结论、变化类别和缺失原因；0 无退化、1 有退化、2 不完整 / 错误，改善不抵消退化。默认仅 stdout，--output 排他新建 JSON，输入归档不写入。原报告版本 / 退出码、评测规则及调度不变，未接入浏览器。
 
 [059](changes/2026-10-28-059-continuation-chains.md) 新增 experimentResumePlanFormatVersion=2 / experimentResumeResultFormatVersion=2 和 comparisonReportFormatVersion=3，原实验及首轮续跑格式保持兼容。连续计划保存所有批次预检、祖先归档 SHA-256、原矩阵分类和当前来源；执行在祖先锁内重算摘要，使用原批次续跑核心领取最新源并运行剩余项。批次续跑新增启动时的 batchBinding，锁保持到外层结果写入。链按 sourceResumeResult 迭代加载，最多 32 个结果，拒绝循环 / 重复身份；没有目录扫描、旧领取重置或未知任务重试。
 

@@ -350,16 +350,23 @@ def render_markdown(report):
     return "\n".join(lines) + "\n"
 
 
-def generate_report(experiment_result_path, reports_root=None):
-    source = Path(experiment_result_path).resolve()
+def _load_report_inputs(source):
     metadata = {}
-    if "experimentResumeResultFormatVersion" in load_json(source):
+    header = load_json(source)
+    require(isinstance(header, dict), "Experiment result must be an object")
+    if "experimentResumeResultFormatVersion" in header:
         from .resume_report import load_resume_report
         saved, manifest, cases, plan_verification, sample_inputs, metadata = load_resume_report(source)
     else:
         saved, manifest, cases = _load_plan(source)
         plan_verification = _verify_plan_input(source.parent, saved, manifest, cases)
         sample_inputs = ((sample, source.parent, saved["batchId"], {}) for sample in saved["samples"])
+    return saved, manifest, cases, plan_verification, sample_inputs, metadata
+
+
+def generate_report(experiment_result_path, reports_root=None):
+    source = Path(experiment_result_path).resolve()
+    saved, manifest, cases, plan_verification, sample_inputs, metadata = _load_report_inputs(source)
     rows, evaluations = [], []
     for sample, base, batch_id, provenance in sample_inputs:
         expected = {**cases[sample["caseEntryId"]], "configRef": sample["requestedConfiguration"]}
