@@ -1,5 +1,9 @@
 # dsh-eval-lab 开发进度
 
+[083 行为约束复查](changes/2026-11-01-083-behavior-assertion-review.md) 未发现 082 生产逻辑的阻塞缺陷；补充两项完整录制边界回归，确认行为失败与证据不足并存时保持 unevaluable，任务外调用不能当作零次；另补独立重试恰好两次通过。47 项离线评测、26 项前端、compileall 及补丁检查通过。提交 / 推送与精确 SHA 的新 CI 另行核对，无新模型任务。
+
+[082 工具行为约束](changes/2026-11-01-082-behavior-assertions.md) 已实现 tool_forbidden 与 tool_call_count：精确工具 / 参数筛选、含端点的次数上下界，计入失败 / 未返回 / 答案后的调用。正确答案伴随违规的合成录制经 fresh inspect 判为 failed，卡片展示保存次数和调用证据；45 项离线评测、26 项前端、完整 401 Python / 273.679 秒、111 Node / 7.101 秒、43 JS 语法与 compileall 通过。9 份文档 485 链接 / 116 目标及两个用例版本的新示例校验通过。旧固定集与冻结输入不自动加约束，无新增模型任务、运行时拦截、提交 / 推送或 CI。
+
 [081 交付验收](changes/2026-11-01-081-browser-delivery-ci.md) 已核实 074–080 的 18 份代码、测试和文档提交推送为 `fcdc527a6d860127077764f87dfd74dc8c8bf3e1`。该精确 SHA 的 push run 41280630259 / job 124771649840 / attempt 1、全部 13 个步骤均 completed / success，包含语法、Node / Python 测试、compileall 与合成示例；未读取具体云端测试数量。无新增模型任务，历史未提交快照和本地验证保留；本次文档补记的提交 CI 独立核对。
 
 [080 交付复查](changes/2026-11-01-080-browser-delivery-review.md) 完成 074–079 合并范围复查，未发现确定的阻塞缺陷；本次 24 前端、36 Python 浏览及补丁检查通过。提交、推送及精确 SHA 的新 CI 另行核对，历史验证和未提交快照保留。
@@ -92,7 +96,7 @@
 | 当前开发分支 | `20261027/feat/experiment-resume` |
 | 最新已验收数据资料 | 072 及配套文档已由 `466c89bd81019be7f574d10f6a27a5ff8e9584b4` 提交推送；本轮审查与精确 CI 状态见 073 |
 | 最新已验收实现 / 推送快照 | `fcdc527a6d860127077764f87dfd74dc8c8bf3e1`；074–080 的 18 份文件已正常推送，之后的文档补记可有独立提交 |
-| 当前本地实现范围 | 074–077 续跑浏览与 079 断言诊断 / 事件定位均包含于 fcdc527。079 的 392 Python、109 Node 及末行调整后的 36 浏览检查保留；080 再次 24 前端 / 36 Python 浏览通过 |
+| 当前本地实现范围 | HEAD 为 `0ba0b93`，已交付 074–081；082 的行为约束断言与卡片支持在工作区，尚未提交 / 推送。079 / 080 的历史验证保留，082 本地范围见顶部及独立记录，不继承旧云端 CI |
 | 实现基线 CI | fcdc527 的 push run 41280630259 / job 124771649840 / attempt 1；精确 SHA、运行 / 作业 / 全部 13 步骤 success，具体云端数量未读取，见 081 |
 | 067 已提交实现范围 | 已由 4145995 提交推送；已观测 token 调度停止、缺失覆盖及所有续跑入口透传；原本地验证见 067，当前复查与独立 CI 见 068 |
 | 069 已提交实现范围 | 已由 c7b627a 提交推送，共用五种 Windows 输出布局检查；普通入口先于新身份 / 输出、续跑先于领取，独立 CI 见 070；短根真实验收见 071 |
@@ -144,7 +148,7 @@
 | desktop / SDK | 尚未验证 | 后续按渠道需求验证 |
 | M6.4 脚本与无模型检查 | 三个专用子进程、合成事件及 fresh inspect；中断核对版本与完整已写前缀，独立格式只接受 synthetic | `scripts/check_web_lifecycle.py`、[Web 生命周期](web-lifecycle.md) |
 | M6.4 真实 Web 生命周期 | Windows / 当前 CLI 三类最终样本的历史验收保留；036 修复 035 的异常启动清理与普通退出时间关联，无模型原生 / 离线复验通过 | `scripts/web-lifecycle-live.js`、`scripts/verify_web_live.py`、记录 033 至 036 |
-| 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；三种断言、可选 after / textEquals 和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
+| 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；五种断言（含 082 工具禁止 / 次数）、可选 after / textEquals 和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消和清理；可选用例 recorder 经冻结后传入隔离插件配置，批次 / 实验保留 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |
 | 顺序批次、重置和结果清单 | 版本 1 批次 / 结果与历史真实恢复批次已验证；启动失败策略及 source / metrics 可选输出已实现 | `dsh_eval/batch.py`、[批次运行](batch-runner.md) |

@@ -81,6 +81,11 @@ def _same(left, right):
     return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(right, sort_keys=True, ensure_ascii=False)
 
 
+def _call_matches(assertion, call, arguments):
+    return call["data"]["name"] == assertion["tool"] and all(
+        key in arguments and _same(arguments[key], value) for key, value in assertion.get("arguments", {}).items())
+
+
 def check_assertion(assertion, view, previous=None):
     base = {"id": assertion["id"], "type": assertion["type"]}
     kind = assertion["type"]
@@ -92,6 +97,22 @@ def check_assertion(assertion, view, previous=None):
         actual = view["end"]["data"].get("reason")
         return {**base, "outcome": "passed" if _same(actual, assertion["reason"]) else "failed",
                 "actual": actual, "evidence": {"endSeq": view["end"]["seq"]}}
+    if kind in ("tool_forbidden", "tool_call_count"):
+        evidence = []
+        # task_view validates the whole task interval, including calls after the final answer.
+        for call_id, (call, arguments) in view["calls"].items():
+            if _call_matches(assertion, call, arguments):
+                location = {"callId": call_id, "callSeq": call["seq"]}
+                result = view["results"].get(call_id)
+                if result is not None:
+                    location["resultSeq"] = result["seq"]
+                evidence.append(location)
+        actual = len(evidence)
+        passed = actual == 0 if kind == "tool_forbidden" else (
+            actual >= assertion.get("min", 0) and ("max" not in assertion or actual <= assertion["max"]))
+        return {**base, "outcome": "passed" if passed else "failed", "actual": actual, "evidence": evidence,
+                **({} if passed else {"reason": "Forbidden tool call observed" if kind == "tool_forbidden"
+                                      else "Tool call count outside declared bounds"})}
     after_seq = None
     if "after" in assertion:
         predecessor = (previous or {}).get(assertion["after"])
@@ -101,8 +122,7 @@ def check_assertion(assertion, view, previous=None):
         after_seq = predecessor["evidence"]["resultSeq"]
     matches, mismatches = [], []
     for call_id, (call, arguments) in view["calls"].items():
-        if call["data"]["name"] != assertion["tool"] or not all(
-                key in arguments and _same(arguments[key], value) for key, value in assertion["arguments"].items()):
+        if not _call_matches(assertion, call, arguments):
             continue
         result = view["results"].get(call_id)
         if result is None or result["seq"] >= view["final"]["seq"]:

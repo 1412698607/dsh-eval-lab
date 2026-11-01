@@ -247,12 +247,18 @@ function assertionCards(documentData) {
   for (const row of ordered) {
     const matches = definitions.filter((item) => item && typeof row.id === "string" && item.id === row.id && item.type === row.type);
     const definition = matches.length === 1 ? matches[0] : null;
+    const behavior = ["tool_forbidden", "tool_call_count"].includes(row.type);
     const expected = row.type === "final_text" ? definition?.equals : row.type === "turn_end" ? definition?.reason
+      : behavior && definition ? { tool: definition.tool, arguments: definition.arguments ?? {},
+        ...(row.type === "tool_forbidden" ? { max: 0 }
+          : { ...(Object.hasOwn(definition, "min") ? { min: definition.min } : {}),
+            ...(Object.hasOwn(definition, "max") ? { max: definition.max } : {}) }) }
       : row.type === "tool_result" && definition ? { tool: definition.tool, arguments: definition.arguments, result: definition.result,
         ...(definition.after ? { after: definition.after } : {}) } : undefined;
     const card = node("article", null, "assertion-card" + (row.outcome === "failed" ? " assertion-failed" : ""));
     card.append(append(node("div", null, "assertion-heading"), node("h3", row.id ?? "断言标识缺失"), badge(row.outcome), node("span", row.type, "subtext")));
     if (row.reason) card.append(node("p", row.reason));
+    if (behavior) card.append(node("p", "实际值为任务范围内匹配的工具调用次数，包括失败、未返回及最终答案后的调用；这是保存的离线评测结果，不是运行时拦截。", "subtext"));
     let values = [expected === undefined ? node("p", "期望值缺失或无法唯一匹配用例快照。", "subtext") : json(expected),
       Object.hasOwn(row, "actual") ? json(row.actual) : node("p", "未保存实际值；可通过下方证据查看原始事件。", "subtext")];
     if (typeof expected === "string" && typeof row.actual === "string") {
@@ -278,7 +284,8 @@ function assertionCards(documentData) {
           : node("span", title + "（关联轨迹不可用）", "subtext"));
       }
     }
-    if (!seen.size) jumps.append(node("span", "未保存可定位的事件序号。", "subtext"));
+    if (!seen.size) jumps.append(node("span", behavior && row.actual === 0
+      ? "匹配调用为 0，没有对应调用事件。" : "未保存可定位的事件序号。", "subtext"));
     card.append(jumps);
     body.append(card);
   }

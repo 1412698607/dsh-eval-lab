@@ -74,6 +74,7 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 - 期望值只取当前 evaluation 内嵌的 `case.assertions`，按 ID 与类型唯一匹配；不会读取现行用例文件替代历史快照。缺失、类型不符或重复匹配时显示无法匹配。
 - `final_text` 展示 `equals` 与保存的 `actual`，高亮去掉共同前后缀后剩余的不同区间。使用 Unicode 码点切分，原文本仍完整显示；这是简易差异区间，不是最小编辑脚本。转义视图区分空字符串、空格和换行，不去除 Markdown 或修改结论。评测器保存的实际答案已经去除首尾空白，原始答案仍须查看事件。
 - `turn_end` 对照保存的结束原因；`tool_result` 展示工具、参数、结果谓词和可选 after。现有工具断言结果未保存实际工具正文，卡片明确显示缺失，使用证据按钮查看原始内容，不从保存结论反推实际值。不执行、证据不足与失败继续保持不同结论。
+- [082 行为断言](changes/2026-11-01-082-behavior-assertions.md) 的 tool_forbidden / tool_call_count 卡片显示快照中的工具与参数筛选、零次或 min / max 范围，actual 为保存的匹配调用次数。匹配为零时明确显示没有对应调用事件；未执行或缺 actual 不补零。有匹配调用时沿用调用 / 结果序号按钮，不把计数展示当作运行时拦截。
 - 按保存的 `callSeq / resultSeq / afterResultSeq / answerSeq / endSeq` 提供跳转；工具失败的多个证据候选保留，重复按钮去重。没有有效非负安全整数序号时不生成跳转。
 - 目标文件来自 evaluation 的 `association.runDir` 与 `sha256(sessionId).jsonl`，必须通过原目录范围检查；缺少运行 / 会话身份或目标文件时显示不可用。定位同时匹配 JSONL 包装中的 runId、sessionId 和 event.seq，不把 seq 当作物理行号，也不选目录中的任意第一份轨迹。
 - 点击后显示目标周围的一页事件，高亮并聚焦目标行，分别列出物理行号和事件序号；可返回诊断页。目标缺失、重复、读取时目标行已变或超过预览范围时显示错误并保留原诊断页，不悄悄跳到第一页。

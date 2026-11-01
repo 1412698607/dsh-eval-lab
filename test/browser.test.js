@@ -169,6 +169,46 @@ test("failed event lookup leaves the diagnostic page available", async () => {
   assert.match(get("message").textContent, /Event locator is missing/);
 });
 
+test("behavior cards show frozen selectors, inclusive bounds, observed counts and violating calls", async () => {
+  const artifact = diagnosticResult();
+  artifact.data.case.assertions = [
+    { id: "forbidden", type: "tool_forbidden", tool: "read", arguments: { path: "restricted.md" } },
+    { id: "count", type: "tool_call_count", tool: "read", min: 0, max: 1 },
+  ];
+  artifact.data.assertions.results = [
+    { id: "forbidden", type: "tool_forbidden", outcome: "failed", actual: 1, evidence: [{ callId: "bad", callSeq: 7 }] },
+    { id: "count", type: "tool_call_count", outcome: "failed", actual: 2, evidence: [{ callSeq: 2, resultSeq: 3 }, { callSeq: 7 }] },
+  ];
+  const get = await openDiagnostic(artifact), cards = descendants(section(get, "断言诊断 · 失败优先"), "article");
+  const forbidden = descendants(cards[0], "pre"), count = descendants(cards[1], "pre");
+  assert.deepEqual(JSON.parse(forbidden[0].textContent), { tool: "read", arguments: { path: "restricted.md" }, max: 0 });
+  assert.equal(forbidden[1].textContent, "1");
+  assert.deepEqual(JSON.parse(count[0].textContent), { tool: "read", arguments: {}, min: 0, max: 1 });
+  assert.equal(count[1].textContent, "2");
+  assert.ok(findButton(cards[0], "工具调用 · seq 7"));
+  assert.ok(findButton(cards[1], "工具返回 · seq 3"));
+  assert.match(cards[1].textContent, /包括失败、未返回及最终答案后的调用/);
+});
+
+test("behavior cards distinguish a saved zero count from unexecuted or missing results", async () => {
+  for (const actual of [0, undefined]) {
+    const artifact = diagnosticResult();
+    artifact.data.case.assertions = [{ id: "count", type: "tool_call_count", tool: "write", max: 0 }];
+    artifact.data.assertions.results = [{ id: "count", type: "tool_call_count", outcome: actual === 0 ? "passed" : "not_run",
+      ...(actual === 0 ? { actual, evidence: [] } : {}) }];
+    const get = await openDiagnostic(artifact), panel = section(get, "断言诊断 · 失败优先");
+    assert.equal(descendants(panel, "button").length, 0);
+    if (actual === 0) assert.match(panel.textContent, /匹配调用为 0，没有对应调用事件/);
+    else {
+      assert.match(panel.textContent, /未保存实际值/);
+      assert.doesNotMatch(panel.textContent, /匹配调用为 0/);
+    }
+    const expected = JSON.parse(descendants(panel, "pre")[0].textContent);
+    assert.equal(expected.max, 0);
+    assert.ok(!Object.hasOwn(expected, "min"));
+  }
+});
+
 test("source filters retain mixed results with missing sample provenance", async () => {
   const get = await viewer([
     { kind: "experiment", title: "mixed", path: "mixed", sources: ["live", "unknown"] },

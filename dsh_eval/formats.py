@@ -183,6 +183,19 @@ def validate_case(case):
                 require(nonempty(assertion["result"]["textContains"]), "textContains must be nonempty")
             if "textEquals" in assertion["result"]:
                 require(isinstance(assertion["result"]["textEquals"], str), "textEquals must be text")
+        elif kind in ("tool_forbidden", "tool_call_count"):
+            fields(assertion, ("id", "type", "tool"),
+                   ("arguments", "min", "max") if kind == "tool_call_count" else ("arguments",))
+            require(nonempty(assertion["tool"]), "Tool name must be nonempty")
+            require(isinstance(assertion.get("arguments", {}), dict), "Expected tool arguments must be an object")
+            if kind == "tool_call_count":
+                require("min" in assertion or "max" in assertion, "Tool call count requires min or max")
+                for bound in ("min", "max"):
+                    if bound in assertion:
+                        require(type(assertion[bound]) is int and 0 <= assertion[bound] <= 9007199254740991,
+                                f"Tool call count {bound} must be a nonnegative safe integer")
+                require(assertion.get("min", 0) <= assertion.get("max", 9007199254740991),
+                        "Tool call count min must not exceed max")
         elif kind == "turn_end":
             fields(assertion, ("id", "type", "reason"))
             require(isinstance(assertion["reason"], dict) and nonempty(assertion["reason"].get("kind")), "Expected end reason is required")

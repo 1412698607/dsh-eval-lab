@@ -63,7 +63,7 @@ inspect --run <目录>
 | `scripts/check_web_lifecycle.py`、`scripts/verify_web_lifecycle.py` | 新目录检查入口、fresh inspect 与离线生命周期判定；本阶段拒绝 live，取消 / 中断不计任务成功 |
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
-| `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、三种断言、执行 / 录制 / 断言分类 |
+| `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、五种断言、执行 / 录制 / 断言分类 |
 | `dsh_eval/__main__.py` | 评测 / 实验及续跑预览 / 运行 / 报告 / 浏览入口、UTF-8 stdout；--plan 与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
 | `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
@@ -198,13 +198,15 @@ Python 先验证 live 清单、观察区间 / PID、实际模型流和 CUA 动�
   → complete：复核 runId / 单会话 sessionId / 插件版本，读取稳定片段
   → 比较执行声明与结束 / 退出事实；非 completed 不判断普通任务成败
   → 唯一用户输入与结束、最终答案，callId → toolCallId 关联
-  → final_text / tool_result / turn_end 必需断言
+  → final_text / tool_result / turn_end / tool_forbidden / tool_call_count 必需断言
   → 保留三维状态、逐条证据及 passed / failed / unevaluable
 ```
 
 caseRunId 是一次用例执行的 UUID，与插件 runId 分开，复验沿用；首版一个用例一个新主会话，拒绝额外会话、多轮任务、恢复 / fork / 子 Agent 范围。任务内序号缺口、已知事件结构错误、孤立 / 重复 / 倒序结果或缺乏必要证据时，保守报告无法评测。未知事件保留并跳过；不改变 Node inspect 允许非零序号与缺口的规则。
 
-工具断言按用例声明匹配实际名称和参数键，不猜测工具或路径。需要调用先于关联结果、结果先于最终答案；明确值不符为 failed，缺关联证明为 insufficient_evidence。预期 isError 可以通过工具断言，不能直接作为宿主运行错误。只有执行 completed、录制 complete 且证据充分才判断任务 passed / failed。
+工具结果断言按用例声明匹配实际名称和参数键，不猜测工具或路径。需要调用先于关联结果、结果先于最终答案；明确值不符为 failed，缺关联证明为 insufficient_evidence。预期 isError 可以通过工具结果断言，不能直接作为宿主运行错误。只有执行 completed、录制 complete 且证据充分才判断任务 passed / failed。
+
+[082 行为约束](changes/2026-11-01-082-behavior-assertions.md) 在同一 task_view 后按工具名和可选参数筛选所有调用，包括最终答案之后、turn/end 之前的调用；forbidden 要求零次，call_count 按含端点的 min / max 判定。失败 / 未返回调用仍计数，actual 保存次数，evidence 保存调用及可用结果序号。共用类型敏感的参数匹配，不改变 tool_result 的存在性与 before-answer 关系；损坏或不完整证据仍不执行普通断言。只扩展支持的断言类型，不改变结果版本或运行时工具执行策略。
 
 清单记录配置、预算实施和执行干预事实，离线模块只能核对声明与已有证据；provider / model / profile、超时 / 进程错误由后续适配器负责采集。环境文件与预算本批只校验和保留，未执行。source=synthetic 的两组公开样例经过实际录制器与检查器，但不代表真实工具 / 模型或顺序批次已执行。Python 不复制录制摘要算法，也不读取旧检查快照代替本次 inspect；输出用例快照与明确关联路径，缺失指标不填零。
 
