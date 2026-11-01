@@ -11,7 +11,7 @@ from unittest.mock import patch
 from urllib.parse import quote, urlsplit
 
 from dsh_eval.__main__ import main
-from dsh_eval.browser import ArtifactBrowser, create_server, TRACE_LINE_BYTES
+from dsh_eval.browser import ArtifactBrowser, create_server, TRACE_LINE_BYTES, MAX_DOCUMENT_BYTES
 from dsh_eval.experiment import run_experiment
 from dsh_eval.formats import load_json
 from dsh_eval.report import generate_report
@@ -38,6 +38,97 @@ class BrowserTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
         return path
+
+    def diagnostic_trace(self, events=None):
+        session = "diagnostic-session"
+        filename = hashlib.sha256(session.encode()).hexdigest() + ".jsonl"
+        path = self.runs / "one/traces/recording" / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows = events if events is not None else [{"formatVersion": 1, "runId": "recording", "sessionId": session,
+            "event": {"seq": index + 100, "type": "assistant/message", "data": {}}} for index in range(65)]
+        path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+        self.evaluation["association"].update(runId="recording", sessionId=session)
+        self.write(self.runs / "one/evaluation.json", self.evaluation)
+        return path, "runs:one/traces/recording/" + filename, session
+
+    def test_assertion_trace_uses_associated_session_and_existing_allowed_file(self):
+        path, identifier, session = self.diagnostic_trace()
+        self.write(path.with_name("a" * 64 + ".jsonl"), {})
+        before = self.digest()
+        with patch("dsh_eval.evaluate.inspect_recording", side_effect=AssertionError("must not inspect")), \
+                patch("dsh_eval.runner.run_case", side_effect=AssertionError("must not run")):
+            document = self.browser.document("runs:one/evaluation.json")
+            self.assertEqual(document["assertionTrace"], {"id": identifier, "runId": "recording", "sessionId": session})
+        self.assertEqual(self.digest(), before)
+        for association in ({}, {"runId": "recording", "sessionId": "missing", "runDir": "traces/recording"},
+                            {"runId": "recording", "sessionId": session, "runDir": "home/recording"}):
+            self.evaluation["association"] = association
+            self.write(self.runs / "one/evaluation.json", self.evaluation)
+            self.assertNotIn("assertionTrace", self.browser.document("runs:one/evaluation.json"))
+
+    def test_http_event_focus_uses_identity_and_seq_not_file_line_without_writes(self):
+        path, identifier, session = self.diagnostic_trace()
+        self.server()
+        before = self.digest()
+        with patch("dsh_eval.evaluate.inspect_recording", side_effect=AssertionError("must not inspect")), \
+                patch("dsh_eval.runner.run_case", side_effect=AssertionError("must not run")):
+            status, _, body = self.request("/api/document?id=" + quote(identifier)
+                                          + "&seq=160&runId=recording&sessionId=" + session)
+            self.assertEqual(status, 200)
+            result = json.loads(body)
+            self.assertEqual(result["focus"]["line"], 61)
+            self.assertEqual(result["offset"], 55)
+            self.assertEqual(result["rows"][5]["data"]["event"]["seq"], 160)
+            self.assertEqual(self.browser.document(identifier, seq=160, run_id="recording", session_id=session, limit=1)["rows"][0]["line"], 61)
+            for suffix in ("&seq=", "&seq=160", "&seq=160&runId=&sessionId=" + session,
+                           "&seq=-1&runId=recording&sessionId=" + session,
+                           "&seq=999&runId=recording&sessionId=" + session,
+                           "&seq=160&runId=other&sessionId=" + session,
+                           "&seq=160&runId=recording&sessionId=other", "&seq=1&seq=2"):
+                self.assertEqual(self.request("/api/document?id=" + quote(identifier) + suffix)[0], 400)
+            self.assertEqual(self.request("/api/document?id=runs:one/evaluation.json&seq=160&runId=recording&sessionId=" + session)[0], 400)
+        self.assertEqual(self.digest(), before)
+
+    def test_focus_rejects_ambiguous_invalid_or_unpreviewable_events(self):
+        path, identifier, session = self.diagnostic_trace()
+        row = {"formatVersion": 1, "runId": "recording", "sessionId": session, "event": {"seq": 7}}
+        for rows in ([row, row], [{**row, "formatVersion": True}], [{**row, "event": {"seq": True}}],
+                     [{**row, "padding": "x" * TRACE_LINE_BYTES}]):
+            self.diagnostic_trace(rows)
+            with self.assertRaisesRegex(ValueError, "missing, ambiguous"):
+                self.browser.document(identifier, seq=7, run_id="recording", session_id=session)
+        self.diagnostic_trace([row])
+        for seq in (True, -1, 1.5, 9007199254740992):
+            with self.assertRaisesRegex(ValueError, "Invalid event locator"):
+                self.browser.document(identifier, seq=seq, run_id="recording", session_id=session)
+        path.write_bytes(b"x" * (MAX_DOCUMENT_BYTES + 1))
+        with self.assertRaisesRegex(ValueError, "8 MiB"):
+            self.browser.document(identifier, seq=7, run_id="recording", session_id=session)
+
+    def test_focus_keeps_malformed_rows_and_other_sessions_from_shifting_target(self):
+        path, identifier, session = self.diagnostic_trace()
+        row = {"formatVersion": 1, "runId": "recording", "sessionId": session, "event": {"seq": 7}}
+        path.write_bytes(b"bad json\n" + b"x" * (TRACE_LINE_BYTES + 10) + b"\n"
+                         + json.dumps({**row, "sessionId": "other"}).encode() + b"\n" + json.dumps(row).encode())
+        result = self.browser.document(identifier, seq=7, run_id="recording", session_id=session)
+        self.assertEqual(result["focus"]["line"], 4)
+        self.assertIn("error", result["rows"][0])
+        self.assertIn("error", result["rows"][1])
+        self.assertEqual(result["rows"][3]["data"], row)
+        raw = json.dumps(row).encode()
+        for ending in (b"", b"\n"):
+            path.write_bytes(raw + b" " * (TRACE_LINE_BYTES - len(raw) - len(ending)) + ending)
+            result = self.browser.document(identifier, seq=7, run_id="recording", session_id=session)
+            self.assertEqual(result["focus"]["line"], 1)
+            self.assertEqual(result["rows"][0]["data"], row)
+
+    def test_focus_refuses_a_row_changed_between_lookup_and_page_read(self):
+        path, identifier, session = self.diagnostic_trace()
+        def changed(*args):
+            path.write_text('{"event":{"seq":160},"sessionId":"other"}\n', encoding="utf-8")
+            return {"seq": 160, "line": 1, "runId": "recording", "sessionId": session}
+        with patch.object(self.browser, "_trace_focus", side_effect=changed), self.assertRaisesRegex(ValueError, "changed during reading"):
+            self.browser.document(identifier, seq=160, run_id="recording", session_id=session)
 
     def digest(self):
         return {str(path.relative_to(self.directory)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -103,6 +194,99 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(catalog["runs:missing/experiment-result.json"]["sources"], ["unknown"])
         self.assertEqual(catalog["runs:one/evaluation.json"]["sources"], ["synthetic"])
 
+    def test_catalog_lists_both_resume_kinds_and_versions_without_reports_or_execution(self):
+        saved = {}
+        for name, version, filename, field in (
+                ("batch", 1, "resume-result.json", "batchResumeResultFormatVersion"),
+                ("first", 1, "experiment-resume-result.json", "experimentResumeResultFormatVersion"),
+                ("chain", 2, "experiment-resume-result.json", "experimentResumeResultFormatVersion")):
+            saved[f"runs:{name}/{filename}"] = {field: version, "resumeId": name + "-identity",
+                "status": "completed", "outcome": "failed", "finishedAt": "2026-11-01T00:00:00Z"}
+            self.write(self.runs / name / filename, saved[f"runs:{name}/{filename}"])
+        before = self.digest()
+        with patch("dsh_eval.evaluate.evaluate", side_effect=AssertionError("must not evaluate")), \
+                patch("dsh_eval.runner.run_case", side_effect=AssertionError("must not run")):
+            catalog = {item["id"]: item for item in self.browser.catalog()["items"]}
+            for identifier, data in saved.items():
+                with self.subTest(identifier=identifier):
+                    item = catalog[identifier]
+                    self.assertEqual(item["kind"], "batch_resume" if identifier.startswith("runs:batch/") else "experiment_resume")
+                    self.assertEqual(item["title"], data["resumeId"])
+                    self.assertEqual((item["status"], item["outcome"], item["time"]),
+                                     (data["status"], data["outcome"], data["finishedAt"]))
+                    self.assertEqual(item["sources"], ["unknown"])
+                    self.assertEqual(self.browser.document(identifier)["data"], data)
+        self.assertEqual(self.digest(), before)
+
+    def test_resume_catalog_sources_use_saved_combined_or_new_and_reused_declarations(self):
+        fixtures = [
+            ("combined", {"batchResumeResultFormatVersion": 1,
+                "combinedSummary": {"sourceCounts": {"live": 2, "unknown": 1, "synthetic": 0,
+                    "negative": -1, "boolean": True, "float": 1.0}},
+                "reusedEntries": [{"source": "synthetic"}]}, ["live", "unknown"]),
+            ("experiment", {"experimentResumeResultFormatVersion": 1,
+                "newlyExecutedSummary": {"sourceCounts": {"live": 2}},
+                "samplePlan": [{"disposition": "reuse", "source": "synthetic"},
+                    {"disposition": "reuse", "source": None},
+                    {"disposition": "pending", "source": "stale-pending"}]}, ["live", "synthetic", "unknown"]),
+            ("batch", {"batchResumeResultFormatVersion": 1,
+                "newlyExecutedSummary": {"sourceCounts": {"synthetic": 2}},
+                "reusedEntries": [{"source": "live"}, {}]}, ["live", "synthetic", "unknown"]),
+            ("running", {"experimentResumeResultFormatVersion": 2, "status": "running",
+                "combinedSummary": None, "newlyExecutedSummary": None,
+                "samplePlan": [{"disposition": "reuse", "source": "live"}]}, ["live", "unknown"]),
+            ("missing-history", {"batchResumeResultFormatVersion": 1,
+                "newlyExecutedSummary": {"sourceCounts": {"live": 2}}}, ["live", "unknown"]),
+        ]
+        for name, data, expected in fixtures:
+            filename = "resume-result.json" if "batchResumeResultFormatVersion" in data else "experiment-resume-result.json"
+            self.write(self.runs / name / filename, data)
+        catalog = {item["path"].split("/", 1)[0]: item for item in self.browser.catalog()["items"] if item["kind"].endswith("_resume")}
+        for name, data, expected in fixtures:
+            with self.subTest(name=name):
+                self.assertEqual(catalog[name]["sources"], expected)
+                self.assertNotIn("error", catalog[name])
+
+    def test_resume_catalog_keeps_bad_files_isolated_and_private_results_pruned(self):
+        for name in ("resume-result.json", "experiment-resume-result.json"):
+            path = self.runs / "broken" / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text("{", encoding="utf-8")
+            self.write(self.runs / "home" / name, {"batchResumeResultFormatVersion": 1})
+        self.write(self.runs / "future/experiment-resume-result.json", {"experimentResumeResultFormatVersion": 3})
+        self.write(self.runs / "bad-rows/resume-result.json", {"batchResumeResultFormatVersion": 1,
+                   "reusedEntries": "not-an-array"})
+        self.write(self.runs / "good/resume-result.json", {"batchResumeResultFormatVersion": 1,
+                   "batchName": "Named continuation", "resumeId": "fallback", "reusedEntries": []})
+        catalog = {item["id"]: item for item in self.browser.catalog()["items"]}
+        self.assertTrue(all("error" in item for identifier, item in catalog.items()
+                            if "/broken/" in identifier or "/future/" in identifier or "/bad-rows/" in identifier))
+        self.assertFalse(any("/home/" in identifier for identifier in catalog))
+        self.assertEqual(catalog["runs:good/resume-result.json"]["title"], "Named continuation")
+        self.assertNotIn("error", catalog["runs:good/resume-result.json"])
+
+    def test_http_catalog_and_documents_expose_saved_resumes_without_writes(self):
+        identifier = "runs:resume/experiment-resume-result.json"
+        saved = {"experimentResumeResultFormatVersion": 2, "resumeId": "saved-resume",
+                 "combinedSummary": {"sourceCounts": {"live": 1, "unknown": 1}}, "status": "stopped",
+                 "outcome": "unevaluable", "sourceResumeResult": "missing/experiment-resume-result.json"}
+        self.write(self.runs / "resume/experiment-resume-result.json", saved)
+        self.server()
+        before = self.digest()
+        with patch("dsh_eval.evaluate.evaluate", side_effect=AssertionError("must not evaluate")), \
+                patch("dsh_eval.runner.run_case", side_effect=AssertionError("must not run")):
+            status, _, body = self.request("/api/catalog")
+            self.assertEqual(status, 200)
+            item = next(item for item in json.loads(body)["items"] if item["id"] == identifier)
+            self.assertEqual((item["kind"], item["sources"]), ("experiment_resume", ["live", "unknown"]))
+            status, _, body = self.request("/api/document?id=" + quote(identifier))
+            self.assertEqual(status, 200)
+            document = json.loads(body)
+            self.assertEqual(document["data"], saved)
+            self.assertIsNone(next(link["id"] for link in document["links"] if link["label"] == "sourceResumeResult"))
+            self.assertEqual(self.request("/api/catalog", method="POST")[0], 405)
+        self.assertEqual(self.digest(), before)
+
     def test_version_two_report_and_explicit_continuation_links_are_read_only(self):
         original = self.write(self.runs / "original/experiment-result.json", {"experimentResultFormatVersion": 1})
         old_batch = self.write(self.runs / "old/batch-result.json", {"batchResultFormatVersion": 1})
@@ -149,6 +333,74 @@ class BrowserTests(unittest.TestCase):
                    "sourceResumeResult": "missing/experiment-resume-result.json"})
         document = self.browser.document("runs:report/report.json")
         self.assertIsNone(next(link["id"] for link in document["links"] if link["label"] == "sourceResumeResult"))
+
+    def test_http_running_experiment_binding_opens_refreshed_batch_checkpoints_without_execution(self):
+        source = {"experimentResultFormatVersion": 1, "experimentId": "running-experiment", "status": "running",
+                  "outcome": None, "batchResultPath": None,
+                  "batchBinding": {"batchId": "bound-batch", "resultPath": "batches/bound/batch-result.json"}}
+        source_path = self.write(self.runs / "active/experiment-result.json", source)
+        batch_path = self.runs / "active/batches/bound/batch-result.json"
+        checkpoint = {"batchResultFormatVersion": 1, "batchId": "bound-batch", "status": "running",
+                      "entries": [{"entryId": "one", "status": "pending"}]}
+        self.write(batch_path, checkpoint)
+        self.server()
+        with patch("dsh_eval.evaluate.inspect_recording", side_effect=AssertionError("must not inspect")), \
+                patch("dsh_eval.runner.run_case", side_effect=AssertionError("must not run")):
+            for stage in ("running", "stopped"):
+                if stage == "stopped":
+                    checkpoint.update(status="stopped", entries=[{"entryId": "one", "status": "finished"}])
+                    self.write(batch_path, checkpoint)
+                before = self.digest()
+                status, _, body = self.request("/api/document?id=runs:active/experiment-result.json")
+                self.assertEqual(status, 200)
+                document = json.loads(body)
+                self.assertEqual(document["data"], source)
+                link = next(link for link in document["links"] if link["label"] == "batchBinding / resultPath")
+                self.assertEqual(link["id"], "runs:active/batches/bound/batch-result.json")
+                status, _, body = self.request("/api/document?id=" + quote(link["id"]))
+                self.assertEqual(status, 200)
+                self.assertEqual(json.loads(body)["data"], checkpoint)
+                self.assertEqual(self.digest(), before)
+        self.assertEqual(load_json(source_path), source)
+
+    def test_unfinished_result_binding_fallback_accepts_missing_null_or_empty_explicit_path(self):
+        self.write(self.runs / "batch/batch-result.json", {"batchResultFormatVersion": 1})
+        for field in ("experimentResultFormatVersion", "batchResumeResultFormatVersion"):
+            for values in ({}, {"batchResultPath": None}, {"batchResultPath": ""}):
+                data = {field: 1, "status": "running", "batchBinding": {"resultPath": "batch/batch-result.json"}, **values}
+                with self.subTest(field=field, values=values):
+                    self.assertEqual(self.browser._links(data, self.runs), [{"label": "batchBinding / resultPath",
+                        "id": "runs:batch/batch-result.json", "path": "batch/batch-result.json"}])
+
+    def test_binding_fallback_preserves_external_private_missing_and_malformed_boundaries(self):
+        for value in (str(self.directory / "outside/batch-result.json"), "//binding.invalid/share/batch-result.json",
+                      str(self.runs / "home/batch-result.json")):
+            with self.subTest(value=value), patch.object(Path, "resolve", side_effect=AssertionError("Reject before resolving")):
+                links = self.browser._links({"batchBinding": {"resultPath": value}}, self.runs)
+                self.assertEqual(links, [{"label": "batchBinding / resultPath", "id": None, "path": value}])
+        self.assertEqual(self.browser._links({"batchBinding": {"resultPath": "missing/batch-result.json"}}, self.runs),
+                         [{"label": "batchBinding / resultPath", "id": None, "path": "missing/batch-result.json"}])
+        for binding in (None, [], "batch/batch-result.json", 1, {"resultPath": None}, {"resultPath": []}):
+            with self.subTest(binding=binding):
+                self.assertEqual(self.browser._links({"batchBinding": binding}, self.runs), [])
+
+    def test_explicit_result_path_prevents_duplicate_binding_or_invalid_path_fallback(self):
+        self.write(self.runs / "batch/batch-result.json", {"batchResultFormatVersion": 1})
+        binding = {"resultPath": "batch/batch-result.json"}
+        for explicit, expected in (("batch/batch-result.json", "runs:batch/batch-result.json"),
+                                   ("missing/batch-result.json", None),
+                                   (str(self.directory / "outside/batch-result.json"), None)):
+            with self.subTest(explicit=explicit):
+                links = self.browser._links({"status": "completed", "batchResultPath": explicit,
+                                             "batchBinding": binding}, self.runs)
+                self.assertEqual(links, [{"label": "batchResultPath", "id": expected, "path": explicit}])
+
+    def test_invalid_explicit_path_types_do_not_fall_back_to_reserved_binding(self):
+        self.write(self.runs / "batch/batch-result.json", {"batchResultFormatVersion": 1})
+        for value in (False, 0, [], {}):
+            with self.subTest(value=value):
+                self.assertEqual(self.browser._links({"batchResultPath": value,
+                    "batchBinding": {"resultPath": "batch/batch-result.json"}}, self.runs), [])
 
     def test_report_versions_one_to_three_are_supported_but_future_or_coerced_versions_are_not(self):
         path = self.runs / "report/report.json"

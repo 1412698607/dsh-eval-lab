@@ -62,6 +62,17 @@ summary { cursor: pointer; color: #6a7b92; font-size: 12px; padding: 6px 0 12px;
 .empty strong { display: block; font-size: 16px; font-weight: 500; color: #66768b; margin-bottom: 8px; }
 .error { padding: 12px 15px; background: #fbefef; color: #a45454; margin-bottom: 18px; border-radius: 5px; white-space: pre-wrap; }
 .evidence { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.assertion-list { display: grid; gap: 16px; }
+.assertion-card { border: 1px solid #dfe5ed; border-radius: 6px; padding: 18px; min-width: 0; }
+.assertion-failed { border-left: 4px solid #b45a5a; }
+.assertion-heading { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
+.assertion-heading h3 { overflow-wrap: anywhere; }
+.assertion-values { margin: 16px 0; }
+.assertion-values > div { min-width: 0; }
+.assertion-value { min-height: 24px; }
+.expected-difference { background: #e1f2e8; color: #285b40; }
+.actual-difference { background: #fbe3e3; color: #863737; }
+.focused-event { background: #fff3cc; outline: 2px solid #b18127; outline-offset: -2px; }
 .pagination { display: flex; gap: 15px; align-items: center; margin-top: 16px; color: #8994a4; font-size: 12px; }
 footer { margin-top: 50px; display: flex; justify-content: space-between; border-top: 1px solid #e0e6ed; padding-top: 20px; font-size: 9px; letter-spacing: 1px; color: #98a2b1; }
 footer span { font-size: 10px; letter-spacing: 0; }

@@ -89,6 +89,8 @@ inspect --run <目录>
 
 M5 的 `--browse` 以 `/api/catalog` 读取目录索引，以 `/api/document?id=...` 读取一个已保存 JSON / Markdown 或一页 JSONL。目录索引带 `browserFormatVersion: 1`，只是读取响应，没有新持久化结果格式；不会写入文件、刷新摘要或改变评测状态。浏览 API 不调用原 evaluate / inspect / runner，旧结果可过时，与 M4.2 的主动离线复验是两个入口。
 
+[079 断言诊断](changes/2026-11-01-079-assertion-diagnostics.md) 只扩展浏览响应：evaluation 在关联轨迹可用时带 `assertionTrace`（id / runId / sessionId）；前端从内嵌 case 唯一匹配期望，保留原 actual 和结论。JSONL 的 document 请求可带 seq / runId / sessionId，服务按三者定位唯一行，返回 `focus` 与周边分页；范围检查、8 MiB 搜索上限及原行预览限制仍适用。返回页面前重核目标行身份和序号，无法匹配则明确失败；不提供跨读取快照或 inspect 保证。录制、评测与报告持久化格式不变。
+
 浏览器同时接受比较报告版本 1 / 2；版本 2 按保存的 batchIds、executionOrigin、sourceBatchResult、reusedSummary / newlyExecutedSummary 及 groups.byExecutionOrigin 展示多个批次和历史 / 新增分区。显式 sourceResumeResult、resumeVerification.batchResumeResult 及两层续跑的来源路径沿用同一范围检查后成为关联链接；续跑结果仅作为关联文档，不新增列表类别或执行入口。普通报告布局与浏览响应版本不变，见 [记录 057](changes/2026-10-27-057-resume-report-browser.md)。
 
 服务固定绑定 127.0.0.1，以启动时随机令牌、Host / Origin 检查及根目录解析限制访问，扫描不跟随符号目录 / junction。内容用文本节点呈现，默认排除独立 home / workspace 和私人目录。该方案复用现有 JSON 与原证据位置，无前端依赖和数据库；代价是没有实时一致快照、远程多用户访问或编辑 / 运行功能。容量、分页和已验证边界见 [结果浏览](result-browser.md)。
@@ -265,7 +267,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 状态化工具环境需要向运行中的 Agent 返回结果，不能仅靠离线日志完成。若核心用 Python 实现，必须补充并验证请求、响应、错误与生命周期接口；M3.3 已实现版本 1 请求 / 响应，Python 与 Node 适配器通过 JSONL，适配器与专用 Harness 子进程通过 IPC。已有 main.py 是示例文件，保持不变。2026 年 10 月 14 日的语言决策见 [修改记录 007](changes/2026-10-14-007-python-evaluation-plan.md)；10 月 15 日增加 M2.3 固定证据检查，10 月 16 日完成 M3.1 离线用例断言。
 
-分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；[065](changes/2026-10-29-065-live-two-config-comparison.md) 另完成两用例 / 两配置 / 两轮真实比较，完整十用例的扩大及其他渠道扩展仍待确定。
+分批设计见 [M3 与后续计划](plans/m3-regression-evaluation.md) 及 [M6 方案](plans/m6-reliability-validation.md)。M3.1 / M3.2 已区分三维状态并建立真实单用例闭环；M3.3 已实现状态化环境与实时工具桥接，M3.4 已补批次隔离，M4 已实现重复试验与离线配置报告，M5 已完成只读浏览及原 Windows 无模型 CI 验收。M6.1 至 M6.4 已完成当前本地范围，`103c090` 包含 M6.4 的合成检查、真实 Web 采集与取消工作区补验；[065](changes/2026-10-29-065-live-two-config-comparison.md) 另完成两用例 / 两配置 / 两轮真实比较，[072](changes/2026-11-01-072-full-core-two-config-comparison.md) 已完成完整十用例 / 两配置 / 两轮四十项比较。更多重复、任务多样性及其他渠道扩展仍按需确定，不由少量固定样本推断总体配置优劣。
 
 组件版本固定为 dsh-session `0.2.0-rc.2` / Cordis `4.0.4`；FiberState 是 const enum，检查脚本使用有来源注释的本地常量。插件 stdout 保持协议通道，诊断走 stderr。039 的修复提交云端实际通过 202 Python / 85 Node / 41 JS 语法、compileall 和合成 demo；038 的本地 202 Python 及 036 / 033 / 034 各批结果单独保留。真实组件、模型和子进程检查范围见 [进度](progress.md)，少量验收样本不构成模型表现或性能改善结论。
 
