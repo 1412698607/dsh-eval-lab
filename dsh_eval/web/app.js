@@ -118,6 +118,25 @@ function rate(value) {
   return value && value.value !== null && value.value !== undefined ? (value.value * 100).toFixed(1) + "%" : "缺失";
 }
 function countRate(value) { return value ? `${value.numerator} / ${value.denominator}` : "缺失"; }
+function intervalCell(value, proportion = false) {
+  if (!value) return node("span", "未保存区间", "subtext");
+  const labels = { no_evaluable_samples: "没有可评测样本", no_evaluable_pairs: "没有共同可评测配对",
+    no_metric_pairs: "没有完整指标配对", insufficient_pairs: "不足两对", zero_observed_variance: "观察方差为零，不输出零宽区间",
+    numeric_unavailable: "数值不可用", precision_loss: "数值精度不足", same_configuration: "配置相同",
+    small_sample: "小样本", incomplete_coverage: "覆盖不完整", conservative_bound: "保守界限",
+    normal_difference_assumption: "需差值近似正态" };
+  const label = (key) => Object.hasOwn(labels, key) ? labels[key] : String(key);
+  const format = (item) => typeof item === "number" && Number.isFinite(item)
+    ? proportion ? `${(item * 100).toFixed(2)}%` : number(item) : "缺失";
+  const level = typeof value.confidenceLevel === "number" && Number.isFinite(value.confidenceLevel)
+    && value.confidenceLevel > 0 && value.confidenceLevel < 1 ? number(value.confidenceLevel * 100) : "缺失";
+  const available = value.status === "available" && [value.estimate, value.lower, value.upper]
+    .every((item) => typeof item === "number" && Number.isFinite(item)) && value.lower <= value.upper && level !== "缺失";
+  const text = available ? `${format(value.estimate)} [${format(value.lower)}, ${format(value.upper)}]`
+    : `区间不可用：${value.reason ? label(value.reason) : "区间字段缺失"}`;
+  return append(node("div"), node("span", text), node("div", `${level}% · n=${number(value.n)} · ${value.method ?? "方法缺失"}`, "subtext"),
+    node("div", (Array.isArray(value.warnings) ? value.warnings : []).map(label).join("；"), "subtext"));
+}
 function summary(data) {
   return cards([["原计划样本", data.planned, `已尝试 ${data.attempted} · 已结束 ${data.finished} · 跳过 ${data.skipped}`],
     ["全尝试通过比例", rate(data.attemptedPassRate), countRate(data.attemptedPassRate)],
@@ -378,6 +397,16 @@ function renderDocument(documentData) {
           Object.entries(comparison.metrics || {}).map(([key, metric]) => [metricNames[key] || key, `${metric.pairedSamples} / ${metric.missingPairs}`,
             number(metric.left?.observedMean), number(metric.right?.observedMean), number(metric.meanDifference),
             number(metric.minDifference) + " .. " + number(metric.maxDifference)]))));
+      if (comparison.uncertainty) {
+        const intervals = [["通过率差（右 − 左）", comparison.uncertainty.passRateDifference, true],
+          ...Object.entries(comparison.uncertainty.metrics || {}).map(([key, value]) => [metricNames[key] || key, value, false])];
+        target.append(panel(`配对差值置信区间 · ${comparison.caseEntryId} / ${comparison.leftConfigurationId} → ${comparison.rightConfigurationId} / ${display(comparison.source)}`,
+          append(node("div"), node("p", "仅使用双方均可评测的完整配对，各指标再排除缺值；区间点估计属于此子集，可能不同于上方描述性差值。依赖独立重复等假设，未校正多重比较或可选停止，不据此宣布配置优胜。", "subtext"),
+            table(["目标", "点估计与区间", "纳入 / 原计划", "排除", "排除原因"], intervals.map(([label, value, proportion]) => [
+              label, intervalCell(value, proportion), `${number(value?.includedPairs)} / ${number(value?.plannedPairs)}`,
+              number(value?.excludedPairs), json(value?.excludedReasons),
+            ])))));
+      }
     }
     if (data.savedSummary) target.append(panel(resumed ? "续跑结果保存的合并汇总指标" : "原实验保存的汇总指标", metricsTable(data.savedSummary.metrics, true)));
   }
@@ -390,8 +419,9 @@ function renderDocument(documentData) {
     Object.hasOwn(data.executionOrder, "randomSeed") ? (Number.isSafeInteger(data.executionOrder.randomSeed)
       && data.executionOrder.randomSeed >= 0 ? String(data.executionOrder.randomSeed) : "缺失")
       : data.executionOrder.order === "repeat-case-configuration" ? "未设置（固定顺序）" : "缺失"]])));
+  const hasIntervals = Array.isArray(data.repeatDistributions) && data.repeatDistributions.some((item) => Object.hasOwn(item, "passRateInterval"));
   if (Array.isArray(data.repeatDistributions)) target.append(panel("按用例查看重复结果分布", append(node("div"),
-    node("p", "各配置、来源分开展示。有效通过 / 失败仅含复验匹配且正常完成的可评测样本；排除项不补零，不作置信区间或显著性推断。", "subtext"),
+    node("p", "各配置、来源分开展示。有效通过 / 失败仅含复验匹配且正常完成的可评测样本；排除项不补零。区间若存在，只针对纳入子集，不能消除缺失与排除的选择偏差。", "subtext"),
     table(["用例 / 配置 / 来源", "本来源 / 原计划轮次", "通过 / 失败 / 无法评测 / 缺失", "有效通过 / 失败", "排除", "每轮结果"],
       data.repeatDistributions.map((item) => [
         `${item.caseEntryId} / ${item.configurationId} / ${display(item.source)}`,
@@ -400,6 +430,14 @@ function renderDocument(documentData) {
         `${number(item.eligiblePassed)} / ${number(item.eligibleFailed)}`, number(item.excludedSamples),
         append(node("div"), ...(Array.isArray(item.samples) ? item.samples : []).map((row) => node("p",
           `第 ${row.repeatIndex} 轮：${display(row.outcome)} · ${display(row.status)} · ${display(row.verification)} · ${display(row.configurationMatch)}`))),
+      ])))));
+  if (hasIntervals) target.append(panel("通过率置信区间", append(node("div"),
+    node("p", "按用例 / 配置 / 来源独立计算，仅以可评测匹配样本为分母；区间依赖独立重复等假设，缺失与排除可能引入选择偏差。", "subtext"),
+    table(["用例 / 配置 / 来源", "点估计与置信区间", "纳入 / 原计划", "本来源排除 / 其他来源"],
+      data.repeatDistributions.map((item) => [
+        `${item.caseEntryId} / ${item.configurationId} / ${display(item.source)}`, intervalCell(item.passRateInterval, true),
+        `${number(item.passRateInterval?.n)} / ${number(item.passRateInterval?.plannedSamples)}`,
+        `${number(item.passRateInterval?.excludedSamples)} / ${number(item.passRateInterval?.otherSourceSamples)}`,
       ])))));
   if (data.limitations?.length) target.append(panel("解释边界", append(node("div"), ...data.limitations.map((item) => node("p", item)))));
   const files = evidence(links);

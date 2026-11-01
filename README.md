@@ -352,9 +352,9 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 
 新建 `runs/reports/<reportId>/report.json`、`report.md` 及逐项复验结果，原实验不覆写。报告先核对冻结任务 / 环境 / 预算 / 断言、身份、实际请求路由和来源，再按同用例与重复编号计算右侧减左侧的描述性差值。保留全部计划分母、匹配覆盖、缺失及溢出原因，不混用合成 / live 来源。只有一个配置也可生成报告，但没有配置间差值；不同 ID 指向同一 configRef 也不视为不同模型。
 
-新报告的 JSON、Markdown 与浏览页面提供按用例 / 配置 / 来源拆分的重复结果分布，展示每轮结果、通过 / 失败次数及不可用覆盖。有效通过 / 失败只计复验匹配且正常完成的可评测样本；首版不计算置信区间或显著性。详见 [重复结果分布](docs/configuration-reports.md#重复试验结果分布)。
+新报告的 JSON、Markdown 与浏览页面提供按用例 / 配置 / 来源拆分的重复结果分布，展示每轮结果、通过 / 失败次数及不可用覆盖。另支持可评测匹配通过率和配置配对差值的标称 95% 置信区间，显示实际纳入数、排除原因及小样本提示；缺失不补零，区间不代表统计假设已验证。详见 [重复结果分布](docs/configuration-reports.md#重复试验结果分布) 与 [置信区间及边界](docs/uncertainty.md)。
 
-`--reports-root` 可指定新报告目录的父目录。命令行 JSON stdout 固定 UTF-8。退出码 0 只表示报告生成成功，任务分类在报告中分别保留；输入或输出错误为 2。当前支持一个实验，不计算置信区间、显著性或赢家。格式、配对条件和不确定性范围见 [配置报告](docs/configuration-reports.md)。
+`--reports-root` 可指定新报告目录的父目录。命令行 JSON stdout 固定 UTF-8。退出码 0 只表示报告生成成功，任务分类在报告中分别保留；输入或输出错误为 2。当前支持一个实验或显式续跑链，不计算显著性或赢家；置信区间不改变基线回归门禁。格式、配对条件和不确定性范围见 [配置报告](docs/configuration-reports.md)。
 
 ## 基线回归比较
 

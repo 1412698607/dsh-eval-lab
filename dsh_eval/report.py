@@ -15,6 +15,7 @@ from .experiment import _plan_fingerprint, _order_metadata, _check_order, _sampl
 from .formats import fields, load_json, nonempty, parse_json, require, validate_case, validate_experiment
 from .metrics import METRICS, empty_metrics, number, summarize
 from .runner import ROOT, save_json
+from .uncertainty import LEVEL, wilson_interval, paired_binary_interval, paired_mean_interval
 
 
 def _same(left, right):
@@ -41,6 +42,12 @@ def _summary(rows):
     return result
 
 
+def _interval_eligible(row):
+    return (row["verification"] == "verified" and row["configurationMatch"] == "matched"
+            and row["executionStatus"] == "completed" and row["recordingOutcome"] == "complete"
+            and row["assertionOutcome"] in ("passed", "failed") and row["outcome"] in ("passed", "failed"))
+
+
 def _repeat_distributions(rows, manifest):
     distributions = []
     for entry in manifest["cases"]:
@@ -50,10 +57,14 @@ def _repeat_distributions(rows, manifest):
             for source in sorted({row["source"] or "unknown" for row in subset}):
                 selected = sorted((row for row in subset if (row["source"] or "unknown") == source),
                                   key=lambda row: row["repeatIndex"])
-                eligible = [row for row in selected if row["verification"] == "verified"
-                            and row["configurationMatch"] == "matched" and row["executionStatus"] == "completed"
-                            and row["recordingOutcome"] == "complete" and row["outcome"] in ("passed", "failed")]
+                eligible = [row for row in selected if _interval_eligible(row)]
                 counts = Counter(row["outcome"] or "missing" for row in selected)
+                interval = wilson_interval(sum(row["outcome"] == "passed" for row in eligible), len(eligible))
+                interval.update(plannedSamples=manifest["repetitions"], sourceSamples=len(selected),
+                                excludedSamples=len(selected) - len(eligible), otherSourceSamples=manifest["repetitions"] - len(selected),
+                                repeatIndices=[row["repeatIndex"] for row in eligible])
+                if len(eligible) < manifest["repetitions"]:
+                    interval["warnings"].append("incomplete_coverage")
                 distributions.append({"caseEntryId": entry["entryId"], "configurationId": config["configurationId"],
                     "source": source, "plannedRepetitions": manifest["repetitions"], "sourceSamples": len(selected),
                     "outcomes": {key: counts[key] for key in ("passed", "failed", "unevaluable", "missing")},
@@ -61,6 +72,7 @@ def _repeat_distributions(rows, manifest):
                     "eligiblePassed": sum(row["outcome"] == "passed" for row in eligible),
                     "eligibleFailed": sum(row["outcome"] == "failed" for row in eligible),
                     "excludedSamples": len(selected) - len(eligible),
+                    "passRateInterval": interval,
                     "samples": [{key: row[key] for key in ("sampleId", "repeatIndex", "status", "outcome",
                                 "verification", "configurationMatch")} for row in selected]})
     return distributions
@@ -233,6 +245,41 @@ def _recheck(sample, expected, directory, batch_id):
     return row, fresh
 
 
+def _paired_intervals(a, b, repetitions, same):
+    eligible, excluded = [], Counter()
+    for index in range(1, repetitions + 1):
+        if same:
+            excluded["same_configuration"] += 1
+        elif index not in a or index not in b:
+            excluded["missing_verified_matched_pair"] += 1
+        elif not (_interval_eligible(a[index]) and _interval_eligible(b[index])):
+            excluded["not_jointly_evaluable"] += 1
+        else:
+            eligible.append(index)
+
+    def covered(interval, indices, reasons):
+        interval.update(plannedPairs=repetitions, includedPairs=len(indices), excludedPairs=repetitions - len(indices),
+                        repeatIndices=indices, excludedReasons=dict(reasons))
+        if len(indices) < repetitions:
+            interval["warnings"].append("incomplete_coverage")
+        if same:
+            interval["reason"] = "same_configuration"
+        return interval
+
+    passed = [int(b[index]["outcome"] == "passed") - int(a[index]["outcome"] == "passed") for index in eligible]
+    result = {"confidenceLevel": LEVEL, "direction": "right-minus-left",
+              "passRateDifference": covered(paired_binary_interval(passed), eligible, excluded), "metrics": {}}
+    for key in METRICS:
+        indices = [index for index in eligible if number((a[index].get("metrics") or {}).get(key))
+                   and number((b[index].get("metrics") or {}).get(key))]
+        reasons = excluded.copy()
+        if len(indices) < len(eligible):
+            reasons["missing_metric"] += len(eligible) - len(indices)
+        differences = [b[index]["metrics"][key] - a[index]["metrics"][key] for index in indices]
+        result["metrics"][key] = covered(paired_mean_interval(differences), indices, reasons)
+    return result
+
+
 def _compare(left, right, case_id, source, rows, repetitions):
     def selected(config):
         return {row["repeatIndex"]: row for row in rows if row["configurationId"] == config["configurationId"]
@@ -253,7 +300,7 @@ def _compare(left, right, case_id, source, rows, repetitions):
                             None if repeats else "No verified pairs with matching actual configurations and source",
                   "plannedPairs": repetitions, "pairedSamples": len(repeats), "excludedPairs": repetitions - len(repeats),
                   "repeatIndices": repeats, "leftSummary": left_summary, "rightSummary": right_summary,
-                  "rateDifferences": {}, "metrics": {}}
+                  "rateDifferences": {}, "metrics": {}, "uncertainty": _paired_intervals(a, b, repetitions, same)}
     for key in ("evaluablePassRate", "attemptedPassRate", "evaluableCoverage"):
         x, y = left_summary[key]["value"], right_summary[key]["value"]
         comparison["rateDifferences"][key] = y - x if x is not None and y is not None else None
@@ -291,6 +338,16 @@ def _value(value):
 def _metric(value):
     text = f"均值 {_value(value['observedMean'])}；范围 {_value(value['observedMin'])} .. {_value(value['observedMax'])}；观测 {value['observedSamples']} / 缺失 {value['missingSamples']}"
     return _cell(text + (f"；{value['reason']}" if value.get("reason") else ""))
+
+
+def _interval_text(interval, proportion=False):
+    if interval is None:
+        return "未保存区间"
+    if interval["status"] != "available":
+        return _cell(f"不可用：{interval['reason']}；n={interval['n']}")
+    value = (lambda item: f"{item:.2%}") if proportion else _value
+    warnings = "；" + ", ".join(interval["warnings"]) if interval["warnings"] else ""
+    return _cell(f"{value(interval['estimate'])} [{value(interval['lower'])}, {value(interval['upper'])}]；n={interval['n']}{warnings}")
 
 
 def render_markdown(report):
@@ -340,8 +397,8 @@ def render_markdown(report):
         lines.extend(["", "## 执行顺序与重复结果分布", "",
                       f"顺序规则：{_cell(order['order'])}；随机种子：{_cell(order.get('randomSeed', '未设置（固定顺序）'))}。", "",
                       "按用例、配置和来源分开；各轮保留原结论及复核状态。有效通过 / 失败仅含复验匹配且正常完成的可评测样本，排除项不补成失败。", "",
-                      "| 用例 / 配置 / 来源 | 本来源 / 原计划轮次 | 通过 / 失败 / 无法评测 / 缺失 | 有效通过 / 失败 | 排除 | 每轮：结论 / 状态 / 复核 / 配置匹配 |",
-                      "| --- | --- | --- | --- | --- | --- |"])
+                      "| 用例 / 配置 / 来源 | 本来源 / 原计划轮次 | 通过 / 失败 / 无法评测 / 缺失 | 有效通过 / 失败 | 排除 | 每轮：结论 / 状态 / 复核 / 配置匹配 | 可评测匹配通过率 95% 区间 |",
+                      "| --- | --- | --- | --- | --- | --- | --- |"])
         for distribution in report.get("repeatDistributions", []):
             counts = distribution["outcomes"]
             repeats = "; ".join(f"{row['repeatIndex']}: {row['outcome']} / {row['status']} / {row['verification']} / {row['configurationMatch']}"
@@ -349,7 +406,8 @@ def render_markdown(report):
             lines.append(f"| {_cell(distribution['caseEntryId'])} / {_cell(distribution['configurationId'])} / {_cell(distribution['source'])} | "
                          f"{distribution['sourceSamples']} / {distribution['plannedRepetitions']} | "
                          f"{counts['passed']} / {counts['failed']} / {counts['unevaluable']} / {counts['missing']} | "
-                         f"{distribution['eligiblePassed']} / {distribution['eligibleFailed']} | {distribution['excludedSamples']} | {_cell(repeats)} |")
+                         f"{distribution['eligiblePassed']} / {distribution['eligibleFailed']} | {distribution['excludedSamples']} | {_cell(repeats)} | "
+                         f"{_interval_text(distribution.get('passRateInterval'), True)} |")
     lines.extend(["", "## 同用例、同重复编号与同来源的配置差值", ""])
     if not report["comparisons"]:
         lines.append("只有一个配置，无法生成配置间差值。")
@@ -366,6 +424,15 @@ def render_markdown(report):
             lines.append(f"| {key} | {value['pairedSamples']} / {value['missingPairs']} | {_value(value['left']['observedMean'])} | "
                          f"{_value(value['right']['observedMean'])} | {_value(value['meanDifference'])} {_cell(reason)} | "
                          f"{_value(value['minDifference'])} .. {_value(value['maxDifference'])} |")
+        if item.get("uncertainty"):
+            lines.extend(["", "配对差值 95% 区间：只使用双方均可评测的完整配对，各指标再排除缺值；点估计采用此子集的逐对差值均值，可能不同于上方描述性差值。", "",
+                          "| 区间目标 | 点估计与区间 | 纳入 / 计划 | 排除 | 排除原因 |",
+                          "| --- | --- | --- | --- | --- |"])
+            intervals = {"passRateDifference": item["uncertainty"]["passRateDifference"], **item["uncertainty"]["metrics"]}
+            for key, interval in intervals.items():
+                lines.append(f"| {key} | {_interval_text(interval, key == 'passRateDifference')} | "
+                             f"{interval['includedPairs']} / {interval['plannedPairs']} | {interval['excludedPairs']} | "
+                             f"{_cell(interval['excludedReasons'])} |")
         lines.append("")
     lines.extend(["## 逐样本复核与证据", "", "| 样本 | 复核 | 结论：执行 / 录制 / 断言 | 实际匹配 | 历史差异 | 证据与原因 |",
                   "| --- | --- | --- | --- | --- | --- |"])
@@ -443,6 +510,9 @@ def generate_report(experiment_result_path, reports_root=None):
               "configurations": manifest["configurations"],
               "planVerification": plan_verification, "executionOrder": _order_metadata(manifest),
               "repeatDistributions": _repeat_distributions(rows, manifest),
+              "uncertaintyPolicy": {"version": 1, "confidenceLevel": LEVEL, "smallSampleWarningBelow": 30,
+                                    "independenceVerified": False, "normalityVerified": False,
+                                    "multiplicityAdjusted": False, "optionalStoppingAdjusted": False},
               "cases": [{"caseEntryId": key, "caseId": case["caseId"], "taskFingerprint": hashlib.sha256(
                   json.dumps({name: value for name, value in case.items() if name != "configRef"},
                              sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()} for key, case in cases.items()],
@@ -451,7 +521,9 @@ def generate_report(experiment_result_path, reports_root=None):
               "limitations": ["通过比例均公开分子和分母；缺失、取消、错误与跳过不补成零或普通答案失败。",
                               "配置差值仅使用同用例、同重复编号、同来源且实际配置核对匹配的子集；排除项可能引入选择偏差。",
                               "live / synthetic 是证据中的来源声明，不是签名；合成轨迹只能验证报告流程，不能证明模型表现。",
-                              "样本量、观测范围与指标覆盖只描述本次实验；未计算置信区间、显著性或配置优胜结论。",
+                              "95% 置信区间按用例 / 配置 / 来源与合格配对分别计算，不合并异质任务；只针对纳入子集，不能消除缺失或排除引起的选择偏差。",
+                              "区间依赖独立重复等假设；Wilson 为近似区间，配对数值 t 区间另需差值近似正态。n<30 仅为小样本提示，不是有效性判据。",
+                              "没有多重比较或可选停止校正，不提供显著性 / 因果 / 总体配置优胜结论，也不改变回归退出码。",
                               ("执行顺序按保存种子确定性随机化；种子不控制模型采样，不能保证样本独立或排除时间与服务波动。"
                                if "randomSeed" in manifest else "重复按固定顺序执行，未随机化，不能保证样本独立或排除时间与服务波动。"),
                               "调用计数为已结算录制事件，token 为已报告 usage；耗时含准备与清理，费用保持缺失。"]}

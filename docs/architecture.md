@@ -74,6 +74,7 @@ inspect --run <目录>
 | `dsh_eval/metrics.py` | 闭合任务内观测计数 / usage、明确样本分母与逐指标缺失覆盖，不估算价格 |
 | `dsh_eval/report.py` | 普通实验版本 1 / 实验续跑版本 2 报告，重新 evaluate 并按路由 / 来源 / 轮次配对；续跑分开历史与新增用量 |
 | `dsh_eval/regression.py` | 两个独立实验选择配置，复用报告输入加载与 fresh _recheck，校验任务 / 配置 / 来源 / 身份，输出逐项变化和门禁结论 |
+| `dsh_eval/uncertainty.py` | 标准库实现固定 95% Wilson、配对二值 Hoeffding 界和配对均值 t 区间；小样本 / 零方差 / 数值不可用显式表示，不做任务选择 |
 | `dsh_eval/resume_report.py` | 只读核对续跑的两层计划、源元信息、领取、批次和原矩阵绑定，为共用报告器提供逐样本证据根 |
 | `dsh_eval/browser.py`、`dsh_eval/web/` | 标准库 loopback 读取服务、目录 / 路径边界与令牌、保存结果和原始轨迹分页；HTML / CSS / JavaScript 界面不启动任务或复验 |
 | `.github/workflows/deterministic.yml` | 干净 Windows 环境无模型检查，不安装 Harness / 读取模型凭据；`4b97120` 的 41 JS 语法 / 85 Node / 202 Python / compileall / 合成 demo 云端全部通过，旧 M5 验收保留 |
@@ -83,6 +84,8 @@ inspect --run <目录>
 | `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
 ## 输出与数据格式
+
+[091 置信区间](changes/2026-11-01-091-confidence-intervals.md) 在报告复验后计算区间，保留原 summary / metrics / rateDifferences 口径。repeatDistributions 新增 passRateInterval，仅对同用例 / 配置 / 来源中的合格 passed / failed 样本计分子与分母。comparisons 新增 uncertainty，先取双方可评测的完整配对，再按指标排除缺值，记录自己的 estimate、纳入编号与排除原因；不把旧描述性差值当作新子集的点估计。数值临界值通过有界迭代求解、缓存 df；092 修复后先中心化再缩放计算方差，保留异号极端值的回退与端点还原保护。结果版本不变，新增 uncertaintyPolicy 声明假设未验证、未校正多重比较 / 可选停止；旧报告和门禁退出码不变。
 
 [088 种子顺序与重复分布](changes/2026-11-01-088-seeded-order-repeat-distributions.md) 在版本 1 实验清单中增加可选 randomSeed。省略时保持固定顺序与旧指纹；声明时用 seeded-sha256-v1 对完整矩阵排序，sampleId 在排序前按原展开规则分配。预览、执行、报告和续跑共用同一身份 / 顺序生成器及元数据校验，种子随清单进入原计划摘要，续跑只保留原顺序中的剩余项。报告仍先校验矩阵数量，再重建完整排序位置；不提供总内存硬上限。
 

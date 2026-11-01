@@ -247,6 +247,52 @@ test("execution seeds retain exact integers and legacy reports do not invent dis
   assert.deepEqual(panelRows(fixed, "执行顺序")["repeat-case-configuration"], ["未设置（固定顺序）"]);
 });
 
+test("confidence intervals display saved bounds, small samples and explicit unavailability", async () => {
+  const artifact = resumedReport();
+  const available = { status: "available", confidenceLevel: 0.95, method: "wilson-score", n: 2,
+    estimate: 1, lower: 0.3423802275, upper: 1, reason: null, warnings: ["small_sample", "incomplete_coverage"] };
+  artifact.data.repeatDistributions = [
+    { caseEntryId: "case", configurationId: "one", source: "synthetic", plannedRepetitions: 3, sourceSamples: 2,
+      outcomes: { passed: 2, failed: 0, unevaluable: 0, missing: 0 }, eligiblePassed: 2, eligibleFailed: 0, excludedSamples: 0,
+      samples: [], passRateInterval: available },
+    { caseEntryId: "case", configurationId: "one", source: "unknown", plannedRepetitions: 3, sourceSamples: 1,
+      outcomes: { passed: 0, failed: 0, unevaluable: 0, missing: 1 }, eligiblePassed: 0, eligibleFailed: 0, excludedSamples: 1,
+      samples: [], passRateInterval: { ...available, status: "unavailable", n: 0, estimate: null, lower: null, upper: null, reason: "no_evaluable_samples" } },
+  ];
+  const get = await openReport(artifact);
+  const text = section(get, "通过率置信区间").textContent;
+  assert.match(text, /100\.00% \[34\.24%, 100\.00%\]/);
+  assert.match(text, /95% · n=2 · wilson-score/);
+  assert.doesNotMatch(text, /9500/);
+  assert.match(text, /小样本；覆盖不完整/);
+  assert.match(text, /区间不可用：没有可评测样本/);
+  artifact.data.repeatDistributions[0].passRateInterval = { ...available, confidenceLevel: null };
+  const missing = await openReport(artifact);
+  const missingText = section(missing, "通过率置信区间").textContent;
+  assert.match(missingText, /区间不可用：区间字段缺失/);
+  assert.match(missingText, /缺失% · n=2/);
+});
+
+test("paired interval panels use their own sample coverage and leave legacy comparisons intact", async () => {
+  const artifact = resumedReport();
+  const make = (extra) => ({ confidenceLevel: 0.95, n: 2, plannedPairs: 3, includedPairs: 2, excludedPairs: 1,
+    excludedReasons: { missing_metric: 1 }, warnings: ["small_sample"], ...extra });
+  artifact.data.comparisons = [{ caseEntryId: "case", leftConfigurationId: "left", rightConfigurationId: "right", source: "synthetic",
+    plannedPairs: 3, pairedSamples: 3, excludedPairs: 0, rateDifferences: { attemptedPassRate: 0 }, metrics: {},
+    uncertainty: { passRateDifference: make({ method: "hoeffding-paired-binary", status: "available", estimate: 0, lower: -1, upper: 1 }),
+      metrics: { toolCalls: make({ method: "paired-student-t", status: "unavailable", estimate: 0, lower: null, upper: null, reason: "zero_observed_variance" }) } } }];
+  const get = await openReport(artifact);
+  const panel = section(get, "配对差值置信区间 · case / left → right / 合成声明");
+  assert.match(panel.textContent, /0\.00% \[-100\.00%, 100\.00%\]/);
+  assert.match(panel.textContent, /2 \/ 3/);
+  assert.match(panel.textContent, /观察方差为零，不输出零宽区间/);
+  assert.match(panel.textContent, /missing_metric/);
+  delete artifact.data.comparisons[0].uncertainty;
+  const legacy = await openReport(artifact);
+  assert.equal(section(legacy, "配对差值置信区间 · case / left → right / 合成声明"), undefined);
+  assert.ok(section(legacy, "配置比较 · 描述本次实验"));
+});
+
 test("source filters retain mixed results with missing sample provenance", async () => {
   const get = await viewer([
     { kind: "experiment", title: "mixed", path: "mixed", sources: ["live", "unknown"] },

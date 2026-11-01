@@ -50,7 +50,7 @@ repeatDistributions 的每项对应一个 caseEntryId / configurationId / source
 | excludedSamples | sourceSamples 减去有效通过与失败；包括不可评测、未执行或未能复验匹配的项 |
 | samples | 本来源每轮的 sampleId、repeatIndex、status、outcome、verification 与 configurationMatch；按重复编号升序 |
 
-来源来自本次复验，证据缺失无法读取来源时为 unknown，不借用旧保存声明。坏路由可能保留某条任务断言的 passed，但不进入有效通过；所有原始结论与排除状态仍可查看。这是描述性结果分布，不增加置信区间、显著性检验、稳定性阈值或总体模型优胜结论。
+来源来自本次复验，证据缺失无法读取来源时为 unknown，不借用旧保存声明。坏路由可能保留某条任务断言的 passed，但不进入有效通过；所有原始结论与排除状态仍可查看。088 的描述性分布保持；[091](changes/2026-11-01-091-confidence-intervals.md) 另增加 passRateInterval 和配置配对的 uncertainty 字段，不生成显著性检验、稳定性阈值或总体模型优胜结论。
 
 executionOrder 保存原实验的 order；随机化时另含 randomSeed。Markdown 和页面保留种子的完整整数，不使用指标的六位有效数字格式。固定顺序没有种子字段；显式种子 0 不当作缺失。算法及兼容规则见 [随机执行顺序](experiments.md#可复现的随机执行顺序)。
 
@@ -169,6 +169,6 @@ completed 且断言明确失败的任务保留 failed；取消、超时、运行
 
 每个比较指标还会再次选择**两侧都有该指标的相同配对**，输出 pairedSamples / missingPairs、两侧汇总、meanDifference（右均值减左均值）、单对差值的 minDifference / maxDifference。missingPairs 以 plannedPairs 为分母，包含路由 / 来源 / 录制排除和指标缺失；不能将两侧覆盖不同的独立均值直接相减。某侧有效值求和溢出时，覆盖和范围保留，均值与均值差为 null，即使单对差值范围可计算。
 
-报告公开样本量、实测范围、来源、覆盖、排除项和缺失原因；不计算置信区间、pass@k、显著性或赢家。固定重复 / 用例 / 配置顺序没有随机化，也没有验证独立同分布假设。范围是当前样本的范围，不是总体不确定性的置信区间。原小批验收以及 072 每用例仅两对的固定矩阵均不足以宣称总体成功率、性能或成本提升。
+报告公开样本量、实测范围、来源、覆盖、排除项和缺失原因。[置信区间说明](uncertainty.md) 定义 091 新增的 95% Wilson、配对二值保守界和数值配对 t 区间，区间有独立的纳入分母、点估计、原因及小样本提示；旧观测范围仍只是样本范围。默认固定顺序或可选种子排序都没有验证独立同分布 / 正态假设，不提供多重比较或可选停止校正；不计算 pass@k、显著性或赢家。原小批验收以及 072 每用例仅两对的固定矩阵均不足以宣称总体成功率、性能或成本提升。
 
 复验须读取停止写入后的稳定实验目录；本工具没有在线一致快照、证据签名或隐藏运行配置的验证能力。初版实现见 [修改记录 019](changes/2026-10-21-019-m4-2-configuration-reports.md)，当前范围和各批验证统一见 [开发进度](progress.md)。M5 已提供 [只读结果浏览](result-browser.md)，可查看保存报告与证据；打开页面不会重新生成报告或验证日志。
