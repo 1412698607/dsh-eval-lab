@@ -342,6 +342,8 @@ python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --r
 
 ## M4.2 配置比较报告
 
+实验清单可设置非负整数 `randomSeed`，以可复现顺序执行完整矩阵；省略时保留原顺序。种子随输入冻结并进入计划指纹，续跑保持原剩余顺序，不重新随机化。种子只控制任务调度，不控制模型采样，详见 [执行顺序随机化](docs/experiments.md#可复现的随机执行顺序)。
+
 对已经结束的实验运行以下命令，不调用模型：
 
 ```powershell
@@ -349,6 +351,8 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 ```
 
 新建 `runs/reports/<reportId>/report.json`、`report.md` 及逐项复验结果，原实验不覆写。报告先核对冻结任务 / 环境 / 预算 / 断言、身份、实际请求路由和来源，再按同用例与重复编号计算右侧减左侧的描述性差值。保留全部计划分母、匹配覆盖、缺失及溢出原因，不混用合成 / live 来源。只有一个配置也可生成报告，但没有配置间差值；不同 ID 指向同一 configRef 也不视为不同模型。
+
+新报告的 JSON、Markdown 与浏览页面提供按用例 / 配置 / 来源拆分的重复结果分布，展示每轮结果、通过 / 失败次数及不可用覆盖。有效通过 / 失败只计复验匹配且正常完成的可评测样本；首版不计算置信区间或显著性。详见 [重复结果分布](docs/configuration-reports.md#重复试验结果分布)。
 
 `--reports-root` 可指定新报告目录的父目录。命令行 JSON stdout 固定 UTF-8。退出码 0 只表示报告生成成功，任务分类在报告中分别保留；输入或输出错误为 2。当前支持一个实验，不计算置信区间、显著性或赢家。格式、配对条件和不确定性范围见 [配置报告](docs/configuration-reports.md)。
 

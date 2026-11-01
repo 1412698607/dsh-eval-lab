@@ -10,6 +10,8 @@
 
 ## 使用
 
+[088](changes/2026-11-01-088-seeded-order-repeat-distributions.md) 的新报告增加 executionOrder 与 repeatDistributions，JSON、Markdown 和本地浏览器均可查看执行种子及按用例 / 配置 / 来源拆分的每轮结果。报告版本 1 / 2 / 3 不变，旧文件缺失这些字段时不从其他摘要补算；需要新分布时可使用原归档重新生成独立报告。
+
 在仓库根目录，把路径中的实验 ID 替换为已保存的实际值：
 
 ```powershell
@@ -33,6 +35,24 @@ evaluations/000001.json            本次重新 inspect 和断言的结果
 每次新建 UUID 目录，文件以排他创建方式写入；不覆盖原实验、旧 evaluation 或已有报告。stdout 输出报告 JSON，包含 reportDirectory。写入错误可能留下未完成的新报告目录，不支持原子发布、断电保证或续写。整个目录仍在忽略的 runs 内，包含私人任务与本机证据路径，不作为公开夹具。
 
 命令行 JSON stdout 固定 UTF-8，重定向时不随 Windows 系统代码页改变。JSON 的 generatedAt 保存 UTC，Markdown 显示 Asia/Shanghai 时间。Markdown 将缺失数值显示为“缺失”、浮点数显示六位有效数字；完整原数值在 JSON 中保留，不参与重新舍入后的统计。
+
+## 重复试验结果分布
+
+repeatDistributions 的每项对应一个 caseEntryId / configurationId / source，不混合不同配置或 live / synthetic / unknown 声明。全部原计划样本（含续跑历史与本轮新增）各计一次，按 repeatIndex 展示，不把随机执行位置当作重复编号。
+
+| 字段 | 含义 |
+| --- | --- |
+| plannedRepetitions | 该用例 / 配置的原计划重复次数；多个来源行共享同一分母，不能相加 |
+| sourceSamples | 该来源行包含的样本数；同用例 / 配置的各来源计数之和等于原计划轮次 |
+| outcomes | 新复验的 passed / failed / unevaluable / missing 次数；missing 表示没有任务结论，如 skipped，不补作失败 |
+| statusCounts | finished / skipped / error 等执行项状态计数，可解释缺失结果 |
+| eligiblePassed / eligibleFailed | 仅 verification=verified、configurationMatch=matched、执行 completed、录制 complete 且可评测样本的通过 / 失败次数 |
+| excludedSamples | sourceSamples 减去有效通过与失败；包括不可评测、未执行或未能复验匹配的项 |
+| samples | 本来源每轮的 sampleId、repeatIndex、status、outcome、verification 与 configurationMatch；按重复编号升序 |
+
+来源来自本次复验，证据缺失无法读取来源时为 unknown，不借用旧保存声明。坏路由可能保留某条任务断言的 passed，但不进入有效通过；所有原始结论与排除状态仍可查看。这是描述性结果分布，不增加置信区间、显著性检验、稳定性阈值或总体模型优胜结论。
+
+executionOrder 保存原实验的 order；随机化时另含 randomSeed。Markdown 和页面保留种子的完整整数，不使用指标的六位有效数字格式。固定顺序没有种子字段；显式种子 0 不当作缺失。算法及兼容规则见 [随机执行顺序](experiments.md#可复现的随机执行顺序)。
 
 ## 实验续跑的跨批次报告
 
@@ -85,7 +105,7 @@ python -m dsh_eval --report 'runs/experiment-resumes/<resumeId>/experiment-resum
 
 ## 核对顺序与失败行为
 
-报告先以用例条目数 × 配置数 × 重复数计算预期总数，核对保存的 samples / batch entries 类型与数量，再按固定顺序逐项检查；不先展开完整位置列表。这样损坏的重复次数或非法样本容器会在位置枚举、inspect 和输出之前拒绝，新快照与旧格式都适用。该检查不提供输入文件字节或总内存硬上限，见 [复审修复 045](changes/2026-10-25-045-plan-review-fixes.md)。
+报告先以用例条目数 × 配置数 × 重复数计算预期总数，核对保存的 samples / batch entries 类型与数量，再重建固定或按种子排序的完整位置列表并逐项检查；不在数量检查前展开位置。这样损坏的重复次数或非法样本容器会在位置枚举、inspect 和输出之前拒绝，新快照与旧格式都适用。随机排序需要完整矩阵；该检查不提供输入文件字节或总内存硬上限，见 [复审修复 045](changes/2026-10-25-045-plan-review-fixes.md)。
 
 1. 从传入结果旁解析冻结的 experiment.json 和批次结果，不依赖历史 experimentDirectory / batchDirectory 等绝对位置。核对版本、终态、配置、重复次数、展开顺序、完整样本数、计划位置及 batchId / sampleId / caseRunId / runId / sessionId。重复执行 / 录制身份或实验与批次关联冲突会拒绝整份输入。
 2. 检查实验和批次路径一致、保持在对应目录内。清单路径须为相对 POSIX 路径，拒绝绝对路径、越界与符号链接逃逸；现有 runner 证据中的 Windows 分隔符另行兼容。完整实验目录复制到新位置后，可以从新位置报告。

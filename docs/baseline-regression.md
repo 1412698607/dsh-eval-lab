@@ -50,6 +50,8 @@ configurationId 只是每个实验内的选择标签，可以不同；actual 配
 
 未选择配置的证据不参与本次结论，但整个实验的矩阵和冻结输入结构仍须通过原加载校验。调度停止阈值、输出目录或实验名称不要求相同；任务预算属于冻结 case，必须一致。少量配对仅描述这些样本，不提供显著性、因果、总体成功率或模型优胜推断。
 
+[088](changes/2026-11-01-088-seeded-order-repeat-distributions.md) 后，两侧元信息新增 executionOrder，披露各自规则和可选随机种子。每侧按自己的冻结计划验证顺序，但两侧可以使用不同种子或固定 / 随机顺序；仍按 caseEntryId / repeatIndex 配对，不按执行位置。允许比较不同顺序不构成因果或独立样本保证。
+
 ## 结果 JSON
 
 `regressionComparisonFormatVersion=1`，不改变原实验、评测或配置报告的版本。主要字段：

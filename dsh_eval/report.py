@@ -11,7 +11,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from .evaluate import evaluate
-from .experiment import ORDER, _plan_fingerprint
+from .experiment import _plan_fingerprint, _order_metadata, _check_order, _sample_plan
 from .formats import fields, load_json, nonempty, parse_json, require, validate_case, validate_experiment
 from .metrics import METRICS, empty_metrics, number, summarize
 from .runner import ROOT, save_json
@@ -41,6 +41,31 @@ def _summary(rows):
     return result
 
 
+def _repeat_distributions(rows, manifest):
+    distributions = []
+    for entry in manifest["cases"]:
+        for config in manifest["configurations"]:
+            subset = [row for row in rows if row["caseEntryId"] == entry["entryId"]
+                      and row["configurationId"] == config["configurationId"]]
+            for source in sorted({row["source"] or "unknown" for row in subset}):
+                selected = sorted((row for row in subset if (row["source"] or "unknown") == source),
+                                  key=lambda row: row["repeatIndex"])
+                eligible = [row for row in selected if row["verification"] == "verified"
+                            and row["configurationMatch"] == "matched" and row["executionStatus"] == "completed"
+                            and row["recordingOutcome"] == "complete" and row["outcome"] in ("passed", "failed")]
+                counts = Counter(row["outcome"] or "missing" for row in selected)
+                distributions.append({"caseEntryId": entry["entryId"], "configurationId": config["configurationId"],
+                    "source": source, "plannedRepetitions": manifest["repetitions"], "sourceSamples": len(selected),
+                    "outcomes": {key: counts[key] for key in ("passed", "failed", "unevaluable", "missing")},
+                    "statusCounts": dict(Counter(row["status"] for row in selected)),
+                    "eligiblePassed": sum(row["outcome"] == "passed" for row in eligible),
+                    "eligibleFailed": sum(row["outcome"] == "failed" for row in eligible),
+                    "excludedSamples": len(selected) - len(eligible),
+                    "samples": [{key: row[key] for key in ("sampleId", "repeatIndex", "status", "outcome",
+                                "verification", "configurationMatch")} for row in selected]})
+    return distributions
+
+
 def _load_plan(source):
     directory = source.parent
     saved = load_json(source)
@@ -53,7 +78,7 @@ def _load_plan(source):
     manifest = validate_experiment(load_json(_path(directory, saved["manifestPath"])))
     for key in ("experimentName", "repetitions", "configurations", "failurePolicy"):
         require(_same(saved[key], manifest[key]), f"Frozen experiment/result {key} mismatch")
-    require(saved["order"] == "repeat-case-configuration", "Unsupported experiment sample order")
+    _check_order(saved, manifest)
     batch_path = _path(directory, saved["batchResultPath"])
     batch = load_json(batch_path)
     require(isinstance(batch, dict), "Batch result must be an object")
@@ -64,21 +89,21 @@ def _load_plan(source):
     count = len(manifest["cases"]) * len(manifest["configurations"]) * manifest["repetitions"]
     require(isinstance(saved["samples"], list) and isinstance(batch["entries"], list)
             and len(saved["samples"]) == len(batch["entries"]) == count, "Experiment sample count mismatch")
-    positions = ((entry["entryId"], config["configurationId"], repeat)
-                 for repeat in range(1, manifest["repetitions"] + 1)
-                 for entry in manifest["cases"] for config in manifest["configurations"])
+    positions = _sample_plan(manifest)
     seen_samples, seen_runs, seen_sessions, seen_recordings = set(), set(), set(), set()
     for sample, row, position in zip(saved["samples"], batch["entries"], positions):
         require(isinstance(sample, dict) and isinstance(row, dict), "Sample must be an object")
         require(type(sample["repeatIndex"]) is int
-                and (sample["caseEntryId"], sample["configurationId"], sample["repeatIndex"]) == position,
+                and all(sample[key] == position[key] for key in ("caseEntryId", "configurationId", "repeatIndex")),
                 "Experiment sample position mismatch")
+        if "randomSeed" in manifest:
+            require(sample["sampleId"] == position["sampleId"], "Randomized sample identity mismatch")
         require(nonempty(sample["sampleId"]) and sample["sampleId"] not in seen_samples
                 and sample["sampleId"] == sample["entryId"] == row["entryId"], "Duplicate or mismatched sample identity")
         seen_samples.add(sample["sampleId"])
-        config = next(item["configRef"] for item in manifest["configurations"] if item["configurationId"] == position[1])
+        config = next(item["configRef"] for item in manifest["configurations"] if item["configurationId"] == position["configurationId"])
         require(_same(sample["requestedConfiguration"], config)
-                and sample["caseId"] == cases[position[0]]["caseId"], "Sample requested configuration/case mismatch")
+                and sample["caseId"] == cases[position["caseEntryId"]]["caseId"], "Sample requested configuration/case mismatch")
         for key in ("caseId", "requestedConfiguration", "status", "caseRunId", "runId", "sessionId", "configuration", "source"):
             require(_same(sample.get(key), row.get(key)), f"Experiment/batch sample {key} mismatch")
         require(sample["status"] in ("finished", "error", "skipped"), "Nonterminal sample")
@@ -121,7 +146,7 @@ def _verify_plan_input(directory, saved, manifest, cases):
     payload = load_json(_path(directory, saved["planInputPath"]))
     fields(payload, ("version", "manifest", "cases", "maxSamples", "order"))
     require(type(payload["version"]) is int and payload["version"] == 1, "Unsupported plan input version")
-    require(payload["order"] == ORDER, "Unsupported plan input order")
+    require(payload["order"] == _order_metadata(manifest)["order"], "Unsupported plan input order")
     limit = payload["maxSamples"]
     require(limit is None or type(limit) is int and limit > 0, "Plan input maxSamples must be a positive integer")
     require("maxSamples" in saved and _same(limit, saved["maxSamples"]), "Plan input/result maxSamples mismatch")
@@ -310,6 +335,21 @@ def render_markdown(report):
                       "| 指标 | 均值、范围与覆盖 |", "| --- | --- |"])
         for key in METRICS:
             lines.append(f"| {key} | {_metric(group['summary']['metrics'][key])} |")
+    if report.get("executionOrder"):
+        order = report["executionOrder"]
+        lines.extend(["", "## 执行顺序与重复结果分布", "",
+                      f"顺序规则：{_cell(order['order'])}；随机种子：{_cell(order.get('randomSeed', '未设置（固定顺序）'))}。", "",
+                      "按用例、配置和来源分开；各轮保留原结论及复核状态。有效通过 / 失败仅含复验匹配且正常完成的可评测样本，排除项不补成失败。", "",
+                      "| 用例 / 配置 / 来源 | 本来源 / 原计划轮次 | 通过 / 失败 / 无法评测 / 缺失 | 有效通过 / 失败 | 排除 | 每轮：结论 / 状态 / 复核 / 配置匹配 |",
+                      "| --- | --- | --- | --- | --- | --- |"])
+        for distribution in report.get("repeatDistributions", []):
+            counts = distribution["outcomes"]
+            repeats = "; ".join(f"{row['repeatIndex']}: {row['outcome']} / {row['status']} / {row['verification']} / {row['configurationMatch']}"
+                                for row in distribution["samples"])
+            lines.append(f"| {_cell(distribution['caseEntryId'])} / {_cell(distribution['configurationId'])} / {_cell(distribution['source'])} | "
+                         f"{distribution['sourceSamples']} / {distribution['plannedRepetitions']} | "
+                         f"{counts['passed']} / {counts['failed']} / {counts['unevaluable']} / {counts['missing']} | "
+                         f"{distribution['eligiblePassed']} / {distribution['eligibleFailed']} | {distribution['excludedSamples']} | {_cell(repeats)} |")
     lines.extend(["", "## 同用例、同重复编号与同来源的配置差值", ""])
     if not report["comparisons"]:
         lines.append("只有一个配置，无法生成配置间差值。")
@@ -401,7 +441,8 @@ def generate_report(experiment_result_path, reports_root=None):
               "reportDirectory": str(directory), "status": "generated", "experimentId": saved["experimentId"],
               "experimentName": saved["experimentName"], "sourceExperimentResult": str(source), "batchId": saved["batchId"],
               "configurations": manifest["configurations"],
-              "planVerification": plan_verification,
+              "planVerification": plan_verification, "executionOrder": _order_metadata(manifest),
+              "repeatDistributions": _repeat_distributions(rows, manifest),
               "cases": [{"caseEntryId": key, "caseId": case["caseId"], "taskFingerprint": hashlib.sha256(
                   json.dumps({name: value for name, value in case.items() if name != "configRef"},
                              sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()} for key, case in cases.items()],
@@ -411,7 +452,8 @@ def generate_report(experiment_result_path, reports_root=None):
                               "配置差值仅使用同用例、同重复编号、同来源且实际配置核对匹配的子集；排除项可能引入选择偏差。",
                               "live / synthetic 是证据中的来源声明，不是签名；合成轨迹只能验证报告流程，不能证明模型表现。",
                               "样本量、观测范围与指标覆盖只描述本次实验；未计算置信区间、显著性或配置优胜结论。",
-                              "重复按固定顺序执行，未随机化，不能保证样本独立或排除时间与服务波动。",
+                              ("执行顺序按保存种子确定性随机化；种子不控制模型采样，不能保证样本独立或排除时间与服务波动。"
+                               if "randomSeed" in manifest else "重复按固定顺序执行，未随机化，不能保证样本独立或排除时间与服务波动。"),
                               "调用计数为已结算录制事件，token 为已报告 usage；耗时含准备与清理，费用保持缺失。"]}
     if metadata:
         report.update(metadata)

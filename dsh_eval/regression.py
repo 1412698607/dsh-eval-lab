@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .formats import require
+from .experiment import _order_metadata
 from .report import _load_report_inputs, _recheck, _same
 
 
@@ -30,7 +31,8 @@ def _load_side(path, configuration_id):
         row.update(provenance)
         rows[key] = row
     return {"sourceResult": str(source), "experimentId": saved["experimentId"],
-            "configuration": selected, "planVerification": plan, "plannedSamples": len(rows)}, cases, rows
+            "configuration": selected, "planVerification": plan, "plannedSamples": len(rows),
+            "executionOrder": _order_metadata(manifest)}, cases, rows
 
 
 def _evaluable(row):

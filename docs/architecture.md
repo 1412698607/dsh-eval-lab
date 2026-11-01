@@ -66,7 +66,7 @@ inspect --run <目录>
 | `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、五种断言、执行 / 录制 / 断言分类 |
 | `dsh_eval/__main__.py` | 评测 / 实验及续跑预览 / 运行 / 报告 / 基线比较 / 浏览入口、UTF-8 stdout；--plan 与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
-| `dsh_eval/experiment.py` | 共用加载 / 预检和无副作用样本展开；预览只返回计划，执行才冻结输入、复用顺序 batch、核对关联并汇总 |
+| `dsh_eval/experiment.py` | 共用加载 / 预检、稳定样本身份与可选种子排序；预览只返回计划，执行冻结原顺序并复用串行 batch，核对关联与汇总 |
 | `dsh_eval/batch.py` | 冻结输入与顺序调度；独立调用管理批次锁，实验内部通过 _lock_stack 保留同一锁至实验收尾 |
 | `dsh_eval/experiment_resume.py` | 显式批次绑定及实验 / 批次同锁复核；比较实验摘要后调用共用续跑核心，保存独立结果和原样本映射 |
 | `dsh_eval/experiment_resume_chain.py` | 显式祖先链校验、顺序持有各批次锁、全矩阵预检 / 执行及版本 3 报告输入；只为最近批次的未开始项领取 |
@@ -83,6 +83,10 @@ inspect --run <目录>
 | `test/` | 原功能、配置、组件版本及完整性边界测试 |
 
 ## 输出与数据格式
+
+[088 种子顺序与重复分布](changes/2026-11-01-088-seeded-order-repeat-distributions.md) 在版本 1 实验清单中增加可选 randomSeed。省略时保持固定顺序与旧指纹；声明时用 seeded-sha256-v1 对完整矩阵排序，sampleId 在排序前按原展开规则分配。预览、执行、报告和续跑共用同一身份 / 顺序生成器及元数据校验，种子随清单进入原计划摘要，续跑只保留原顺序中的剩余项。报告仍先校验矩阵数量，再重建完整排序位置；不提供总内存硬上限。
+
+新报告版本 1 / 2 / 3 均增加 executionOrder 和 repeatDistributions。后者按用例 / 配置 / 复验来源分组，保留各轮新结论、缺失状态与复验 / 匹配条件，另外统计有效通过 / 失败和排除数量。固定顺序、随机顺序及跨批次历史都经过同一复验后才统计；浏览器只显示保存分布，旧报告不补算。未增加置信区间、显著性或总体效果推断；基线比较披露两侧执行顺序，但仍按用例 / 重复编号配对。
 
 [085 基线回归比较](changes/2026-11-01-085-baseline-regression.md) 新增 regressionComparisonFormatVersion=1，使用原 report._load_report_inputs 核对普通实验或显式续跑链，再对选定配置逐样本 _recheck。以 caseEntryId / repeatIndex 的并集对齐；完整 case 除 configRef 外严格相同，允许变化的 configRef 字段须显式声明。计划未复核、共享原实验 / 执行身份、来源或实际路由不匹配均不能判为完整可比。输出 saved 与新结论、变化类别和缺失原因；0 无退化、1 有退化、2 不完整 / 错误，改善不抵消退化。默认仅 stdout，--output 排他新建 JSON，输入归档不写入。原报告版本 / 退出码、评测规则及调度不变，未接入浏览器。
 

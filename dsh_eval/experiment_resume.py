@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from .batch import _now
 from .batch_lock import batch_lock
-from .experiment import ORDER, _expand_samples
+from .experiment import _check_order, _expand_samples
 from .formats import fields, load_json, require, validate_batch, validate_case, validate_experiment
 from .report import _load_plan as load_terminal_experiment, _verify_plan_input
 from .resume import _check_resume_output_root, _digest, _execute_resume, _load_plan as load_batch_resume_plan, _path
@@ -35,10 +35,11 @@ def _load_inputs(source, batch_source):
             "Unsupported experiment result format")
     require(isinstance(saved.get("experimentId"), str) and str(UUID(saved["experimentId"])) == saved["experimentId"]
             and Path(saved["experimentDirectory"]).resolve() == directory, "Experiment identity/directory mismatch")
-    require(saved["order"] == ORDER and saved["status"] in ("running", "completed", "stopped", "error", "interrupted"),
+    require(saved["status"] in ("running", "completed", "stopped", "error", "interrupted"),
             "Unsupported experiment scheduling state")
     manifest_path = _path(directory, saved["manifestPath"])
     manifest = validate_experiment(load_json(manifest_path))
+    _check_order(saved, manifest)
     for key in ("experimentName", "repetitions", "configurations", "failurePolicy"):
         require(_digest(saved[key]) == _digest(manifest[key]), f"Frozen experiment/result {key} mismatch")
     count = len(manifest["cases"]) * len(manifest["configurations"]) * manifest["repetitions"]

@@ -22,7 +22,8 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 | --- | --- |
 | experimentPlanFormatVersion / valid / modelCalled | 独立版本 1 预览，静态预检通过，当前预览未调用模型 |
 | experimentName / sourceManifest / configurations | 清单名称、解析后的来源路径及请求配置声明 |
-| repetitions / failurePolicy / order | 重复次数、continue / stop 策略与 repeat-case-configuration 固定顺序 |
+| repetitions / failurePolicy / order | 重复次数、continue / stop 策略；默认 repeat-case-configuration，可选 seeded-sha256-v1 顺序 |
+| randomSeed | 仅随机化实验出现，保存清单中的非负安全整数种子，0 是有效值 |
 | counts.cases / configurations / samples | 用例条目数、配置条目数、计划任务数；不同条目可引用同一用例或配置 |
 | maxSamples | 本次调用的任务数上限；未传入为 null，旧计划 / 结果可以没有此字段 |
 | planFingerprint | {version: 1, sha256: 小写 64 位十六进制摘要}，覆盖本次加载的实验输入、顺序与任务上限 |
@@ -34,6 +35,24 @@ python -m dsh_eval --experiment fixtures/evaluation/core/core.experiment.json --
 本节说明 `--experiment --plan`，与 `--run` 互斥；拒绝 --evidence、--output、--runs-root、--host-modules、--cancel-after-stream 及浏览 / 报告参数，包括空字符串选项值。该预览只打印 JSON，不创建实验 / batch / workspace 目录，不安装宿主、调用 inspect、启动任务或生成执行 UUID、状态和 outcome。需要保存输出时由调用方处理 stdout；它不是可执行的冻结清单。续跑也有独立的 --plan，因需重新核对已有证据而会调用 inspect，见 [实验续跑](experiment-resume.md)。
 
 预览和 --run 共用同一套加载 / 预检及样本展开逻辑。预览不锁定源文件；后续 --run 仍会重新读取、校验并冻结当时输入，期间修改文件可能改变计划。原预览实现与无模型验证见 [记录 040](changes/2026-10-24-040-experiment-plan-preview.md)，可选任务数上限见下节。
+
+## 可复现的随机执行顺序
+
+[088](changes/2026-11-01-088-seeded-order-repeat-distributions.md) 在实验清单顶层增加可选字段。例如给现有清单增加：
+
+```json
+{"randomSeed": 42}
+```
+
+仍使用原 `--experiment ... --plan` / `--run` 入口，没有独立种子命令行参数。省略 randomSeed 保持原固定顺序和旧计划指纹；显式 0 开启随机化。仅接受 0～9007199254740991 的整数，拒绝 null、布尔、负数、小数、字符串及超范围值，不自动生成或转换种子。
+
+执行规则为 `seeded-sha256-v1`：先按重复轮次、清单用例、清单配置生成完整矩阵并分配原有 sampleId；再为每项编码 JSON 数组 `["seeded-sha256-v1", randomSeed, caseEntryId, configurationId, repeatIndex]`，使用 UTF-8、ensure_ascii=false、紧凑分隔符，按 SHA-256 摘要字节升序排序，摘要相同时以 sampleId 排序。算法不依赖 Python 的全局随机状态或进程 hash seed。相同清单 / 种子得到同一顺序；不同种子不保证一定得到不同排列，小矩阵尤其如此。
+
+这是整个样本矩阵的排序，不保持配置相邻，也不保证第 1 轮先于第 2 轮执行。sampleId、caseEntryId、configurationId 与 repeatIndex 的对应关系不随种子改变；samples 数组与展开批次的列表顺序才是实际调度顺序。执行仍串行、逐任务隔离，不增加并发。
+
+原清单、冻结清单与 plan-input.json 保存种子，预览和普通实验结果保存 order / randomSeed。完整清单和顺序规则进入原 planFingerprint；预览后换种子或删掉字段，会使旧 expected 摘要在创建身份 / 输出前被拒绝。报告和续跑重新验证种子、规则、位置和原计划快照；篡改种子、样本 ID 或排列不能只靠同步改一份结果绕过核验。
+
+首轮和连续续跑按原冻结随机计划只取未开始项，不重新洗牌，也不能指定新的种子；原顺序和种子可在原实验及生成报告的 executionOrder 查看。新规则是版本 1 清单的可选扩展，默认旧数据无需迁移；旧严格读取器会拒绝 randomSeed 或未知 order。种子只控制调度，不控制模型采样，不保证输出可复现、样本独立或排除服务 / 缓存 / 时间波动。
 
 ## 可选任务数上限
 
@@ -130,7 +149,7 @@ python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --r
 
 用例顶层可选 recorder.maxEventBytes / recorder.maxPendingBytes 沿原始输入、展开用例、批次输入和逐次执行快照完整保留；实验的 configRef 覆盖不会改动它。录制限制属于用例，不是实验 configurations 的维度，也不进入 requestedConfiguration / 实际路由匹配。若需比较不同录制限制，应使用各自明确声明的用例；报告的完整快照校验和非 configRef 任务指纹包含 recorder，省略与显式默认不会被静默归一化。字段约束见 [用例格式](evaluation-format.md)。
 
-样本数 = cases 数 × configurations 数 × repetitions。顺序固定为重复轮次、用例顺序、配置顺序；repeatIndex 从 1 开始。没有随机化、并发或跨轮状态复用，每次都新建 home / workspace / store / session 与工具故障状态。
+样本数 = cases 数 × configurations 数 × repetitions。默认顺序为重复轮次、用例顺序、配置顺序；repeatIndex 从 1 开始。可选 randomSeed 按上节规则排列完整矩阵；没有并发或跨轮状态复用，每次都新建 home / workspace / store / session 与工具故障状态。
 
 ## 输出与关联
 

@@ -72,12 +72,16 @@ def validate_batch(batch):
 
 
 def validate_experiment(experiment):
-    fields(experiment, ("experimentFormatVersion", "experimentName", "repetitions", "failurePolicy", "cases", "configurations"))
+    fields(experiment, ("experimentFormatVersion", "experimentName", "repetitions", "failurePolicy", "cases", "configurations"),
+           ("randomSeed",))
     require(type(experiment["experimentFormatVersion"]) is int and experiment["experimentFormatVersion"] == 1,
             "Unsupported experiment format")
     require(nonempty(experiment["experimentName"]), "experimentName must be nonempty")
     require(type(experiment["repetitions"]) is int and experiment["repetitions"] > 0,
             "repetitions must be a positive integer")
+    if "randomSeed" in experiment:
+        require(type(experiment["randomSeed"]) is int and 0 <= experiment["randomSeed"] <= 9007199254740991,
+                "randomSeed must be a nonnegative safe integer")
     validate_batch({"batchFormatVersion": 1, "batchName": experiment["experimentName"],
                     "failurePolicy": experiment["failurePolicy"], "cases": experiment["cases"]})
     require(isinstance(experiment["configurations"], list) and experiment["configurations"], "Configurations are required")

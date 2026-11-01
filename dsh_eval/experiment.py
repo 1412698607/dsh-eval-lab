@@ -15,6 +15,37 @@ from .runner import ROOT, save_json, validate_live_case
 from . import output_paths
 
 ORDER = "repeat-case-configuration"
+RANDOM_ORDER = "seeded-sha256-v1"
+
+
+def _order_metadata(manifest):
+    return ({"order": RANDOM_ORDER, "randomSeed": manifest["randomSeed"]} if "randomSeed" in manifest
+            else {"order": ORDER})
+
+
+def _check_order(saved, manifest):
+    expected = _order_metadata(manifest)
+    require(saved.get("order") == expected["order"], "Experiment sample order differs from its manifest")
+    require(("randomSeed" in saved) == ("randomSeed" in expected), "Experiment random seed presence mismatch")
+    if "randomSeed" in expected:
+        require(type(saved["randomSeed"]) is int and saved["randomSeed"] == expected["randomSeed"],
+                "Experiment random seed mismatch")
+
+
+def _sample_plan(manifest):
+    samples = []
+    for repeat in range(1, manifest["repetitions"] + 1):
+        for entry in manifest["cases"]:
+            for config in manifest["configurations"]:
+                samples.append({"sampleId": f"sample-{len(samples) + 1:06}", "caseEntryId": entry["entryId"],
+                                "configurationId": config["configurationId"], "repeatIndex": repeat})
+    if "randomSeed" in manifest:
+        def rank(sample):
+            payload = [RANDOM_ORDER, manifest["randomSeed"], sample["caseEntryId"], sample["configurationId"], sample["repeatIndex"]]
+            digest = hashlib.sha256(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).digest()
+            return digest, sample["sampleId"]
+        samples.sort(key=rank)
+    return samples
 
 
 def _checkpoint(directory, report):
@@ -40,19 +71,15 @@ def _load_experiment(experiment_path, max_samples=None):
 
 
 def _expand_samples(manifest, inputs):
-    # Repeat blocks keep different configurations close in time; no randomization claim.
-    index = 0
-    for repeat in range(1, manifest["repetitions"] + 1):
-        for entry, case in zip(manifest["cases"], inputs):
-            for config in manifest["configurations"]:
-                index += 1
-                yield ({"sampleId": f"sample-{index:06}", "caseEntryId": entry["entryId"], "caseId": case["caseId"],
-                        "configurationId": config["configurationId"], "repeatIndex": repeat},
-                       {**case, "configRef": config["configRef"]})
+    cases = {entry["entryId"]: case for entry, case in zip(manifest["cases"], inputs)}
+    configurations = {config["configurationId"]: config["configRef"] for config in manifest["configurations"]}
+    for identity in _sample_plan(manifest):
+        case = cases[identity["caseEntryId"]]
+        yield ({**identity, "caseId": case["caseId"]}, {**case, "configRef": configurations[identity["configurationId"]]})
 
 
 def _plan_input(manifest, inputs, max_samples):
-    return {"version": 1, "manifest": manifest, "cases": inputs, "maxSamples": max_samples, "order": ORDER}
+    return {"version": 1, "manifest": manifest, "cases": inputs, "maxSamples": max_samples, "order": _order_metadata(manifest)["order"]}
 
 
 def _plan_fingerprint(manifest, inputs, max_samples):
@@ -70,7 +97,7 @@ def plan_experiment(experiment_path, *, max_samples=None):
     return {"experimentPlanFormatVersion": 1, "valid": True, "modelCalled": False,
             "experimentName": manifest["experimentName"], "sourceManifest": str(source), "maxSamples": max_samples,
             "planFingerprint": _plan_fingerprint(manifest, inputs, max_samples),
-            "repetitions": manifest["repetitions"], "failurePolicy": manifest["failurePolicy"], "order": ORDER,
+            "repetitions": manifest["repetitions"], "failurePolicy": manifest["failurePolicy"], **_order_metadata(manifest),
             "configurations": deepcopy(manifest["configurations"]),
             "counts": {"cases": len(inputs), "configurations": len(manifest["configurations"]), "samples": len(samples)},
             "estimates": {"modelCalls": None, "totalTokens": None, "cost": None}, "samples": samples}
@@ -120,7 +147,7 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
               "batchBinding": {"batchId": reserved_batch_id,
                                "resultPath": f"batches/{reserved_batch_id}/batch-result.json"},
               "configurations": manifest["configurations"], "failurePolicy": manifest["failurePolicy"],
-              "order": ORDER, "startedAt": datetime.now(timezone.utc).isoformat(),
+              **_order_metadata(manifest), "startedAt": datetime.now(timezone.utc).isoformat(),
               "finishedAt": None, "status": "running", "outcome": None, "batchId": None, "batchResultPath": None,
               "samples": samples, "summary": None, "groups": []}
     _checkpoint(directory, report)

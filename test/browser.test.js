@@ -209,6 +209,44 @@ test("behavior cards distinguish a saved zero count from unexecuted or missing r
   }
 });
 
+test("repeat distributions keep case configuration source and unavailable coverage visible", async () => {
+  const artifact = resumedReport();
+  artifact.data.executionOrder = { order: "seeded-sha256-v1", randomSeed: 0 };
+  artifact.data.repeatDistributions = [
+    { caseEntryId: "case-a", configurationId: "baseline", source: "synthetic", plannedRepetitions: 3, sourceSamples: 2,
+      outcomes: { passed: 1, failed: 1, unevaluable: 0, missing: 0 }, eligiblePassed: 1, eligibleFailed: 1, excludedSamples: 0,
+      samples: [{ repeatIndex: 1, status: "finished", outcome: "passed", verification: "verified", configurationMatch: "matched" },
+        { repeatIndex: 2, status: "finished", outcome: "failed", verification: "verified", configurationMatch: "matched" }] },
+    { caseEntryId: "case-a", configurationId: "baseline", source: "unknown", plannedRepetitions: 3, sourceSamples: 1,
+      outcomes: { passed: 0, failed: 0, unevaluable: 0, missing: 1 }, eligiblePassed: 0, eligibleFailed: 0, excludedSamples: 1,
+      samples: [{ repeatIndex: 3, status: "skipped", outcome: null, verification: "skipped", configurationMatch: "unknown" }] },
+  ];
+  const get = await openReport(artifact);
+  const rows = panelRows(get, "按用例查看重复结果分布");
+  assert.deepEqual(rows["case-a / baseline / 合成声明"].slice(0, 4), ["2 / 3", "1 / 1 / 0 / 0", "1 / 1", "0"]);
+  assert.deepEqual(rows["case-a / baseline / 未知"].slice(0, 4), ["1 / 3", "0 / 0 / 0 / 1", "0 / 0", "1"]);
+  assert.match(section(get, "按用例查看重复结果分布").textContent, /第 2 轮：未通过/);
+  assert.match(section(get, "按用例查看重复结果分布").textContent, /第 3 轮：缺失 · 已跳过/);
+  assert.deepEqual(panelRows(get, "执行顺序")["seeded-sha256-v1"], ["0"]);
+});
+
+test("execution seeds retain exact integers and legacy reports do not invent distributions", async () => {
+  const artifact = resumedReport();
+  artifact.data.executionOrder = { order: "seeded-sha256-v1", randomSeed: 9007199254740991 };
+  const get = await openReport(artifact);
+  assert.deepEqual(panelRows(get, "执行顺序")["seeded-sha256-v1"], ["9007199254740991"]);
+  assert.equal(section(get, "按用例查看重复结果分布"), undefined);
+  const legacy = await openReport(resumedReport());
+  assert.equal(section(legacy, "执行顺序"), undefined);
+  assert.equal(section(legacy, "按用例查看重复结果分布"), undefined);
+  artifact.data.executionOrder = { order: "seeded-sha256-v1" };
+  const missing = await openReport(artifact);
+  assert.deepEqual(panelRows(missing, "执行顺序")["seeded-sha256-v1"], ["缺失"]);
+  artifact.data.executionOrder = { order: "repeat-case-configuration" };
+  const fixed = await openReport(artifact);
+  assert.deepEqual(panelRows(fixed, "执行顺序")["repeat-case-configuration"], ["未设置（固定顺序）"]);
+});
+
 test("source filters retain mixed results with missing sample provenance", async () => {
   const get = await viewer([
     { kind: "experiment", title: "mixed", path: "mixed", sources: ["live", "unknown"] },

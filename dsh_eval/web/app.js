@@ -386,6 +386,21 @@ function renderDocument(documentData) {
       ...(resumed ? [`${group.byExecutionOrigin?.reused?.planned ?? "缺失"} / ${group.byExecutionOrigin?.new?.planned ?? "缺失"}`] : []),
       countRate(group.summary?.attemptedPassRate), countRate(group.summary?.evaluablePassRate), countRate(group.summary?.evaluableCoverage),
       group.matchedSummary?.planned ?? "缺失", Object.entries(group.bySource || group.summary?.sourceCounts || {}).map(([source, value]) => `${display(source)} / ${typeof value === "number" ? value : value.planned}`).join("；") || "缺失"]))));
+  if (data.executionOrder) target.append(panel("执行顺序", table(["规则", "随机种子"], [[data.executionOrder.order,
+    Object.hasOwn(data.executionOrder, "randomSeed") ? (Number.isSafeInteger(data.executionOrder.randomSeed)
+      && data.executionOrder.randomSeed >= 0 ? String(data.executionOrder.randomSeed) : "缺失")
+      : data.executionOrder.order === "repeat-case-configuration" ? "未设置（固定顺序）" : "缺失"]])));
+  if (Array.isArray(data.repeatDistributions)) target.append(panel("按用例查看重复结果分布", append(node("div"),
+    node("p", "各配置、来源分开展示。有效通过 / 失败仅含复验匹配且正常完成的可评测样本；排除项不补零，不作置信区间或显著性推断。", "subtext"),
+    table(["用例 / 配置 / 来源", "本来源 / 原计划轮次", "通过 / 失败 / 无法评测 / 缺失", "有效通过 / 失败", "排除", "每轮结果"],
+      data.repeatDistributions.map((item) => [
+        `${item.caseEntryId} / ${item.configurationId} / ${display(item.source)}`,
+        `${number(item.sourceSamples)} / ${number(item.plannedRepetitions)}`,
+        ["passed", "failed", "unevaluable", "missing"].map((key) => number(item.outcomes?.[key])).join(" / "),
+        `${number(item.eligiblePassed)} / ${number(item.eligibleFailed)}`, number(item.excludedSamples),
+        append(node("div"), ...(Array.isArray(item.samples) ? item.samples : []).map((row) => node("p",
+          `第 ${row.repeatIndex} 轮：${display(row.outcome)} · ${display(row.status)} · ${display(row.verification)} · ${display(row.configurationMatch)}`))),
+      ])))));
   if (data.limitations?.length) target.append(panel("解释边界", append(node("div"), ...data.limitations.map((item) => node("p", item)))));
   const files = evidence(links);
   if (files) target.append(files);
