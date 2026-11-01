@@ -17,6 +17,9 @@ from dsh_eval.runner import ROOT, run_case
 
 class RecorderOptionTests(unittest.TestCase):
     def setUp(self):
+        output_paths = patch("dsh_eval.output_paths.check_output_root")
+        output_paths.start()
+        self.addCleanup(output_paths.stop)
         self.temporary = tempfile.TemporaryDirectory(prefix="dsh-recorder-options-")
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)

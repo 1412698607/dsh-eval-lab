@@ -41,7 +41,8 @@ class GuardedComparisonTests(unittest.TestCase):
 
     def execute(self):
         plan = plan_experiment(self.path, max_samples=8)
-        with patch("dsh_eval.runner._prepare"), patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
+        with patch("dsh_eval.output_paths.check_output_root"), patch("dsh_eval.runner._prepare"), \
+                patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
             saved = run_experiment(self.path, self.root / "experiments", max_samples=8,
                                    expected_plan_sha256=plan["planFingerprint"]["sha256"])
         base = Path(saved["experimentDirectory"])

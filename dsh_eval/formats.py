@@ -72,12 +72,16 @@ def validate_batch(batch):
 
 
 def validate_experiment(experiment):
-    fields(experiment, ("experimentFormatVersion", "experimentName", "repetitions", "failurePolicy", "cases", "configurations"))
+    fields(experiment, ("experimentFormatVersion", "experimentName", "repetitions", "failurePolicy", "cases", "configurations"),
+           ("randomSeed",))
     require(type(experiment["experimentFormatVersion"]) is int and experiment["experimentFormatVersion"] == 1,
             "Unsupported experiment format")
     require(nonempty(experiment["experimentName"]), "experimentName must be nonempty")
     require(type(experiment["repetitions"]) is int and experiment["repetitions"] > 0,
             "repetitions must be a positive integer")
+    if "randomSeed" in experiment:
+        require(type(experiment["randomSeed"]) is int and 0 <= experiment["randomSeed"] <= 9007199254740991,
+                "randomSeed must be a nonnegative safe integer")
     validate_batch({"batchFormatVersion": 1, "batchName": experiment["experimentName"],
                     "failurePolicy": experiment["failurePolicy"], "cases": experiment["cases"]})
     require(isinstance(experiment["configurations"], list) and experiment["configurations"], "Configurations are required")
@@ -183,6 +187,19 @@ def validate_case(case):
                 require(nonempty(assertion["result"]["textContains"]), "textContains must be nonempty")
             if "textEquals" in assertion["result"]:
                 require(isinstance(assertion["result"]["textEquals"], str), "textEquals must be text")
+        elif kind in ("tool_forbidden", "tool_call_count"):
+            fields(assertion, ("id", "type", "tool"),
+                   ("arguments", "min", "max") if kind == "tool_call_count" else ("arguments",))
+            require(nonempty(assertion["tool"]), "Tool name must be nonempty")
+            require(isinstance(assertion.get("arguments", {}), dict), "Expected tool arguments must be an object")
+            if kind == "tool_call_count":
+                require("min" in assertion or "max" in assertion, "Tool call count requires min or max")
+                for bound in ("min", "max"):
+                    if bound in assertion:
+                        require(type(assertion[bound]) is int and 0 <= assertion[bound] <= 9007199254740991,
+                                f"Tool call count {bound} must be a nonnegative safe integer")
+                require(assertion.get("min", 0) <= assertion.get("max", 9007199254740991),
+                        "Tool call count min must not exceed max")
         elif kind == "turn_end":
             fields(assertion, ("id", "type", "reason"))
             require(isinstance(assertion["reason"], dict) and nonempty(assertion["reason"].get("kind")), "Expected end reason is required")

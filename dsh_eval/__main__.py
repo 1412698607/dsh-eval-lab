@@ -7,7 +7,7 @@ from .evaluate import evaluate
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Evaluate evidence, plan/run experiments or continuations, report or browse results")
+    parser = argparse.ArgumentParser(description="Evaluate evidence, plan/run experiments or continuations, compare baselines, report or browse results")
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--case", help="Version 1 or 2 case JSON")
     selection.add_argument("--batch", help="Version 1 sequential batch manifest")
@@ -15,13 +15,20 @@ def main(argv=None):
     selection.add_argument("--resume-batch", help="Preview or continue provably unstarted entries from a coordinated batch result")
     selection.add_argument("--resume-experiment", help="Preview or continue unstarted samples from a bound experiment or explicit continuation result")
     selection.add_argument("--report", help="Recheck a terminal experiment-result.json or experiment-resume-result.json without model calls")
+    selection.add_argument("--compare-baseline", help="Recheck an old experiment against --candidate for regressions; no model calls")
     selection.add_argument("--browse", action="store_true", help="Serve a read-only local viewer; never executes tasks")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")
+    parser.add_argument("--candidate", help="Candidate experiment or experiment continuation result for --compare-baseline")
+    parser.add_argument("--baseline-config", help="Select the baseline configuration ID (required for multiple configurations)")
+    parser.add_argument("--candidate-config", help="Select the candidate configuration ID (required for multiple configurations)")
+    parser.add_argument("--allow-config-change", action="append", default=[], choices=("provider", "model", "profile", "pluginVersion"),
+                        help="Explicitly allow this configRef field to differ; may be repeated")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--run", action="store_true", help="Execute isolated headless tasks; may call configured models")
     mode.add_argument("--plan", action="store_true", help="Preview an experiment or continuation without executing tasks")
     parser.add_argument("--max-samples", type=int, help="Positive task-count cap for experiments or new continuation tasks")
     parser.add_argument("--stop-after", type=int, help="Stop scheduling after N new tasks finish; run control, not a model-call or cost limit")
+    parser.add_argument("--stop-after-tokens", type=int, help="Stop scheduling at a task boundary after N reported total tokens; missing usage also stops scheduling")
     parser.add_argument("--expected-plan-sha256", help="Require a matching preview fingerprint; mandatory for continuation --run")
     parser.add_argument("--runs-root", help="Run output parent; --browse reads existing results from this directory")
     parser.add_argument("--reports-root", help="Parent directory for new JSON/Markdown comparison reports")
@@ -31,11 +38,19 @@ def main(argv=None):
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
-    if args.stop_after is not None:
-        if not args.run or not (args.batch or args.experiment or args.resume_batch or args.resume_experiment):
-            parser.error("--stop-after requires --batch, --experiment, --resume-batch or --resume-experiment with --run")
-        if args.stop_after <= 0:
-            parser.error("--stop-after must be a positive integer")
+    if args.compare_baseline:
+        if args.candidate is None:
+            parser.error("--compare-baseline requires --candidate")
+        if args.run or args.plan or args.evidence:
+            parser.error("--compare-baseline only rechecks saved experiments; cannot use --run, --plan or --evidence")
+    elif any(value is not None for value in (args.candidate, args.baseline_config, args.candidate_config)) or args.allow_config_change:
+        parser.error("Candidate and configuration comparison options require --compare-baseline")
+    for option, value in (("--stop-after", args.stop_after), ("--stop-after-tokens", args.stop_after_tokens)):
+        if value is not None:
+            if not args.run or not (args.batch or args.experiment or args.resume_batch or args.resume_experiment):
+                parser.error(f"{option} requires --batch, --experiment, --resume-batch or --resume-experiment with --run")
+            if value <= 0:
+                parser.error(f"{option} must be a positive integer")
     if args.expected_plan_sha256 is not None and not ((args.experiment or args.resume_batch or args.resume_experiment) and args.run):
         parser.error("--expected-plan-sha256 requires --experiment, --resume-batch or --resume-experiment with --run")
     if args.max_samples is not None:
@@ -58,7 +73,7 @@ def main(argv=None):
         parser.error("--reports-root requires --report")
     if (args.batch or args.experiment or args.resume_batch or args.resume_experiment) and (not (args.run or args.plan) or args.evidence or args.output):
         parser.error("--batch requires --run; experiments and continuations require --run or --plan; none accepts --evidence or --output")
-    if not (args.batch or args.experiment or args.resume_batch or args.resume_experiment or args.report or args.browse) and args.run == bool(args.evidence):
+    if not (args.batch or args.experiment or args.resume_batch or args.resume_experiment or args.report or args.browse or args.compare_baseline) and args.run == bool(args.evidence):
         parser.error("Choose --run or --evidence")
     if args.run and args.output:
         parser.error("--run saves evaluation.json in its new run directory; omit --output")
@@ -69,9 +84,13 @@ def main(argv=None):
             from .browser import serve
             serve(args.cases_root, args.runs_root, args.port if args.port is not None else 0)
             return 0
-        if args.output and Path(args.output).resolve() in (Path(args.case).resolve(), Path(args.evidence).resolve()):
+        if args.output and args.case and Path(args.output).resolve() in (Path(args.case).resolve(), Path(args.evidence).resolve()):
             raise ValueError("Output must differ from input paths")
-        if args.report:
+        if args.compare_baseline:
+            from .regression import compare_baseline
+            result = compare_baseline(args.compare_baseline, args.candidate, baseline_config=args.baseline_config,
+                                      candidate_config=args.candidate_config, allow_config_changes=args.allow_config_change)
+        elif args.report:
             from .report import generate_report
             result = generate_report(args.report, args.reports_root)
         elif args.resume_experiment:
@@ -79,22 +98,23 @@ def main(argv=None):
             result = (plan_experiment_resume(args.resume_experiment, max_samples=args.max_samples) if args.plan else
                       resume_experiment(args.resume_experiment, args.runs_root, args.host_modules, args.cancel_after_stream,
                                         max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256,
-                                        stop_after=args.stop_after))
+                                        stop_after=args.stop_after, stop_after_tokens=args.stop_after_tokens))
         elif args.resume_batch:
             from .resume import plan_batch_resume, resume_batch
             result = (plan_batch_resume(args.resume_batch, max_samples=args.max_samples) if args.plan else
                       resume_batch(args.resume_batch, args.runs_root, args.host_modules, args.cancel_after_stream,
                                    max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256,
-                                   stop_after=args.stop_after))
+                                   stop_after=args.stop_after, stop_after_tokens=args.stop_after_tokens))
         elif args.experiment:
             from .experiment import plan_experiment, run_experiment
             result = (plan_experiment(args.experiment, max_samples=args.max_samples) if args.plan else
                       run_experiment(args.experiment, args.runs_root, args.host_modules, args.cancel_after_stream,
                                      max_samples=args.max_samples, expected_plan_sha256=args.expected_plan_sha256,
-                                     stop_after=args.stop_after))
+                                     stop_after=args.stop_after, stop_after_tokens=args.stop_after_tokens))
         elif args.batch:
             from .batch import run_batch
-            result = run_batch(args.batch, args.runs_root, args.host_modules, args.cancel_after_stream, stop_after=args.stop_after)
+            result = run_batch(args.batch, args.runs_root, args.host_modules, args.cancel_after_stream,
+                               stop_after=args.stop_after, stop_after_tokens=args.stop_after_tokens)
         elif args.run:
             from .runner import run_case
             result = run_case(args.case, args.runs_root, args.host_modules, args.cancel_after_stream)
@@ -105,17 +125,22 @@ def main(argv=None):
             with Path(args.output).open("x", encoding="utf-8", newline="\n") as stream:
                 stream.write(text)
         print(text, end="")
+        if args.compare_baseline:
+            return result["exitCode"]
         if args.plan:
             if args.resume_experiment:
                 return 0 if result["eligibleForResume"] else 2
             return 2 if args.resume_batch and not result["canResume"] else 0
         return 0 if args.report else {"passed": 0, "failed": 1, "unevaluable": 2}[result["outcome"]]
     except (OSError, ValueError, KeyError, TypeError) as error:
-        version_key = ("experimentResumePlanFormatVersion" if args.plan and args.resume_experiment else "experimentResumeResultFormatVersion" if args.resume_experiment else
+        version_key = ("regressionComparisonFormatVersion" if args.compare_baseline else
+                       "experimentResumePlanFormatVersion" if args.plan and args.resume_experiment else "experimentResumeResultFormatVersion" if args.resume_experiment else
                        "batchResumePlanFormatVersion" if args.plan and args.resume_batch else "experimentPlanFormatVersion" if args.plan else
                        "batchResumeResultFormatVersion" if args.resume_batch else "browserFormatVersion" if args.browse else "comparisonReportFormatVersion" if args.report else "experimentResultFormatVersion" if args.experiment else
                        "batchResultFormatVersion" if args.batch else "evaluationFormatVersion")
         state = {"valid": False, "modelCalled": False} if args.plan else {"outcome": "unevaluable"}
+        if args.compare_baseline:
+            state.update(status="error", exitCode=2, modelCalled=False)
         print(json.dumps({version_key: 1, **state, "error": str(error)}, ensure_ascii=False))
         return 2
 

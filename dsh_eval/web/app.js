@@ -2,7 +2,8 @@
 
 const $ = (id) => document.getElementById(id);
 const categories = [
-  ["experiment", "实验", "◫"], ["report", "配置报告", "▤"], ["batch", "批次", "☷"],
+  ["experiment", "实验", "◫"], ["experiment_resume", "实验续跑", "↻"], ["report", "配置报告", "▤"],
+  ["batch", "批次", "☷"], ["batch_resume", "批次续跑", "↻"],
   ["evaluation", "逐次结果", "◷"], ["case", "用例库", "◇"],
 ];
 const words = { passed: "通过", failed: "未通过", unevaluable: "无法评测", completed: "已完成", running: "进行中",
@@ -117,11 +118,72 @@ function rate(value) {
   return value && value.value !== null && value.value !== undefined ? (value.value * 100).toFixed(1) + "%" : "缺失";
 }
 function countRate(value) { return value ? `${value.numerator} / ${value.denominator}` : "缺失"; }
+function intervalCell(value, proportion = false) {
+  if (!value) return node("span", "未保存区间", "subtext");
+  const labels = { no_evaluable_samples: "没有可评测样本", no_evaluable_pairs: "没有共同可评测配对",
+    no_metric_pairs: "没有完整指标配对", insufficient_pairs: "不足两对", zero_observed_variance: "观察方差为零，不输出零宽区间",
+    numeric_unavailable: "数值不可用", precision_loss: "数值精度不足", same_configuration: "配置相同",
+    small_sample: "小样本", incomplete_coverage: "覆盖不完整", conservative_bound: "保守界限",
+    normal_difference_assumption: "需差值近似正态" };
+  const label = (key) => Object.hasOwn(labels, key) ? labels[key] : String(key);
+  const format = (item) => typeof item === "number" && Number.isFinite(item)
+    ? proportion ? `${(item * 100).toFixed(2)}%` : number(item) : "缺失";
+  const level = typeof value.confidenceLevel === "number" && Number.isFinite(value.confidenceLevel)
+    && value.confidenceLevel > 0 && value.confidenceLevel < 1 ? number(value.confidenceLevel * 100) : "缺失";
+  const available = value.status === "available" && [value.estimate, value.lower, value.upper]
+    .every((item) => typeof item === "number" && Number.isFinite(item)) && value.lower <= value.upper && level !== "缺失";
+  const text = available ? `${format(value.estimate)} [${format(value.lower)}, ${format(value.upper)}]`
+    : `区间不可用：${value.reason ? label(value.reason) : "区间字段缺失"}`;
+  return append(node("div"), node("span", text), node("div", `${level}% · n=${number(value.n)} · ${value.method ?? "方法缺失"}`, "subtext"),
+    node("div", (Array.isArray(value.warnings) ? value.warnings : []).map(label).join("；"), "subtext"));
+}
 function summary(data) {
   return cards([["原计划样本", data.planned, `已尝试 ${data.attempted} · 已结束 ${data.finished} · 跳过 ${data.skipped}`],
     ["全尝试通过比例", rate(data.attemptedPassRate), countRate(data.attemptedPassRate)],
     ["可评测通过比例", rate(data.evaluablePassRate), countRate(data.evaluablePassRate)],
     ["可评测覆盖", rate(data.evaluableCoverage), countRate(data.evaluableCoverage)]]);
+}
+function scheduling(data) {
+  const reasons = { stop_after: "达到任务数阈值", stop_after_tokens: "达到 token 阈值", token_usage_unavailable: "token 用量不可用",
+    failure_policy: "失败策略", cleanup_unconfirmed: "清理未确认", user_interrupt: "用户中断", runner_error: "任务运行错误" };
+  const reason = data.stopReason === undefined ? "缺失" : data.stopReason === null
+    ? (data.status === "completed" ? "未触发" : "无已保存停止原因")
+    : Object.hasOwn(reasons, data.stopReason) ? `${reasons[data.stopReason]}（${data.stopReason}）` : String(data.stopReason);
+  const limit = (value) => value === null ? "未设置" : number(value);
+  return panel("调度与停止", append(node("div"), table(["项目", "保存值"], [
+    ["调度状态", badge(data.status)], ["停止原因", node("span", reason)],
+    ["任务数停止阈值", limit(data.stopAfter)], ["本轮 token 停止阈值", limit(data.stopAfterTokens)],
+    ["本轮已观测 token", number(data.tokenUsage?.observedTotal)],
+    ["本轮 token 观测 / 缺失样本", `${number(data.tokenUsage?.observedSamples)} / ${number(data.tokenUsage?.missingSamples)}`],
+  ]), node("p", "阈值和用量只计本轮新增任务，不含历史复用；阈值在任务结束后检查，当前任务可超过阈值，不是任务内 token 或费用硬限额。", "subtext"),
+  node("p", "以上为保存值，阈值已设置不代表已经触发。旧文件缺失的字段不从汇总推算；浏览不会重新评测或启动任务。", "subtext")));
+}
+function continuation(data, kind) {
+  const batch = kind === "batch_resume";
+  const identity = [["续跑 ID", data.resumeId], ["任务结论", badge(data.outcome)], ["来源批次 ID", data.sourceBatchId]];
+  if (kind === "experiment_resume") identity.push(["原实验 ID", data.sourceExperimentId], ["上轮续跑 ID", data.sourceResumeId],
+    ["启动时原计划", number(data.counts?.original)], ["启动时历史复用", number(data.counts?.reused)],
+    ["启动时本轮计划", number(data.counts?.newSamples)], ["启动时阻断", number(data.counts?.blocked)]);
+  const fresh = data.newlyExecutedSummary, combined = data.combinedSummary;
+  const rows = [["计划样本", "planned"], ["已尝试", "attempted"], ["已结束", "finished"], ["跳过", "skipped"], ["错误", "errors"]]
+    .map(([label, key]) => [label, number(fresh?.[key]), number(combined?.[key])]);
+  for (const [label, key] of [["通过", "passed"], ["未通过", "failed"], ["无法评测", "unevaluable"]]) {
+    rows.push([label, number(fresh?.outcomes?.[key]), number(combined?.outcomes?.[key])]);
+  }
+  for (const [label, key] of [["全尝试通过", "attemptedPassRate"], ["可评测通过", "evaluablePassRate"], ["可评测覆盖", "evaluableCoverage"]]) {
+    rows.push([label, countRate(fresh?.[key]), countRate(combined?.[key])]);
+  }
+  const scope = batch ? "批次续跑汇总只覆盖来源批次计划，包含其中的复用项，不代表整个原实验。"
+    : "启动计划反映预检时分类，不等于本轮实际执行数或当前剩余数。";
+  return [panel("续跑身份与启动计划", append(node("div"), table(["项目", "保存值"], identity),
+    node("p", scope + "结果和用量只显示本文件保存的汇总，缺失不从原实验补算。", "subtext"))),
+  panel("续跑保存结果汇总", table(["项目", "本轮新增", batch ? "来源批次计划（含复用）" : "全部原计划（含历史）"], rows)),
+  panel("续跑保存用量", table(["观测指标", "本轮新增累计", "新增观测 / 缺失", batch ? "来源批次累计" : "全部累计（含历史）", "合并观测 / 缺失"],
+    Object.entries(metricNames).map(([key, label]) => {
+      const recent = fresh?.metrics?.[key], all = combined?.metrics?.[key];
+      return [label, number(recent?.observedTotal), `${number(recent?.observedSamples)} / ${number(recent?.missingSamples)}`,
+        number(all?.observedTotal), `${number(all?.observedSamples)} / ${number(all?.missingSamples)}`];
+    })))];
 }
 function metricsTable(metrics, aggregate = false) {
   if (!metrics) return node("p", "指标缺失");
@@ -169,6 +231,7 @@ function evidence(links) {
     sourceResumeResult: "原实验续跑结果", sourceBatchResult: "来源批次", batchResumeResult: "批次续跑结果",
     batchResumeResultPath: "下游批次续跑结果", resumeVerification: "保存的续跑关联", resultPath: "实验续跑结果" };
   function label(link) {
+    if (link.label === "batchBinding / resultPath") return "执行批次检查点（保存关联）";
     return link.label.split(" / ").map((part) => names[part] || (part.endsWith(".jsonl") ? "事件轨迹" : part.endsWith(".status.json")
       ? "录制状态" : part === "run.json" ? "录制信息" : part === "runDir" ? "录制" : part)).join(" / ");
   }
@@ -176,15 +239,97 @@ function evidence(links) {
     ? button(label(link), () => openDocument(link.id))
     : node("span", label(link) + "（缺失或超出浏览目录）", "subtext"))));
 }
+function textDifference(expected, actual) {
+  const left = Array.from(expected), right = Array.from(actual);
+  let start = 0, end = 0;
+  while (start < Math.min(left.length, right.length) && left[start] === right[start]) start++;
+  while (end < Math.min(left.length, right.length) - start && left[left.length - end - 1] === right[right.length - end - 1]) end++;
+  const render = (chars, className) => {
+    const text = node("pre", null, "assertion-value");
+    text.append(node("span", chars.slice(0, start).join("")));
+    if (chars.length - end > start) text.append(node("mark", chars.slice(start, chars.length - end).join(""), className));
+    text.append(node("span", end ? chars.slice(-end).join("") : ""));
+    return text;
+  };
+  return [render(left, "expected-difference"), render(right, "actual-difference")];
+}
+function assertionCards(documentData) {
+  const { data, assertionTrace } = documentData;
+  const results = Array.isArray(data.assertions?.results) ? data.assertions.results : [];
+  const definitions = Array.isArray(data.case?.assertions) ? data.case.assertions : [];
+  const body = node("div", null, "assertion-list");
+  body.append(node("p", "显示保存的断言结论与本结果内嵌的用例快照。浏览不会重新评测；定位到事件也不代表证据已经复验。", "subtext"));
+  if (data.assertions?.reason) body.append(node("p", data.assertions.reason, "error"));
+  if (!results.length) body.append(node("p", "没有保存逐条断言结果。", "subtext"));
+  const ordered = results.filter((row) => row && typeof row === "object")
+    .sort((a, b) => Number(b.outcome === "failed") - Number(a.outcome === "failed"));
+  for (const row of ordered) {
+    const matches = definitions.filter((item) => item && typeof row.id === "string" && item.id === row.id && item.type === row.type);
+    const definition = matches.length === 1 ? matches[0] : null;
+    const behavior = ["tool_forbidden", "tool_call_count"].includes(row.type);
+    const expected = row.type === "final_text" ? definition?.equals : row.type === "turn_end" ? definition?.reason
+      : behavior && definition ? { tool: definition.tool, arguments: definition.arguments ?? {},
+        ...(row.type === "tool_forbidden" ? { max: 0 }
+          : { ...(Object.hasOwn(definition, "min") ? { min: definition.min } : {}),
+            ...(Object.hasOwn(definition, "max") ? { max: definition.max } : {}) }) }
+      : row.type === "tool_result" && definition ? { tool: definition.tool, arguments: definition.arguments, result: definition.result,
+        ...(definition.after ? { after: definition.after } : {}) } : undefined;
+    const card = node("article", null, "assertion-card" + (row.outcome === "failed" ? " assertion-failed" : ""));
+    card.append(append(node("div", null, "assertion-heading"), node("h3", row.id ?? "断言标识缺失"), badge(row.outcome), node("span", row.type, "subtext")));
+    if (row.reason) card.append(node("p", row.reason));
+    if (behavior) card.append(node("p", "实际值为任务范围内匹配的工具调用次数，包括失败、未返回及最终答案后的调用；这是保存的离线评测结果，不是运行时拦截。", "subtext"));
+    let values = [expected === undefined ? node("p", "期望值缺失或无法唯一匹配用例快照。", "subtext") : json(expected),
+      Object.hasOwn(row, "actual") ? json(row.actual) : node("p", "未保存实际值；可通过下方证据查看原始事件。", "subtext")];
+    if (typeof expected === "string" && typeof row.actual === "string") {
+      values = textDifference(expected, row.actual);
+      card.append(node("p", expected === row.actual ? "保存文本相同；原结论保持不变。" : "高亮首尾相同部分之间的差异；不移除 Markdown 或归一化答案。", "subtext"));
+      if (row.type === "final_text") card.append(node("p", "实际值为评测时保存的文本（已去除首尾空白）；原始答案见事件。", "subtext"));
+    }
+    card.append(append(node("div", null, "two-columns assertion-values"),
+      append(node("div"), node("h3", "期望（用例快照）"), values[0]), append(node("div"), node("h3", "实际（保存值）"), values[1])));
+    if (typeof expected === "string" || typeof row.actual === "string") card.append(append(node("details"),
+      node("summary", "查看转义文本（区分空字符串、空格和换行）"), json({ expected, actual: row.actual })));
+    const locations = Array.isArray(row.evidence) ? row.evidence : [row.evidence];
+    const jumps = node("div", null, "evidence");
+    const seen = new Set();
+    for (const location of locations) {
+      if (!location || typeof location !== "object") continue;
+      for (const [key, label] of [["callSeq", "工具调用"], ["resultSeq", "工具返回"], ["afterResultSeq", "前置工具返回"], ["answerSeq", "最终答案"], ["endSeq", "任务结束"]]) {
+        const seq = location[key], identity = `${key}:${seq}`;
+        if (!Number.isSafeInteger(seq) || seq < 0 || seen.has(identity)) continue;
+        seen.add(identity);
+        const title = `${label} · seq ${seq}`;
+        jumps.append(assertionTrace?.id ? button(title, () => openDocument(assertionTrace.id, 0, true, { ...assertionTrace, seq }))
+          : node("span", title + "（关联轨迹不可用）", "subtext"));
+      }
+    }
+    if (!seen.size) jumps.append(node("span", behavior && row.actual === 0
+      ? "匹配调用为 0，没有对应调用事件。" : "未保存可定位的事件序号。", "subtext"));
+    card.append(jumps);
+    body.append(card);
+  }
+  return panel("断言诊断 · 失败优先", body);
+}
 function renderDocument(documentData) {
   const target = $("detail"), data = documentData.data, links = documentData.links;
   target.replaceChildren();
   if (documentData.kind === "trace") {
     const rows = documentData.rows.map((row) => {
       const event = row.data?.event;
-      return [row.line, event?.type || (row.error ? "无法解析 / 预览" : "原始记录"), json(row.error ? { error: row.error, preview: row.preview } : row.data)];
+      return [row.line, event?.seq ?? "缺失", event?.type || (row.error ? "无法解析 / 预览" : "原始记录"), json(row.error ? { error: row.error, preview: row.preview } : row.data)];
     });
-    target.append(panel("原始事件轨迹", table(["行号", "事件", "记录内容"], rows)));
+    const traceTable = table(["行号", "事件序号", "事件", "记录内容"], rows);
+    if (documentData.focus) {
+      const index = documentData.rows.findIndex((row) => row.line === documentData.focus.line);
+      if (index >= 0) {
+        const focusedRow = traceTable.children[1].children[index];
+        focusedRow.className = "focused-event";
+        focusedRow.id = "focused-event";
+        focusedRow.setAttribute("tabindex", "-1");
+      }
+      target.append(node("p", `已定位 seq ${documentData.focus.seq} · 文件第 ${documentData.focus.line} 行。这里只定位保存的关联，未重新复验证据。`, "notice"));
+    }
+    target.append(panel("原始事件轨迹", traceTable));
     const pagination = append(node("div", null, "pagination"), node("span", `从第 ${documentData.offset + 1} 行开始 · 本页 ${rows.length} 行`));
     if (documentData.offset > 0) pagination.append(button("上一页", () => openDocument(currentId, Math.max(0, documentData.offset - 50), false), "secondary"));
     if (documentData.nextOffset !== null) pagination.append(button("下一页", () => openDocument(currentId, documentData.nextOffset, false), "secondary"));
@@ -194,6 +339,8 @@ function renderDocument(documentData) {
   if (documentData.kind === "markdown") { target.append(panel("报告文本", node("pre", documentData.text))); return; }
   const resumed = [2, 3].includes(data.comparisonReportFormatVersion);
   if (data.summary) target.append(summary(data.summary));
+  if (["batch", "experiment", "batch_resume", "experiment_resume"].includes(documentData.kind)) target.append(scheduling(data));
+  if (["batch_resume", "experiment_resume"].includes(documentData.kind)) target.append(...continuation(data, documentData.kind));
   if (resumed) {
     const batches = Array.isArray(data.batchIds) ? data.batchIds : [];
     const batchRows = data.comparisonReportFormatVersion === 3
@@ -230,6 +377,7 @@ function renderDocument(documentData) {
   if (documentData.kind === "evaluation") {
     target.append(cards([["任务结论", display(data.outcome)], ["执行状态", display(data.execution?.status)],
       ["录制状态", display(data.recording?.outcome)], ["断言状态", display(data.assertions?.outcome)]]));
+    target.append(assertionCards(documentData));
     target.append(append(node("div", null, "two-columns"), panel("请求配置、实际配置与来源声明", json({ requestedConfiguration: data.case?.configRef,
       configuration: data.configuration, source: data.source, caseRunId: data.caseRunId, budgetEnforcement: data.budgetEnforcement })),
       panel("断言明细", json(data.assertions))), panel("观测指标", metricsTable(data.metrics)));
@@ -249,6 +397,16 @@ function renderDocument(documentData) {
           Object.entries(comparison.metrics || {}).map(([key, metric]) => [metricNames[key] || key, `${metric.pairedSamples} / ${metric.missingPairs}`,
             number(metric.left?.observedMean), number(metric.right?.observedMean), number(metric.meanDifference),
             number(metric.minDifference) + " .. " + number(metric.maxDifference)]))));
+      if (comparison.uncertainty) {
+        const intervals = [["通过率差（右 − 左）", comparison.uncertainty.passRateDifference, true],
+          ...Object.entries(comparison.uncertainty.metrics || {}).map(([key, value]) => [metricNames[key] || key, value, false])];
+        target.append(panel(`配对差值置信区间 · ${comparison.caseEntryId} / ${comparison.leftConfigurationId} → ${comparison.rightConfigurationId} / ${display(comparison.source)}`,
+          append(node("div"), node("p", "仅使用双方均可评测的完整配对，各指标再排除缺值；区间点估计属于此子集，可能不同于上方描述性差值。依赖独立重复等假设，未校正多重比较或可选停止，不据此宣布配置优胜。", "subtext"),
+            table(["目标", "点估计与区间", "纳入 / 原计划", "排除", "排除原因"], intervals.map(([label, value, proportion]) => [
+              label, intervalCell(value, proportion), `${number(value?.includedPairs)} / ${number(value?.plannedPairs)}`,
+              number(value?.excludedPairs), json(value?.excludedReasons),
+            ])))));
+      }
     }
     if (data.savedSummary) target.append(panel(resumed ? "续跑结果保存的合并汇总指标" : "原实验保存的汇总指标", metricsTable(data.savedSummary.metrics, true)));
   }
@@ -257,15 +415,40 @@ function renderDocument(documentData) {
       ...(resumed ? [`${group.byExecutionOrigin?.reused?.planned ?? "缺失"} / ${group.byExecutionOrigin?.new?.planned ?? "缺失"}`] : []),
       countRate(group.summary?.attemptedPassRate), countRate(group.summary?.evaluablePassRate), countRate(group.summary?.evaluableCoverage),
       group.matchedSummary?.planned ?? "缺失", Object.entries(group.bySource || group.summary?.sourceCounts || {}).map(([source, value]) => `${display(source)} / ${typeof value === "number" ? value : value.planned}`).join("；") || "缺失"]))));
+  if (data.executionOrder) target.append(panel("执行顺序", table(["规则", "随机种子"], [[data.executionOrder.order,
+    Object.hasOwn(data.executionOrder, "randomSeed") ? (Number.isSafeInteger(data.executionOrder.randomSeed)
+      && data.executionOrder.randomSeed >= 0 ? String(data.executionOrder.randomSeed) : "缺失")
+      : data.executionOrder.order === "repeat-case-configuration" ? "未设置（固定顺序）" : "缺失"]])));
+  const hasIntervals = Array.isArray(data.repeatDistributions) && data.repeatDistributions.some((item) => Object.hasOwn(item, "passRateInterval"));
+  if (Array.isArray(data.repeatDistributions)) target.append(panel("按用例查看重复结果分布", append(node("div"),
+    node("p", "各配置、来源分开展示。有效通过 / 失败仅含复验匹配且正常完成的可评测样本；排除项不补零。区间若存在，只针对纳入子集，不能消除缺失与排除的选择偏差。", "subtext"),
+    table(["用例 / 配置 / 来源", "本来源 / 原计划轮次", "通过 / 失败 / 无法评测 / 缺失", "有效通过 / 失败", "排除", "每轮结果"],
+      data.repeatDistributions.map((item) => [
+        `${item.caseEntryId} / ${item.configurationId} / ${display(item.source)}`,
+        `${number(item.sourceSamples)} / ${number(item.plannedRepetitions)}`,
+        ["passed", "failed", "unevaluable", "missing"].map((key) => number(item.outcomes?.[key])).join(" / "),
+        `${number(item.eligiblePassed)} / ${number(item.eligibleFailed)}`, number(item.excludedSamples),
+        append(node("div"), ...(Array.isArray(item.samples) ? item.samples : []).map((row) => node("p",
+          `第 ${row.repeatIndex} 轮：${display(row.outcome)} · ${display(row.status)} · ${display(row.verification)} · ${display(row.configurationMatch)}`))),
+      ])))));
+  if (hasIntervals) target.append(panel("通过率置信区间", append(node("div"),
+    node("p", "按用例 / 配置 / 来源独立计算，仅以可评测匹配样本为分母；区间依赖独立重复等假设，缺失与排除可能引入选择偏差。", "subtext"),
+    table(["用例 / 配置 / 来源", "点估计与置信区间", "纳入 / 原计划", "本来源排除 / 其他来源"],
+      data.repeatDistributions.map((item) => [
+        `${item.caseEntryId} / ${item.configurationId} / ${display(item.source)}`, intervalCell(item.passRateInterval, true),
+        `${number(item.passRateInterval?.n)} / ${number(item.passRateInterval?.plannedSamples)}`,
+        `${number(item.passRateInterval?.excludedSamples)} / ${number(item.passRateInterval?.otherSourceSamples)}`,
+      ])))));
   if (data.limitations?.length) target.append(panel("解释边界", append(node("div"), ...data.limitations.map((item) => node("p", item)))));
   const files = evidence(links);
   if (files) target.append(files);
   target.append(append(node("details", null, "panel padded"), node("summary", "查看保存的完整 JSON"), json(data)));
 }
-async function openDocument(id, offset = 0, remember = true) {
+async function openDocument(id, offset = 0, remember = true, focus = null) {
   const sequence = ++requestSequence;
   try {
-    const result = await api("/api/document?" + new URLSearchParams({ id, offset }));
+    const result = await api("/api/document?" + new URLSearchParams({ id, offset,
+      ...(focus ? { seq: focus.seq, runId: focus.runId, sessionId: focus.sessionId } : {}) }));
     if (sequence !== requestSequence) return;
     if (remember && currentId && currentId !== id) stack.push(currentId);
     currentId = id;
@@ -273,9 +456,14 @@ async function openDocument(id, offset = 0, remember = true) {
     $("catalog-view").hidden = true;
     $("detail-view").hidden = false;
     $("document-path").textContent = id;
-    $("title").textContent = result.data?.experimentName || result.data?.batchName || result.data?.caseId || "证据详情";
+    $("title").textContent = result.data?.experimentName || result.data?.batchName || result.data?.caseId || result.data?.resumeId || "证据详情";
     renderDocument(result);
+    message("");
     window.scrollTo(0, 0);
+    if (result.focus) {
+      $("focused-event")?.scrollIntoView({ block: "center" });
+      $("focused-event")?.focus({ preventScroll: true });
+    }
   } catch (error) { if (sequence === requestSequence) message(error.message); }
 }
 async function refresh() {

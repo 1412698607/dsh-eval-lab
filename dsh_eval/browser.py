@@ -1,6 +1,8 @@
 """Loopback-only, read-only viewer of saved evaluation artifacts. Never runs tasks."""
 from datetime import datetime, timezone
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -26,7 +28,8 @@ FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_
            "evaluationFormatVersion": ("evaluation", (1, 2)), "evidenceFormatVersion": ("evidence", (1, 2)),
            "runtimeFormatVersion": ("runtime", (1,)), "formatVersion": ("recording", (1, 2)),
            "statusFormatVersion": ("recording", (1,))}
-RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "evaluation.json"}
+RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "evaluation.json",
+                "resume-result.json", "experiment-resume-result.json"}
 TRACE_NAME = re.compile(r"[0-9a-f]{64}\.jsonl\Z")
 
 
@@ -58,6 +61,32 @@ def _kind(data):
             require(type(data[key]) is int and data[key] in versions, f"Unsupported {key}")
             return kind
     raise ValueError("Not a supported evaluation artifact")
+
+
+def _summary_sources(summary):
+    counts = summary.get("sourceCounts") if isinstance(summary, dict) else None
+    if not isinstance(counts, dict):
+        return None
+    return {source or "unknown" for source, count in counts.items() if type(count) is int and count > 0}
+
+
+def _resume_sources(data, kind):
+    combined = _summary_sources(data.get("combinedSummary"))
+    if combined is not None:
+        return sorted(combined)
+    fresh = _summary_sources(data.get("newlyExecutedSummary"))
+    sources = fresh if fresh is not None else {"unknown"}
+    key = "reusedEntries" if kind == "batch_resume" else "samplePlan"
+    rows = data.get(key)
+    if rows is None:
+        sources.add("unknown")
+        return sorted(sources)
+    require(isinstance(rows, list), f"Artifact {key} must be an array")
+    for row in rows:
+        if isinstance(row, dict) and (kind == "batch_resume" or row.get("disposition") == "reuse"):
+            source = row.get("source")
+            sources.add(source if isinstance(source, str) and source else "unknown")
+    return sorted(sources)
 
 
 class ArtifactBrowser:
@@ -146,7 +175,7 @@ class ArtifactBrowser:
                     try:
                         kind, data = self._json(self.path(identifier))
                         item.update(kind=kind, title=data.get("experimentName") or data.get("batchName")
-                                    or data.get("caseId") or data.get("reportId") or name,
+                                    or data.get("caseId") or data.get("reportId") or data.get("resumeId") or name,
                                     outcome=data.get("outcome"), status=data.get("status"), source=data.get("source"),
                                     time=data.get("generatedAt") or data.get("finishedAt") or data.get("evaluatedAt") or data.get("startedAt"))
                         summary = data.get("summary")
@@ -157,7 +186,9 @@ class ArtifactBrowser:
                         require(isinstance(rows, list), "Artifact samples/entries must be an array")
                         item["sources"] = sorted({row["source"] if isinstance(row.get("source"), str) and row["source"] else "unknown"
                                                   for row in rows if isinstance(row, dict)})
-                        if isinstance(item["source"], str) and item["source"]:
+                        if kind in ("batch_resume", "experiment_resume"):
+                            item["sources"] = _resume_sources(data, kind)
+                        elif isinstance(item["source"], str) and item["source"]:
                             item["sources"] = [item["source"]]
                     except (OSError, ValueError) as error:
                         item["error"] = str(error)
@@ -197,6 +228,10 @@ class ArtifactBrowser:
                 add(prefix + key, value.get(key))
             add(prefix + "runDir", value.get("runDir"), True)
         collect(data)
+        binding = data.get("batchBinding")
+        result_path = data.get("batchResultPath")
+        if (result_path is None or result_path == "") and isinstance(binding, dict):
+            add("batchBinding / resultPath", binding.get("resultPath"))
         collect(data.get("association"), "association / ")
         collect(data.get("resumeVerification"), "resumeVerification / ")
         for index, value in enumerate(data.get("batchResultPaths", []) if isinstance(data.get("batchResultPaths"), list) else [], 1):
@@ -213,11 +248,42 @@ class ArtifactBrowser:
             add("Markdown", "report.md")
         return links
 
-    def document(self, identifier, offset=0, limit=50):
+    def _trace_focus(self, path, seq, run_id, session_id):
+        require(type(seq) is int and 0 <= seq <= 9007199254740991
+                and isinstance(run_id, str) and bool(run_id)
+                and isinstance(session_id, str) and bool(session_id), "Invalid event locator")
+        # A bounded search is separate from inspect: locating a row does not verify the recording.
+        with path.open("rb") as stream:
+            content = stream.read(MAX_DOCUMENT_BYTES + 1)
+        require(len(content) <= MAX_DOCUMENT_BYTES, "Event lookup exceeds the 8 MiB viewer limit; browse the trace manually")
+        matches = []
+        for index, line in enumerate(io.BytesIO(content)):
+            if len(line) > TRACE_LINE_BYTES:
+                continue
+            try:
+                row = _viewer_json(line.decode("utf-8"))
+            except (ValueError, UnicodeError):
+                continue
+            if not isinstance(row, dict) or not isinstance(row.get("event"), dict):
+                continue
+            event = row["event"]
+            if (type(row.get("formatVersion")) is int and row["formatVersion"] == 1
+                    and row.get("runId") == run_id and row.get("sessionId") == session_id
+                    and type(event.get("seq")) is int and event["seq"] == seq):
+                matches.append(index + 1)
+        require(len(matches) == 1, "Event locator is missing, ambiguous or outside the preview limit; saved evidence may be stale")
+        return {"seq": seq, "line": matches[0], "runId": run_id, "sessionId": session_id}
+
+    def document(self, identifier, offset=0, limit=50, *, seq=None, run_id=None, session_id=None):
         path = self.path(identifier)
+        focused = any(value is not None for value in (seq, run_id, session_id))
+        require(not focused or path.suffix == ".jsonl", "Event lookup requires a trace")
         if path.suffix == ".jsonl":
             require(type(offset) is int and 0 <= offset <= 1000000 and type(limit) is int and 1 <= limit <= 200,
                     "Invalid trace page")
+            focus = self._trace_focus(path, seq, run_id, session_id) if focused else None
+            if focus:
+                offset = max(0, focus["line"] - 1 - min(5, limit - 1))
             rows, has_more = [], False
             with path.open("rb") as stream:
                 index = 0
@@ -241,15 +307,34 @@ class ArtifactBrowser:
                             row.update(error=str(error), preview=line[:2048].decode("utf-8", errors="replace"))
                         rows.append(row)
                     index += 1
-            return {"id": identifier, "kind": "trace", "rows": rows, "offset": offset,
-                    "nextOffset": offset + len(rows) if has_more else None, "links": []}
+            if focus:
+                selected = next((row.get("data") for row in rows if row["line"] == focus["line"]), None)
+                require(isinstance(selected, dict) and selected.get("runId") == run_id
+                        and selected.get("sessionId") == session_id and isinstance(selected.get("event"), dict)
+                        and type(selected["event"].get("seq")) is int and selected["event"]["seq"] == seq,
+                        "Located event changed during reading; refresh a stable recording")
+            result = {"id": identifier, "kind": "trace", "rows": rows, "offset": offset,
+                      "nextOffset": offset + len(rows) if has_more else None, "links": []}
+            if focus:
+                result["focus"] = focus
+            return result
         if path.name == "report.md":
             with path.open("rb") as stream:
                 content = stream.read(MAX_DOCUMENT_BYTES + 1)
             require(len(content) <= MAX_DOCUMENT_BYTES, "Markdown exceeds the 8 MiB viewer limit")
             return {"id": identifier, "kind": "markdown", "text": content.decode("utf-8"), "links": []}
         kind, data = self._json(path)
-        return {"id": identifier, "kind": kind, "data": data, "links": self._links(data, path.parent)}
+        links = self._links(data, path.parent)
+        result = {"id": identifier, "kind": kind, "data": data, "links": links}
+        association = data.get("association")
+        if kind == "evaluation" and isinstance(association, dict):
+            run_id, session_id = association.get("runId"), association.get("sessionId")
+            if all(isinstance(value, str) and value for value in (run_id, session_id)):
+                name = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".jsonl"
+                link = next((link for link in links if link["label"] == "association / runDir / " + name), None)
+                if link and link["id"]:
+                    result["assertionTrace"] = {"id": link["id"], "runId": run_id, "sessionId": session_id}
+        return result
 
 
 def create_server(cases_root=None, runs_root=None, port=0):
@@ -292,14 +377,16 @@ def create_server(cases_root=None, runs_root=None, port=0):
             if not secrets.compare_digest(self.headers.get("Authorization", "").encode("utf-8"), ("Bearer " + token).encode("utf-8")):
                 return self.reply(403, {"error": "Open the complete startup URL to authorize this viewer"})
             try:
-                query = parse_qs(url.query, strict_parsing=True)
+                query = parse_qs(url.query, strict_parsing=True, keep_blank_values=True)
                 require(all(len(values) == 1 for values in query.values()), "Duplicate query parameter")
                 if url.path == "/api/catalog":
                     require(not query, "Catalog does not take parameters")
                     result = browser.catalog()
                 else:
-                    require(set(query) <= {"id", "offset", "limit"} and "id" in query, "Invalid document query")
-                    result = browser.document(query["id"][0], int(query.get("offset", [0])[0]), int(query.get("limit", [50])[0]))
+                    require(set(query) <= {"id", "offset", "limit", "seq", "runId", "sessionId"} and "id" in query, "Invalid document query")
+                    result = browser.document(query["id"][0], int(query.get("offset", [0])[0]), int(query.get("limit", [50])[0]),
+                                              seq=int(query["seq"][0]) if "seq" in query else None,
+                                              run_id=query.get("runId", [None])[0], session_id=query.get("sessionId", [None])[0])
                 self.reply(200, result)
             except (OSError, ValueError) as error:
                 self.reply(400, {"error": str(error)})

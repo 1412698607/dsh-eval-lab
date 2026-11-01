@@ -1,6 +1,6 @@
 # 实验级安全续跑
 
-更新：2026 年 10 月 29 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
+更新：2026 年 11 月 1 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口与返回值
 
@@ -25,11 +25,17 @@ $plan = python -m dsh_eval --resume-experiment $source --plan --max-samples 6 | 
 python -m dsh_eval --resume-experiment $source --run --max-samples 6 --expected-plan-sha256 $plan.planFingerprint.sha256 --runs-root runs/experiment-resumes
 ```
 
-执行 API 为 `resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None, stop_after=None)`。摘要必填，接受 64 位十六进制并统一小写；不能用 batchPlanFingerprint 替代实验摘要。--host-modules / --cancel-after-stream 传给既有批次 / runner；--evidence / --output / --reports-root 不接受。首轮执行结果使用 experimentResumeResultFormatVersion=1，连续续跑为版本 2，passed / failed / unevaluable 分别退出 0 / 1 / 2；输入错误返回版本化 JSON 和退出 2，参数组合错误由 argparse 返回 2。
+执行 API 为 `resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None, expected_plan_sha256=None, stop_after=None, stop_after_tokens=None)`。摘要必填，接受 64 位十六进制并统一小写；不能用 batchPlanFingerprint 替代实验摘要。--host-modules / --cancel-after-stream 传给既有批次 / runner；--evidence / --output / --reports-root 不接受。首轮执行结果使用 experimentResumeResultFormatVersion=1，连续续跑为版本 2，passed / failed / unevaluable 分别退出 0 / 1 / 2；输入错误返回版本化 JSON 和退出 2，参数组合错误由 argparse 返回 2。
 
 首轮与连续续跑的 `--run` 都支持 `--stop-after N`：仅计算本轮新执行项，达到阈值后在已完成检查点与下一项身份分配之间停止，保留完整原矩阵。结果增加可选 stopAfter / stopReason，下一轮需重新预检且显式传入停止参数，不沿用历史阈值。运行控制不进入预览或 expected 指纹；历史复用、单次领取、未知任务和原 stop 失败策略保持原规则。详见 [任务边界停止](batch-runner.md#任务边界停止)。
 
+## 已观测 token 停止
+
+首轮与连续续跑也支持 `--stop-after-tokens N`：只累计本轮新批次报告的 totalTokens，用量缺失 / 不可用或达到阈值后停止安排下一项；结果透传 stopAfterTokens / tokenUsage。历史复用不计入本轮累计，下一轮重新选择阈值，不继承源控制或修改历史用量。预览、指纹和完整原矩阵保持原义；任务可超出阈值，不是费用或任务内 token 硬限额。字段与优先级见 [按已观测 token 停止调度](batch-runner.md#按已观测-token-停止调度)。
+
 ## Windows 输出根检查
+
+069 将此检查收敛到共用实现，并补齐普通单用例、批次及实验的创建输出前检查；续跑的三层 / 四层布局、源复验顺序和无领取边界保持原义。完整覆盖表及限制见 [Windows 输出根预检](output-paths.md)。
 
 Windows 的 `--run` 在源锁内重新复验 / 核对指纹之后、分配新 UUID 和创建输出或领取记录之前，计算当前输出根下的完整宿主安装临时目录。批次布局预留三层 UUID；实验首轮和连续续跑预留四层 UUID，包含 continuations / batches / cases，再追加 home/profiles/headless/.plugin-manager/logs/operation-XXXXXX。
 
@@ -146,6 +152,49 @@ python -m dsh_eval --report $source
 `$source` 每轮显式更新为刚完成的结果，不重用已有领取的旧源。原实验和首次续跑仍保留 stopped / unevaluable；最终独立结果为 completed / passed，原矩阵不回填。报告重新 inspect 六项，按全部三批次核对样本；历史复用 4 / 本轮新增 2。初始计划六项不因 stop-after 2 而缩小。
 
 [064](changes/2026-10-29-064-live-continuation-acceptance.md) 的实际六项均 verified / matched / live，17 个已结算模型事件、11 次工具调用、已报告 totalTokens=108698，费用全部缺失。报告的 changedFields 只含 configurationMatch：批次行没有保存该字段，离线报告由原始请求路由重新解析为 matched；这不是路由发生变化。原有 147 份选定归档文件在报告、只读浏览及终态预检前后摘要不变。浏览验证覆盖服务读取层及六份完整分页轨迹，未追加页面点击验收；当前样本不提供双配置比较或模型总体表现结论。
+
+## 四任务真实用量停止验收
+
+[071](changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash、两个用例各两轮完成四项真实任务。全新输入副本只修改实验名称与 failurePolicy=continue，原提示、环境、预算和精确断言不变；原清单 stop 策略及历史归档保留。
+
+以下为复现核心流程的 Python 入口，会调用配置的真实模型。先核对完整四任务计划；使用可写且通过检查的短绝对根。记录中的离线准备、摘要与进程审计另外执行，不把此示例称为已逐字执行的独立脚本。
+
+```python
+import json
+import shutil
+from pathlib import Path
+from uuid import uuid4
+from dsh_eval.experiment import plan_experiment, run_experiment
+from dsh_eval.experiment_resume import plan_experiment_resume, resume_experiment
+from dsh_eval.report import generate_report
+
+template = Path("fixtures/evaluation/core/guarded-acceptance.experiment.json")
+inputs = Path("runs/token-acceptance-inputs") / str(uuid4())
+inputs.mkdir(parents=True, exist_ok=False)
+manifest = json.loads(template.read_text(encoding="utf-8"))
+for row in manifest["cases"]:
+    shutil.copyfile(template.parent / row["casePath"], inputs / row["casePath"])
+manifest.update(experimentName="observed-token-acceptance-20261101", failurePolicy="continue")
+path = inputs / "acceptance.experiment.json"
+path.write_text(json.dumps(manifest), encoding="utf-8")
+root = Path("C:/r")
+plan = plan_experiment(path, max_samples=4)
+assert plan["valid"] and plan["counts"]["samples"] == 4
+result = run_experiment(path, root, max_samples=4, stop_after=2, stop_after_tokens=1,
+                        expected_plan_sha256=plan["planFingerprint"]["sha256"])
+assert result["stopReason"] == "stop_after_tokens" and result["summary"]["attempted"] == 1
+source = Path(result["experimentDirectory"]) / "experiment-result.json"
+for remaining, threshold in ((3, 1), (2, 100000)):
+    plan = plan_experiment_resume(source, max_samples=remaining)
+    assert plan["eligibleForResume"] and plan["counts"]["newSamples"] == remaining
+    result = resume_experiment(source, root, max_samples=remaining, stop_after=2,
+                               stop_after_tokens=threshold,
+                               expected_plan_sha256=plan["planFingerprint"]["sha256"])
+    source = Path(result["resumeDirectory"]) / "experiment-resume-result.json"
+report = generate_report(source, root)
+```
+
+实际三段为 1 / 1 / 2 项，tokenUsage.observedTotal 分别为 19063 / 19206 / 38470；前两段 stopReason=stop_after_tokens，末轮 completed / passed。独立版本 3 报告四项 verified / matched / live，历史复用两项 / 38269 token，末轮新增两项 / 38470 token。四个专用 CLI PID 已退出，115 份选定输入 / 来源文件及六份报告 / 复验文件摘要不变。该验收仅为当前单配置和短根范围，不提供模型总体表现或任务内 token / 费用硬限额结论。
 
 ## 限制与后续
 

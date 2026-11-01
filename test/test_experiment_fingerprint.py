@@ -159,12 +159,15 @@ class ExperimentFingerprintTests(unittest.TestCase):
 
     def test_cli_forwards_expected_hash_and_preserves_task_exit_codes(self):
         for outcome, code in (("passed", 0), ("failed", 1), ("unevaluable", 2)):
-            with self.subTest(outcome=outcome), \
-                    patch("dsh_eval.experiment.run_experiment", return_value={"outcome": outcome}) as run, \
-                    redirect_stdout(io.StringIO()):
-                self.assertEqual(main(["--experiment", str(self.path), "--run", "--max-samples", "8",
-                                       "--expected-plan-sha256", "a" * 64]), code)
-            self.assertEqual(run.call_args.kwargs, {"max_samples": 8, "expected_plan_sha256": "a" * 64, "stop_after": None})
+            for tokens in (None, 7):
+                options = [] if tokens is None else ["--stop-after-tokens", str(tokens)]
+                with self.subTest(outcome=outcome, tokens=tokens), \
+                        patch("dsh_eval.experiment.run_experiment", return_value={"outcome": outcome}) as run, \
+                        redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(["--experiment", str(self.path), "--run", "--max-samples", "8",
+                                           "--expected-plan-sha256", "a" * 64, *options]), code)
+                self.assertEqual(run.call_args.kwargs, {"max_samples": 8, "expected_plan_sha256": "a" * 64,
+                                                        "stop_after": None, "stop_after_tokens": tokens})
 
     def test_cli_malformed_hash_returns_input_error_without_runtime_or_output(self):
         before = self.snapshot()

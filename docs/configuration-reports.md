@@ -1,10 +1,16 @@
 # M4.2 离线配置比较报告
 
-更新：2026 年 10 月 28 日，Asia/Shanghai。普通实验保持 `comparisonReportFormatVersion=1`，首轮续跑报告保持版本 2，连续续跑使用版本 3。都重新核对计划及样本，生成独立 JSON / Markdown，不执行模型任务。
+跨实验的旧基线 / 新候选判定使用 [基线回归比较](baseline-regression.md) 的独立 `--compare-baseline ... --candidate ...` 入口，重新复验后列出逐项变化，并提供 0 / 1 / 2 门禁退出码。本页 `--report` 保留描述性报告语义，不因普通样本失败返回回归失败码。
+
+[072](changes/2026-11-01-072-full-core-two-config-comparison.md) 已在四个来源批次上独立生成版本 3 报告：完整十用例 / 两配置 / 两轮共四十项 verified / matched / live，39 passed / 1 failed，每用例两对、零排除。报告分开历史复用三十项与末轮新增十项；任务失败仍参与配对，完整覆盖不等于模型总体优胜或统计显著。
+
+更新：2026 年 11 月 1 日，Asia/Shanghai。普通实验保持 `comparisonReportFormatVersion=1`，首轮续跑报告保持版本 2，连续续跑使用版本 3。都重新核对计划及样本，生成独立 JSON / Markdown，不执行模型任务。
 
 [双配置八任务准备](guarded-comparison.md) 新增两用例各两轮的合成链路回归，验证各用例独立配对、异常配对排除、缺失指标与停止分母。它不提供第二模型的真实比较结论，报告协议和计算规则不变。
 
 ## 使用
+
+[088](changes/2026-11-01-088-seeded-order-repeat-distributions.md) 的新报告增加 executionOrder 与 repeatDistributions，JSON、Markdown 和本地浏览器均可查看执行种子及按用例 / 配置 / 来源拆分的每轮结果。报告版本 1 / 2 / 3 不变，旧文件缺失这些字段时不从其他摘要补算；需要新分布时可使用原归档重新生成独立报告。
 
 在仓库根目录，把路径中的实验 ID 替换为已保存的实际值：
 
@@ -29,6 +35,24 @@ evaluations/000001.json            本次重新 inspect 和断言的结果
 每次新建 UUID 目录，文件以排他创建方式写入；不覆盖原实验、旧 evaluation 或已有报告。stdout 输出报告 JSON，包含 reportDirectory。写入错误可能留下未完成的新报告目录，不支持原子发布、断电保证或续写。整个目录仍在忽略的 runs 内，包含私人任务与本机证据路径，不作为公开夹具。
 
 命令行 JSON stdout 固定 UTF-8，重定向时不随 Windows 系统代码页改变。JSON 的 generatedAt 保存 UTC，Markdown 显示 Asia/Shanghai 时间。Markdown 将缺失数值显示为“缺失”、浮点数显示六位有效数字；完整原数值在 JSON 中保留，不参与重新舍入后的统计。
+
+## 重复试验结果分布
+
+repeatDistributions 的每项对应一个 caseEntryId / configurationId / source，不混合不同配置或 live / synthetic / unknown 声明。全部原计划样本（含续跑历史与本轮新增）各计一次，按 repeatIndex 展示，不把随机执行位置当作重复编号。
+
+| 字段 | 含义 |
+| --- | --- |
+| plannedRepetitions | 该用例 / 配置的原计划重复次数；多个来源行共享同一分母，不能相加 |
+| sourceSamples | 该来源行包含的样本数；同用例 / 配置的各来源计数之和等于原计划轮次 |
+| outcomes | 新复验的 passed / failed / unevaluable / missing 次数；missing 表示没有任务结论，如 skipped，不补作失败 |
+| statusCounts | finished / skipped / error 等执行项状态计数，可解释缺失结果 |
+| eligiblePassed / eligibleFailed | 仅 verification=verified、configurationMatch=matched、执行 completed、录制 complete 且可评测样本的通过 / 失败次数 |
+| excludedSamples | sourceSamples 减去有效通过与失败；包括不可评测、未执行或未能复验匹配的项 |
+| samples | 本来源每轮的 sampleId、repeatIndex、status、outcome、verification 与 configurationMatch；按重复编号升序 |
+
+来源来自本次复验，证据缺失无法读取来源时为 unknown，不借用旧保存声明。坏路由可能保留某条任务断言的 passed，但不进入有效通过；所有原始结论与排除状态仍可查看。088 的描述性分布保持；[091](changes/2026-11-01-091-confidence-intervals.md) 另增加 passRateInterval 和配置配对的 uncertainty 字段，不生成显著性检验、稳定性阈值或总体模型优胜结论。
+
+executionOrder 保存原实验的 order；随机化时另含 randomSeed。Markdown 和页面保留种子的完整整数，不使用指标的六位有效数字格式。固定顺序没有种子字段；显式种子 0 不当作缺失。算法及兼容规则见 [随机执行顺序](experiments.md#可复现的随机执行顺序)。
 
 ## 实验续跑的跨批次报告
 
@@ -81,7 +105,7 @@ python -m dsh_eval --report 'runs/experiment-resumes/<resumeId>/experiment-resum
 
 ## 核对顺序与失败行为
 
-报告先以用例条目数 × 配置数 × 重复数计算预期总数，核对保存的 samples / batch entries 类型与数量，再按固定顺序逐项检查；不先展开完整位置列表。这样损坏的重复次数或非法样本容器会在位置枚举、inspect 和输出之前拒绝，新快照与旧格式都适用。该检查不提供输入文件字节或总内存硬上限，见 [复审修复 045](changes/2026-10-25-045-plan-review-fixes.md)。
+报告先以用例条目数 × 配置数 × 重复数计算预期总数，核对保存的 samples / batch entries 类型与数量，再重建固定或按种子排序的完整位置列表并逐项检查；不在数量检查前展开位置。这样损坏的重复次数或非法样本容器会在位置枚举、inspect 和输出之前拒绝，新快照与旧格式都适用。随机排序需要完整矩阵；该检查不提供输入文件字节或总内存硬上限，见 [复审修复 045](changes/2026-10-25-045-plan-review-fixes.md)。
 
 1. 从传入结果旁解析冻结的 experiment.json 和批次结果，不依赖历史 experimentDirectory / batchDirectory 等绝对位置。核对版本、终态、配置、重复次数、展开顺序、完整样本数、计划位置及 batchId / sampleId / caseRunId / runId / sessionId。重复执行 / 录制身份或实验与批次关联冲突会拒绝整份输入。
 2. 检查实验和批次路径一致、保持在对应目录内。清单路径须为相对 POSIX 路径，拒绝绝对路径、越界与符号链接逃逸；现有 runner 证据中的 Windows 分隔符另行兼容。完整实验目录复制到新位置后，可以从新位置报告。
@@ -145,6 +169,6 @@ completed 且断言明确失败的任务保留 failed；取消、超时、运行
 
 每个比较指标还会再次选择**两侧都有该指标的相同配对**，输出 pairedSamples / missingPairs、两侧汇总、meanDifference（右均值减左均值）、单对差值的 minDifference / maxDifference。missingPairs 以 plannedPairs 为分母，包含路由 / 来源 / 录制排除和指标缺失；不能将两侧覆盖不同的独立均值直接相减。某侧有效值求和溢出时，覆盖和范围保留，均值与均值差为 null，即使单对差值范围可计算。
 
-报告公开样本量、实测范围、来源、覆盖、排除项和缺失原因；不计算置信区间、pass@k、显著性或赢家。固定重复 / 用例 / 配置顺序没有随机化，也没有验证独立同分布假设。范围是当前样本的范围，不是总体不确定性的置信区间。两个验收样本不足以宣称成功率、性能或成本提升。
+报告公开样本量、实测范围、来源、覆盖、排除项和缺失原因。[置信区间说明](uncertainty.md) 定义 091 新增的 95% Wilson、配对二值保守界和数值配对 t 区间，区间有独立的纳入分母、点估计、原因及小样本提示；旧观测范围仍只是样本范围。默认固定顺序或可选种子排序都没有验证独立同分布 / 正态假设，不提供多重比较或可选停止校正；不计算 pass@k、显著性或赢家。原小批验收以及 072 每用例仅两对的固定矩阵均不足以宣称总体成功率、性能或成本提升。
 
-复验须读取停止写入后的稳定实验目录；本工具没有在线一致快照、证据签名或隐藏运行配置的验证能力。已实现与本轮验证分别见 [开发进度](progress.md) 和 [修改记录 019](changes/2026-10-21-019-m4-2-configuration-reports.md)。M5 已提供 [只读结果浏览](result-browser.md)，可查看保存报告与证据；打开页面不会重新生成报告或验证日志。
+复验须读取停止写入后的稳定实验目录；本工具没有在线一致快照、证据签名或隐藏运行配置的验证能力。初版实现见 [修改记录 019](changes/2026-10-21-019-m4-2-configuration-reports.md)，当前范围和各批验证统一见 [开发进度](progress.md)。M5 已提供 [只读结果浏览](result-browser.md)，可查看保存报告与证据；打开页面不会重新生成报告或验证日志。

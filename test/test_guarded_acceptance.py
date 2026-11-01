@@ -49,7 +49,8 @@ class GuardedAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="dsh-guarded-flow-") as temporary:
             root = Path(temporary)
             # Only the adapter is synthetic; the real runner, bridge, recorder and inspect execute.
-            with patch("dsh_eval.runner._prepare"), patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
+            with patch("dsh_eval.output_paths.check_output_root"), patch("dsh_eval.runner._prepare"), \
+                    patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/batch-adapter.js"):
                 saved = run_experiment(MANIFEST, root / "experiments", max_samples=4,
                                        expected_plan_sha256=plan["planFingerprint"]["sha256"])
             self.assertEqual((saved["status"], saved["outcome"]), ("completed", "passed"))

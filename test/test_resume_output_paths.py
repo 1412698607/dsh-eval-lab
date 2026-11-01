@@ -15,6 +15,7 @@ import test_experiment_resume_chain as chain_fixtures
 from dsh_eval.experiment_resume import plan_experiment_resume, resume_experiment
 from dsh_eval.resume import CLAIM_NAME, _check_resume_output_root, plan_batch_resume, resume_batch
 from dsh_eval.runner import ROOT
+from dsh_eval.output_paths import check_output_root
 
 
 class ResumeOutputPathTests(unittest.TestCase):
@@ -41,7 +42,7 @@ class ResumeOutputPathTests(unittest.TestCase):
         operation = root / reserved / "batches" / reserved / "cases" / reserved / "home/profiles/headless/.plugin-manager/logs/operation-XXXXXX"
         padding = 247 - len(str(operation).encode("utf-16-le")) // 2
         allowed = root / ("x" * (padding - 1))
-        with patch("dsh_eval.resume.sys.platform", "win32"):
+        with patch("dsh_eval.output_paths.sys.platform", "win32"):
             _check_resume_output_root(allowed)
             with self.assertRaisesRegex(ValueError, "248 UTF-16"):
                 _check_resume_output_root(allowed.with_name(allowed.name + "x"))
@@ -51,13 +52,13 @@ class ResumeOutputPathTests(unittest.TestCase):
 
     def test_experiment_layout_includes_both_continuation_identifiers(self):
         root = Path(Path.cwd().anchor) / ("r" * 45)
-        with patch("dsh_eval.resume.sys.platform", "win32"):
+        with patch("dsh_eval.output_paths.sys.platform", "win32"):
             _check_resume_output_root(root)
             with self.assertRaisesRegex(ValueError, "shorter --runs-root"):
                 _check_resume_output_root(root, experiment=True)
 
     def test_other_platforms_do_not_inherit_the_windows_limit(self):
-        with patch("dsh_eval.resume.sys.platform", "linux"):
+        with patch("dsh_eval.output_paths.sys.platform", "linux"):
             _check_resume_output_root(Path("x" * 300), experiment=True)
 
     def test_batch_rejection_does_not_allocate_claim_or_change_the_source(self):
@@ -65,7 +66,8 @@ class ResumeOutputPathTests(unittest.TestCase):
         plan = plan_batch_resume(fixture.source)
         output = fixture.directory / ("deep" * 35)
         before = self.snapshot(fixture.directory)
-        with patch("dsh_eval.resume.sys.platform", "win32"), \
+        with patch("dsh_eval.output_paths.sys.platform", "win32"), \
+                patch("dsh_eval.output_paths.check_output_root", wraps=check_output_root), \
                 patch("dsh_eval.resume._check_resume_output_root", wraps=_check_resume_output_root), \
                 patch("dsh_eval.resume.uuid4", side_effect=AssertionError("must reject before allocation")), \
                 self.assertRaisesRegex(ValueError, "no continuation was claimed"):
@@ -84,7 +86,8 @@ class ResumeOutputPathTests(unittest.TestCase):
                 plan = plan_experiment_resume(source)
                 output = directory / ("deep" * 35)
                 before = self.snapshot(directory)
-                with patch("dsh_eval.resume.sys.platform", "win32"), \
+                with patch("dsh_eval.output_paths.sys.platform", "win32"), \
+                        patch("dsh_eval.output_paths.check_output_root", wraps=check_output_root), \
                         patch(f"dsh_eval.{module}._check_resume_output_root", wraps=_check_resume_output_root), \
                         patch(f"dsh_eval.{module}.uuid4", side_effect=AssertionError("must reject before allocation")), \
                         self.assertRaisesRegex(ValueError, "no continuation was claimed"):

@@ -28,6 +28,44 @@ def resequence(events):
 
 
 class FormatTests(unittest.TestCase):
+    def test_behavior_assertions_accept_explicit_selectors_and_inclusive_bounds(self):
+        for version in (1, 2):
+            for assertion in (
+                {"id": "guard", "type": "tool_forbidden", "tool": "read"},
+                {"id": "guard", "type": "tool_forbidden", "tool": "read", "arguments": {}},
+                {"id": "guard", "type": "tool_call_count", "tool": "read", "min": 0},
+                {"id": "guard", "type": "tool_call_count", "tool": "read", "max": 0},
+                {"id": "guard", "type": "tool_call_count", "tool": "read", "arguments": {"path": "README.md"}, "min": 1, "max": 1},
+                {"id": "guard", "type": "tool_call_count", "tool": "read", "max": 9007199254740991},
+            ):
+                with self.subTest(version=version, assertion=assertion):
+                    case = fixture()
+                    case.update(caseFormatVersion=version)
+                    case["assertions"].append(assertion)
+                    original = copy.deepcopy(case)
+                    self.assertEqual(validate_case(case), original)
+
+    def test_behavior_assertions_reject_invalid_selectors_bounds_and_dependencies(self):
+        base = {"id": "guard", "type": "tool_call_count", "tool": "read", "max": 1}
+        variants = [{key: value for key, value in base.items() if key != "max"},
+                    {**base, "min": 2}, {**base, "after": "read-evidence"}, {**base, "result": {}},
+                    {**base, "tool": ""}, {key: value for key, value in base.items() if key != "tool"}]
+        for value in (None, True, False, -1, 1.5, "1", 9007199254740992):
+            variants.extend([{**base, "max": value}, {**base, "min": value}])
+        variants.extend({**base, "arguments": value} for value in (None, [], "README.md", 1))
+        variants.extend({"id": "guard", "type": "tool_forbidden", "tool": "read", **extra}
+                        for extra in ({"min": 0}, {"max": 0}, {"after": "read-evidence"}, {"arguments": []}))
+        for assertion in variants:
+            with self.subTest(assertion=assertion), self.assertRaises(ValueError):
+                case = fixture()
+                case["assertions"].append(assertion)
+                validate_case(case)
+        case = fixture()
+        case["assertions"].insert(0, {"id": "guard", "type": "tool_forbidden", "tool": "write"})
+        case["assertions"][2]["after"] = "guard"
+        with self.assertRaises(ValueError):
+            validate_case(case)
+
     def test_only_version_two_allows_tool_result_without_argument_constraints(self):
         case = fixture()
         case["assertions"][1]["arguments"] = {}
@@ -71,6 +109,55 @@ class FormatTests(unittest.TestCase):
 
 
 class AssertionTests(unittest.TestCase):
+    def test_behavior_assertions_count_calls_with_no_result_or_error_after_final_answer(self):
+        for with_result in (False, True):
+            events = fixture(kind="events")
+            call = {"type": "tool/call", "data": {"callId": "extra", "name": "read", "arguments": '{"path":"restricted.md"}'}}
+            events.insert(-1, call)
+            if with_result:
+                events.insert(-1, {"type": "tool/result", "data": {"message": {"toolCallId": "extra", "isError": True, "content": []}}})
+            view = task_view(resequence(events), fixture()["input"])
+            for kind, bounds in (("tool_forbidden", {}), ("tool_call_count", {"max": 0})):
+                assertion = {"id": "guard", "type": kind, "tool": "read", "arguments": {"path": "restricted.md"}, **bounds}
+                result = check_assertion(assertion, view)
+                self.assertEqual((result["outcome"], result["actual"]), ("failed", 1))
+                self.assertEqual(result["evidence"][0]["callSeq"], call["seq"])
+                self.assertGreater(result["evidence"][0]["callSeq"], view["final"]["seq"])
+                self.assertEqual("resultSeq" in result["evidence"][0], with_result)
+
+    def test_behavior_selectors_match_typed_arguments_without_path_normalization(self):
+        events = fixture(kind="events")
+        events[2]["data"]["arguments"] = json.dumps({"path": "README.md", "options": {"enabled": True}, "extra": 3})
+        view = task_view(events, fixture()["input"])
+        for arguments, count in (({}, 1), ({"path": "README.md"}, 1), ({"options": {"enabled": True}}, 1),
+                                 ({"options": {"enabled": 1}}, 0), ({"missing": None}, 0),
+                                 ({"path": "./README.md"}, 0), ({"path": "readme.md"}, 0)):
+            assertion = {"id": "guard", "type": "tool_forbidden", "tool": "read", "arguments": arguments}
+            result = check_assertion(assertion, view)
+            self.assertEqual(result["actual"], count)
+            self.assertEqual(result["outcome"], "failed" if count else "passed")
+        self.assertEqual(check_assertion({"id": "guard", "type": "tool_forbidden", "tool": "READ"}, view)["actual"], 0)
+
+    def test_behavior_count_bounds_include_zero_exact_minimum_and_maximum(self):
+        view = task_view(fixture(kind="events"), fixture()["input"])
+        for tool, bounds, outcome, actual in (
+            ("read", {"min": 1, "max": 1}, "passed", 1), ("read", {"max": 0}, "failed", 1),
+            ("read", {"min": 2}, "failed", 1), ("read", {"min": 0}, "passed", 1),
+            ("write", {"max": 0}, "passed", 0), ("write", {"min": 1}, "failed", 0),
+        ):
+            with self.subTest(tool=tool, bounds=bounds):
+                result = check_assertion({"id": "guard", "type": "tool_call_count", "tool": tool, **bounds}, view)
+                self.assertEqual((result["outcome"], result["actual"]), (outcome, actual))
+                self.assertEqual(len(result["evidence"]), actual)
+        events = fixture(kind="events")
+        extra = copy.deepcopy(events[2])
+        extra["data"]["callId"] = "second-attempt"
+        events.insert(4, extra)
+        view = task_view(resequence(events), fixture()["input"])
+        result = check_assertion({"id": "guard", "type": "tool_call_count", "tool": "read", "min": 2, "max": 2}, view)
+        self.assertEqual((result["outcome"], result["actual"]), ("passed", 2))
+        self.assertEqual([row["callId"] for row in result["evidence"]], ["read-1", "second-attempt"])
+
     def test_result_based_discovery_still_requires_tool_and_linked_success_content(self):
         assertion = next(item for item in fixture("stale-path")["assertions"] if item["id"] == "tool-2")
         events = fixture(kind="events")
@@ -194,6 +281,121 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         evidence = load_json(self.evidence_path)
         evidence.update(updates)
         self.evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    def test_correct_answer_with_forbidden_or_excess_calls_fails_after_real_recording(self):
+        for kind, path, bounds in (("tool_forbidden", "restricted.md", {}), ("tool_call_count", "README.md", {"max": 1})):
+            for after_answer in (False, True):
+                with self.subTest(kind=kind, after_answer=after_answer):
+                    case, events = fixture(), fixture(kind="events")
+                    case["assertions"].append({"id": "behavior", "type": kind, "tool": "read", "arguments": {"path": path}, **bounds})
+                    call, response = copy.deepcopy(events[2:4])
+                    call["data"].update(callId="extra", arguments=json.dumps({"path": path}))
+                    response["data"]["message"].update(toolCallId="extra", isError=True)
+                    position = len(events) - 1 if after_answer else 4
+                    events[position:position] = [call, response]
+                    self.record(resequence(events), case=case)
+                    before = {p: p.read_bytes() for p in self.evidence_path.parent.iterdir() if p.is_file()}
+                    result = evaluate(self.case_path, self.evidence_path)
+                    self.assertEqual((result["execution"]["status"], result["recording"]["outcome"], result["outcome"]),
+                                     ("completed", "complete", "failed"))
+                    self.assertTrue(all(row["outcome"] == "passed" for row in result["assertions"]["results"][:-1]))
+                    guard = result["assertions"]["results"][-1]
+                    self.assertEqual((guard["outcome"], guard["actual"]), ("failed", 1 if kind == "tool_forbidden" else 2))
+                    self.assertEqual(guard["evidence"][-1]["callSeq"], call["seq"])
+                    self.assertEqual({p: p.read_bytes() for p in before}, before)
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(main(["--case", str(self.case_path), "--evidence", str(self.evidence_path)]), 1)
+
+    def test_behavior_compliance_passes_and_minimum_shortfall_fails(self):
+        case = fixture()
+        case["assertions"].extend([
+            {"id": "forbidden", "type": "tool_forbidden", "tool": "read", "arguments": {"path": "restricted.md"}},
+            {"id": "count", "type": "tool_call_count", "tool": "read", "min": 1, "max": 1},
+        ])
+        self.record(case=case)
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual([row["actual"] for row in result["assertions"]["results"][-2:]], [0, 1])
+        case["assertions"][-1].update(min=2, max=2)
+        self.record(case=case)
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual(result["outcome"], "failed")
+        self.assertEqual(result["assertions"]["results"][0]["outcome"], "passed")
+
+    def test_behavior_missing_tool_result_is_still_a_counted_violation(self):
+        case, events = fixture(), fixture(kind="events")
+        case["assertions"] = [item for item in case["assertions"] if item["type"] != "tool_result"]
+        case["assertions"].extend([
+            {"id": "forbidden", "type": "tool_forbidden", "tool": "read"},
+            {"id": "count", "type": "tool_call_count", "tool": "read", "max": 0},
+        ])
+        self.record(resequence([event for event in events if event["type"] != "tool/result"]), case=case)
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual((result["recording"]["outcome"], result["outcome"]), ("complete", "failed"))
+        self.assertEqual(result["assertions"]["results"][0]["outcome"], "passed")
+        for row in result["assertions"]["results"][-2:]:
+            self.assertEqual((row["outcome"], row["actual"]), ("failed", 1))
+            self.assertEqual(row["evidence"], [{"callId": "read-1", "callSeq": 2}])
+
+    def test_behavior_absence_is_not_inferred_from_incomplete_or_malformed_evidence(self):
+        case = fixture()
+        case["assertions"] = [{"id": "guard", "type": "tool_forbidden", "tool": "write"},
+                              {"id": "count", "type": "tool_call_count", "tool": "write", "max": 0}]
+        self.record(case=case, seal=False)
+        self.assertEqual(evaluate(self.case_path, self.evidence_path)["assertions"]["outcome"], "not_run")
+        for corruption in ("arguments", "duplicate-id", "gap"):
+            events = fixture(kind="events")
+            if corruption == "arguments":
+                events[2]["data"]["arguments"] = "not-json"
+            elif corruption == "duplicate-id":
+                events.insert(4, copy.deepcopy(events[2]))
+                resequence(events)
+            else:
+                for event in events[3:]:
+                    event["seq"] += 1
+            self.record(events, case=case)
+            result = evaluate(self.case_path, self.evidence_path)
+            self.assertEqual(result["outcome"], "unevaluable")
+            self.assertTrue(all(row["outcome"] != "passed" for row in result["assertions"]["results"]))
+        self.record(case=case)
+        self.edit_evidence(execution={"status": "runtime_error", "exitCode": 1})
+        self.assertEqual(evaluate(self.case_path, self.evidence_path)["assertions"]["outcome"], "not_run")
+
+    def test_behavior_failure_keeps_missing_required_result_unevaluable(self):
+        case, events = fixture(), fixture(kind="events")
+        case["assertions"].extend([
+            {"id": "forbidden", "type": "tool_forbidden", "tool": "read"},
+            {"id": "count", "type": "tool_call_count", "tool": "read", "max": 0},
+        ])
+        self.record(resequence([event for event in events if event["type"] != "tool/result"]), case=case)
+        result = evaluate(self.case_path, self.evidence_path)
+        self.assertEqual((result["execution"]["status"], result["recording"]["outcome"], result["outcome"]),
+                         ("completed", "complete", "unevaluable"))
+        rows = {row["id"]: row for row in result["assertions"]["results"]}
+        self.assertEqual(rows["answer"]["outcome"], "passed")
+        self.assertEqual(rows["read-evidence"]["outcome"], "insufficient_evidence")
+        for name in ("forbidden", "count"):
+            self.assertEqual((rows[name]["outcome"], rows[name]["actual"]), ("failed", 1))
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["--case", str(self.case_path), "--evidence", str(self.evidence_path)]), 2)
+
+    def test_behavior_calls_outside_task_boundaries_cannot_be_ignored_as_zero(self):
+        for position in (1, 6):
+            with self.subTest(position=position):
+                case, events = fixture(), fixture(kind="events")
+                case["assertions"] = [
+                    {"id": "forbidden", "type": "tool_forbidden", "tool": "write"},
+                    {"id": "count", "type": "tool_call_count", "tool": "write", "max": 0},
+                ]
+                events.insert(position, {"type": "tool/call", "data": {"callId": "outside", "name": "write", "arguments": "{}"}})
+                self.record(resequence(events), case=case)
+                result = evaluate(self.case_path, self.evidence_path)
+                self.assertEqual(result["recording"]["outcome"], "complete")
+                self.assertEqual(result["outcome"], "unevaluable")
+                self.assertIn("outside the single task boundaries", result["assertions"]["reason"])
+                for row in result["assertions"]["results"]:
+                    self.assertEqual(row["outcome"], "insufficient_evidence")
+                    self.assertNotIn("actual", row)
 
     def test_oversized_event_invalidates_recording_before_task_assertions(self):
         evidence = self.record()

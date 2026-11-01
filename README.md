@@ -21,11 +21,14 @@
 - 用例可通过 [modelProviders](docs/evaluation-format.md#可选外部模型路由两个用例版本通用) 声明外部文本模型路由，随输入冻结并计入计划指纹；密钥仅按名称引用。`npm.cmd run check:model-providers -- <case.json>` 检查本机真实宿主的路由 / 目录注册和凭据存在性，不调用模型、不验证远端端点。
 - [批次级安全续跑](docs/batch-resume.md) 提供 `--resume-batch <batch-result.json> --plan` 无模型复核；显式执行仅安排已协调批次中明确未开始的任务，已完成项经重新 inspect / 评测后复用，未知项阻断。原结果不覆盖；实验层汇总回填尚未实现。
 - [实验级安全续跑](docs/experiment-resume.md) 的 `--resume-experiment <result.json> --plan / --run` 接受原实验或已有实验续跑结果；每轮比较预检摘要，只为明确未开始项创建新批次，未知项阻断。保留原用例 / 配置 / 轮次及全部历史证据，与批次入口共用锁和单次领取保护。终态结果可交给 --report，首轮报告版本 2、连续续跑版本 3，分开历史复用与本轮新增用量。
-- Windows 续跑执行在创建新身份和领取记录前检查宿主安装临时目录长度；路径过深时退出 2，提示缩短 `--runs-root`，保留源的续跑资格。`--plan` 仅检查源归档，不检查未来输出根，详见 [Windows 输出根检查](docs/experiment-resume.md#windows-输出根检查)。
+- Windows 单用例、批次、实验及续跑执行在创建新身份与输出前检查完整宿主安装目录长度；路径过深时退出 2，提示缩短 `--runs-root`。续跑检查仍先于领取，保留源资格；`--plan` 不检查未来输出根，详见 [Windows 输出根预检](docs/output-paths.md)。
 - 批次、实验与续跑的 `--run` 可用 `--stop-after N` 在本轮 N 项完成、清理及检查点保存后停止后续调度；保留完整矩阵和未开始项，支持重新预检续跑。参数是独立运行控制，不进入计划指纹，也不限制模型调用数或费用，见 [任务边界停止](docs/batch-runner.md#任务边界停止)。
+- 同一批次 / 实验 / 续跑入口可用 `--stop-after-tokens N`，在任务边界按本轮新任务报告的 totalTokens 停止后续调度；用量不可用时同样停止，保存已观测 / 缺失覆盖。阈值不限制当前任务，续跑重新计量且需显式设置，详见 [已观测 token 停止](docs/batch-runner.md#按已观测-token-停止调度)。
+- [完整十用例双配置比较](docs/changes/2026-11-01-072-full-core-two-config-comparison.md) 已以 DeepSeek Flash / 百炼 Qwen3.7-Plus 执行两轮共四十项，39 通过 / 1 失败，零跳过 / 基础设施错误；独立报告全部 verified / matched / live，各用例两对、零排除。失败保留原精确断言，完整矩阵只描述本次观测，不推断总体优胜、显著性或成本 / 性能改善。
+- [四任务真实用量停止验收](docs/changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash 按 1 / 1 / 2 完成两用例各两轮，前两段 token 阈值 1、末段 100000。独立版本 3 报告四项 verified / matched / live，历史复用与末轮新增各两项；只验证当前短根及单配置，不提供任务内硬限额或总体模型优劣结论。
 - [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
-- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。Windows 无模型云端 CI 保留既有验收，版本 2 / 3 接入当前为本地验证。
+- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。最新已验收实现为 `02013a5`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 093](docs/changes/2026-11-01-093-confidence-interval-delivery-ci.md)；旧验收保留历史，具体云端测试数量未读取。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
@@ -43,11 +46,17 @@
 python -m dsh_eval --browse
 ```
 
-打开终端输出中的完整 `url`，即可查看本地结果，按名称、任务结论和来源声明筛选，再从逐次结果进入证据与事件轨迹。默认读取 `fixtures/evaluation` 和 `runs`，仅在本机提供只读页面，不调用模型、不重新评测、不改写历史文件；终端按 Ctrl+C 停止。保存结论可能已过时，复验仍使用原来的 `--report` 或 `--case ... --evidence ...`。
+打开终端输出中的完整 `url`，即可查看本地结果，按名称、任务结论和来源声明筛选，再从逐次结果进入证据与事件轨迹。“实验续跑”和“批次续跑”有独立列表，无需先生成报告。批次、实验和续跑详情的“调度与停止”显示保存的停止原因、任务数 / token 阈值及本轮 token 观测与缺失覆盖，历史复用不计入本轮。默认读取 `fixtures/evaluation` 和 `runs`，仅在本机提供只读页面，不调用模型、不重新评测、不改写历史文件；终端按 Ctrl+C 停止。保存结论可能已过时，复验仍使用原来的 `--report` 或 `--case ... --evidence ...`。
 
 目录、端口、读取限制及无模型 CI 范围见 [结果浏览](docs/result-browser.md)。[持续集成配置](.github/workflows/deterministic.yml) 将在 push、PR 和手动触发时运行确定性检查；真实模型任务仍需单独选择配置、预算并使用 `--run`。
 
+续跑详情还分开展示启动计划、本轮实际尝试 / 跳过和已保存的合并汇总；新增与合并用量分别显示缺失覆盖，批次合并仅覆盖来源批次计划。旧版没有保存的汇总保持缺失，不从历史文件推算。外层结果尚未保存最终批次路径时，可通过已有执行批次绑定查看范围内的检查点并手动刷新；保存关联不是新的复验或实时一致快照。
+
+逐次结果的“断言诊断”将失败项排在前面，对照本结果内嵌用例的期望与保存的实际值，文本差异保留 Markdown、空格和换行。点击卡片中的工具调用、工具返回或最终答案，可定位并高亮关联轨迹中的事件；缺失字段不补造，定位不代替离线复验。
+
 ## 固定评测集
+
+用例现在可显式声明 `tool_forbidden`（禁止指定工具或参数对应的调用）与 `tool_call_count`（用 `min` / `max` 限制匹配调用次数）。正确答案不能抵消已观测的行为违规；失败返回、未返回及答案后的调用也计入任务范围。这是执行后的离线断言，不会在运行时拦截工具。格式与示例见 [行为约束断言](docs/evaluation-format.md#行为约束断言两个用例版本通用)；现有固定集与历史冻结输入保持不变。
 
 先预览固定评测集，不调用模型、不创建运行目录：
 
@@ -106,7 +115,7 @@ npm.cmd test
 npm.cmd run demo
 ```
 
-`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md)；实现已提交并推送为 `dffac4c`，最新实现 CI 的 243 Python / 85 Node / 41 JS、compileall 和无模型示例通过，见 [交付验收 046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。
+`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及历史 CI 见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md) / [046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。最新已推送实现为 `c7b627a`；该精确 SHA 的 JavaScript 语法、Node 测试、Python 测试、compileall 和无模型示例 CI 步骤全部成功，见 [交付验收 070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)，具体云端测试数量未读取。
 
 真实组件接入检查：
 
@@ -333,6 +342,8 @@ python -m dsh_eval --experiment fixtures/evaluation/recovery.experiment.json --r
 
 ## M4.2 配置比较报告
 
+实验清单可设置非负整数 `randomSeed`，以可复现顺序执行完整矩阵；省略时保留原顺序。种子随输入冻结并进入计划指纹，续跑保持原剩余顺序，不重新随机化。种子只控制任务调度，不控制模型采样，详见 [执行顺序随机化](docs/experiments.md#可复现的随机执行顺序)。
+
 对已经结束的实验运行以下命令，不调用模型：
 
 ```powershell
@@ -341,7 +352,19 @@ python -m dsh_eval --report 'runs/experiments/<experimentId>/experiment-result.j
 
 新建 `runs/reports/<reportId>/report.json`、`report.md` 及逐项复验结果，原实验不覆写。报告先核对冻结任务 / 环境 / 预算 / 断言、身份、实际请求路由和来源，再按同用例与重复编号计算右侧减左侧的描述性差值。保留全部计划分母、匹配覆盖、缺失及溢出原因，不混用合成 / live 来源。只有一个配置也可生成报告，但没有配置间差值；不同 ID 指向同一 configRef 也不视为不同模型。
 
-`--reports-root` 可指定新报告目录的父目录。命令行 JSON stdout 固定 UTF-8。退出码 0 只表示报告生成成功，任务分类在报告中分别保留；输入或输出错误为 2。当前支持一个实验，不计算置信区间、显著性或赢家。格式、配对条件和不确定性范围见 [配置报告](docs/configuration-reports.md)。
+新报告的 JSON、Markdown 与浏览页面提供按用例 / 配置 / 来源拆分的重复结果分布，展示每轮结果、通过 / 失败次数及不可用覆盖。另支持可评测匹配通过率和配置配对差值的标称 95% 置信区间，显示实际纳入数、排除原因及小样本提示；缺失不补零，区间不代表统计假设已验证。详见 [重复结果分布](docs/configuration-reports.md#重复试验结果分布) 与 [置信区间及边界](docs/uncertainty.md)。
+
+`--reports-root` 可指定新报告目录的父目录。命令行 JSON stdout 固定 UTF-8。退出码 0 只表示报告生成成功，任务分类在报告中分别保留；输入或输出错误为 2。当前支持一个实验或显式续跑链，不计算显著性或赢家；置信区间不改变基线回归门禁。格式、配对条件和不确定性范围见 [配置报告](docs/configuration-reports.md)。
+
+## 基线回归比较
+
+比较两个独立实验的选定配置，重新复验证据，不调用模型：
+
+```powershell
+python -m dsh_eval --compare-baseline 'runs/experiments/<baseline-id>/experiment-result.json' --candidate 'runs/experiments/<candidate-id>/experiment-result.json' --output 'runs/regression.json'
+```
+
+按用例 entryId 和重复编号列出通过变失败、失败变通过、保持通过 / 失败，以及缺失 / 不可比项。默认要求完整任务输入和配置一致；多配置时用 `--baseline-config` / `--candidate-config` 选择，配置字段变化须显式 `--allow-config-change model` 等放行。退出码 **0** 表示完整可比且无退化，**1** 表示完整可比且发现退化，**2** 表示缺失、不可比或输入错误；返回 2 时仍保留已确认的退化。现有 `--report` 退出规则不变。格式、续跑输入和边界见 [基线回归比较](docs/baseline-regression.md)。
 
 ## 当前边界
 
@@ -382,7 +405,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 10 月 24 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 11 月 1 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

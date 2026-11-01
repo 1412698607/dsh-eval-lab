@@ -42,7 +42,8 @@ if (["WAIT_FOR_CANCEL", "WAIT_FOR_TIMEOUT"].includes(caseData.input)) {
     if (!response.isError) answer = response.text.match(/projectName:\s*(\S+)/)?.[1] ?? "no-field";
   }
 }
-record("assistant/message", { message: { content: [{ type: "text", text: answer }] } });
+record("assistant/message", { usage: process.env.DSH_TEST_USAGE ? JSON.parse(process.env.DSH_TEST_USAGE) : undefined,
+  message: { content: [{ type: "text", text: answer }] } });
 record("turn/end", { reason });
 await recorder.close();
 // Distinct owned directories are also used by the real adapter; make isolation observable in tests.

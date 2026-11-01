@@ -1,6 +1,6 @@
 # 用例、证据与评测结果格式
 
-更新：2026 年 10 月 24 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
+更新：2026 年 11 月 1 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束；082 新增 tool_forbidden / tool_call_count，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
 
 ## 运行入口
 
@@ -16,7 +16,7 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 
 ## 用例：caseFormatVersion 1
 
-参考 [读取用例](../fixtures/evaluation/read-project.case.json) 与 [缺失文件用例](../fixtures/evaluation/missing-file.case.json)。下表除 recorder 外均必需；未知字段、未知版本 / 断言、重复断言 ID、重复 JSON 键和非有限数字会被拒绝。
+参考 [读取用例](../fixtures/evaluation/read-project.case.json) 与 [缺失文件用例](../fixtures/evaluation/missing-file.case.json)。下表中 modelProviders / recorder 可选，其余字段必需；未知字段、未知版本 / 断言、重复断言 ID、重复 JSON 键和非有限数字会被拒绝。
 
 | 字段 | 约定 |
 | --- | --- |
@@ -29,15 +29,17 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | budget.timeoutSeconds | 正整数，声明预算；离线评测不会实施它，不支持 token / 步骤上限 |
 | assertions | 非空数组，每条有唯一 id 和已支持的 type；所有断言均为必需 |
 
-三种断言：
+五种断言：
 
 | type | 必需参数与行为 |
 | --- | --- |
 | final_text | equals；最后一个非空 assistant/message 的文本块拼接后 strip，再精确比较 equals |
 | tool_result | tool、arguments、result；工具名精确匹配，arguments 为非空对象，按顶层键比较所声明参数（允许额外实际参数）；嵌套值完整比较且区分布尔和数字。result.isError 必须是布尔值，可择一添加非空 textContains 或字符串 textEquals；可选 after 引用前面的工具结果断言 |
 | turn_end | reason 对象，含非空 kind；与实际结束原因完整比较 |
+| tool_forbidden | tool；可选 arguments 参数筛选，匹配调用必须为零 |
+| tool_call_count | tool，以及至少一个 min / max；可选 arguments 参数筛选，匹配调用次数须处于含端点的范围 |
 
-tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；声明 after 时还必须满足下节的先后关系。没有调用次数或负向行为断言。
+tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；声明 after 时还必须满足下节的先后关系。它本身不限制额外调用；需要禁止或限制次数时显式添加下述行为断言。
 
 匹配调用及实际结果存在但值不符为 failed；无匹配参数、缺结果、结果晚于答案等不能证明所需事实时为 insufficient_evidence。最终文本不符为 failed。任一必需断言证据不足时总体无法评测，即使另一条已经失败，也保留各条结果。
 
@@ -65,6 +67,30 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 `result.textEquals` 接受任意字符串，包括 `""`，与工具返回的全部文本块拼接结果精确比较，不做 strip；空白或后续非空文本块均不等于空字符串。textEquals 与 textContains 不可同时声明，textContains 仍必须非空。未声明新字段的用例保留原有存在性匹配语义，输入不会自动补字段。
 
 这是可选字段扩展，格式编号不变；新字段需要升级后的读取器，旧严格读取器会拒绝。历史实验仍按原冻结用例复验；当前更严格的用例属于新的完整输入，不能通过改写旧快照补造历史验收。修复与回归见 [记录 028](changes/2026-10-24-028-m6-3-assertion-constraints.md)。
+
+## 行为约束断言：两个用例版本通用
+
+[082](changes/2026-11-01-082-behavior-assertions.md) 新增执行后的工具调用约束。例如在已有 assertions 中添加：
+
+```json
+[
+  {"id":"no-restricted-read","type":"tool_forbidden","tool":"eval_read","arguments":{"path":"restricted.md"}},
+  {"id":"read-limit","type":"tool_call_count","tool":"eval_read","min":1,"max":2}
+]
+```
+
+第一条禁止 eval_read 的 path 参数为 restricted.md；第二条要求任务中 eval_read 总调用数为 1～2。工具名必须使用实际录制的名称；本例对应状态化桥接，其他工具按自己的参数名声明。
+
+- 两种断言必需 id / type / tool；tool 是非空字符串，精确匹配，不支持通配符、工具组或语义分类。arguments 可省略或为 `{}`，表示不筛选该工具的参数；声明时须为对象，按顶层键做类型敏感的完整值比较，允许额外实际参数。嵌套对象完整比较，不把 true 当成 1，不做路径大小写、斜杠或相对路径归一化。
+- tool_forbidden 不接受 min / max / result / after；匹配调用数为 0 时通过，否则失败。
+- tool_call_count 至少声明一个 min / max。两者都是 0～9007199254740991 的整数，拒绝布尔、小数、字符串、null 与未知字段；min 不得大于 max。省略 min 表示下界 0，省略 max 表示无上界；min=max 可指定恰好次数，max=0 可表达零次约束。不支持 result / after，不可作为工具结果 after 的前置依赖。
+- 计数对象是通过 task_view 校验的完整单任务区间中的 tool/call：用户输入之后、唯一 turn/end 之前，包括最终答案之后的调用。每个独立 callId 计一次，相同参数的重试分别计数；不以成功返回数量计数，错误返回、缺少返回或返回晚于答案均不免计。实际重复 callId、非法参数 JSON、孤立 / 倒序结果或任务序号缺口仍按原规则无法评测。
+- 只有执行 completed、录制 complete、身份 / 输入 / 任务 / 路由复核通过后才计算。开放、缺失、损坏或中断证据不能被当作“零次”通过；actual 保持未生成。没有匹配调用的完整任务则保存 actual=0。
+- 结果 actual 为匹配调用数；evidence 为全部匹配调用的数组，每项有 callId / callSeq，有关联返回时另有 resultSeq。零匹配返回空数组。越界或禁用调用的断言为 failed；不足 min 也是明确失败。最终答案通过不会覆盖行为失败；若另一条必需断言证据不足，总体仍沿用 unevaluable 优先规则，保留各条结论。
+
+这些是离线回归断言，只描述录制到的调用；不拦截实际工具，不是任务内步骤硬预算，也不证明底层副作用已经发生。当前只支持按工具名和参数精确筛选调用行为。
+
+版本 1 / 2 用例及结果编号保持不变，旧用例无需迁移，旧读取器遇到未知断言类型会拒绝。历史实验继续按冻结用例复验，不补写新约束；新增断言属于新的完整输入并进入既有计划指纹。当前固定十用例及历史真实样本未改变。浏览卡片显示期望筛选 / 范围、保存次数和调用定位，缺失 actual 不补零。
 
 ## 可选外部模型路由：两个用例版本通用
 

@@ -12,6 +12,7 @@ import json
 from .evaluate import ROOT, evaluate
 from .formats import load_json, parse_json, require, validate_case
 from .environment import StatefulEnvironment
+from . import output_paths
 
 ADAPTER = ROOT / "scripts" / "case-host.js"
 PREPARE_TIMEOUT = 150
@@ -248,9 +249,11 @@ def validate_live_case(case):
 
 def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None, case_run_id=None):
     case = validate_live_case(load_json(case_path))
-    case_run_id = str(UUID(case_run_id)) if case_run_id is not None else str(uuid4())
+    case_run_id = str(UUID(case_run_id)) if case_run_id is not None else None
     if batch_id is not None:
         require(isinstance(batch_id, str) and bool(batch_id.strip()), "batchId must be nonempty")
+    output_paths.check_output_root(runs_root or ROOT / "runs" / "evaluation", kind="case")
+    case_run_id = case_run_id or str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "evaluation").resolve() / case_run_id
     directory.mkdir(parents=True, exist_ok=False)
     case_snapshot = directory / "case.json"
