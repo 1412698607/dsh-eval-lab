@@ -136,3 +136,59 @@ test('configured per-tool policy gives the bridge a separate watchdog', async ()
     assert.deepEqual(failures, []);
   } finally { bridge.close(); }
 });
+
+test('one cancelled or timed-out waiter cannot settle other outstanding calls', async () => {
+  const channel = new EventEmitter(), messages = [], failures = [];
+  channel.connected = true;
+  channel.send = (message, done) => { messages.push(message); done?.(); };
+  const bridge = createToolBridge(channel, 'case', (error) => failures.push(error), 1000);
+  const controller = new AbortController();
+  const exec = (signal) => ({ agent: { session: { id: 'session' } }, signal });
+  const healthy = new AbortController();
+  try {
+    const cancelled = bridge.request('delete', { path: 'keep' }, exec(controller.signal));
+    const timed = bridge.request('write', { path: 'old', content: 'new' }, exec(healthy.signal));
+    const edit = bridge.request('edit', { path: 'file', oldText: 'a', newText: 'b' }, exec(healthy.signal));
+    const [first, second, third] = messages;
+    const rejectedCancel = assert.rejects(cancelled, /cancelled/);
+    const rejectedTimeout = assert.rejects(timed, /TOOL_TIMEOUT/);
+    controller.abort();
+    assert.equal(messages[3].type, 'tool-cancel');
+    assert.equal(messages[3].requestId, first.requestId);
+    const respond = (request, patch = {}) => channel.emit('message', { ...request, type: 'tool-response',
+      isError: false, text: 'ok', ...patch });
+    respond(second, { isError: true, text: 'TOOL_TIMEOUT: old' });
+    await Promise.all([rejectedCancel, rejectedTimeout]);
+    let editSettled = false;
+    edit.then(() => { editSettled = true; });
+    respond(first, { text: 'late deletion' });
+    respond(second, { sessionId: 'wrong-late-session', text: 'late write' });
+    await Promise.resolve();
+    assert.equal(editSettled, false);
+    respond(third, { text: 'EDITED: file' });
+    respond(third, { isError: true, text: 'duplicate failure' });
+    assert.equal(await edit, 'EDITED: file');
+    assert.deepEqual(failures, []);
+  } finally { bridge.close(); }
+});
+
+test('late response from a timed-out attempt cannot complete its retry', async () => {
+  const h = harness();
+  try {
+    const first = h.bridge.request('write', { path: 'file', content: 'new' }, h.exec);
+    const old = { ...h.channel.request };
+    h.respond({ isError: true, text: 'TOOL_TIMEOUT: file' });
+    await assert.rejects(first, /TOOL_TIMEOUT/);
+    const retry = h.bridge.request('write', { path: 'file', content: 'new' }, h.exec);
+    const current = { ...h.channel.request };
+    assert.notEqual(old.requestId, current.requestId);
+    let settled = false;
+    retry.then(() => { settled = true; });
+    h.channel.emit('message', { ...old, type: 'tool-response', isError: false, text: 'stale success' });
+    await Promise.resolve();
+    assert.equal(settled, false);
+    h.respond({ text: 'WROTE: file' });
+    assert.equal(await retry, 'WROTE: file');
+    assert.deepEqual(h.failures, []);
+  } finally { h.bridge.close(); }
+});

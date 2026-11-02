@@ -102,7 +102,7 @@ python -m dsh_eval --case fixtures/evaluation/edit-delete.case.json --run
 
 详细验证见 [096](changes/2026-11-02-096-stateful-delete-edit.md)。三个用例均独立于旧 core 固定集；095 的单次真实写入样本不作为删除 / 编辑的模型验证。当前不提供重命名、递归删除、批量替换、事务回滚或外部文件操作。
 
-[097 真实验收](changes/2026-11-02-097-mutation-live-acceptance.md) 已完成首轮三个 DeepSeek Flash 任务：正常操作通过，两个错误 / 超时用例因精确期望漏写 Error 前缀而失败，操作次数与最终状态均正确。修正当前用例及合成录制后，两个新任务补验通过；原失败和原冻结输入保留。当前三个场景分别有通过证据，不称为同一修正后矩阵的 3/3，也不推断总体模型表现。
+[097 真实验收](changes/2026-11-02-097-mutation-live-acceptance.md) 已完成首轮三个 DeepSeek Flash 任务：正常操作通过，两个错误 / 超时用例因精确期望漏写 Error 前缀而失败，操作次数与最终状态均正确。修正当前用例及合成录制后，两个新任务补验通过；原失败和原冻结输入保留。097 阶段三个场景分别有通过证据，不称为同一修正后矩阵的 3/3，也不推断总体模型表现。
 
 可复用 [stateful-mutations.experiment.json](../fixtures/evaluation/stateful-mutations.experiment.json) 预览或运行三任务完整清单。预览不调用模型；执行会创建新实验身份，按全部冻结输入和指纹运行，不覆盖上述历史样本：
 
@@ -110,6 +110,16 @@ python -m dsh_eval --case fixtures/evaluation/edit-delete.case.json --run
 python -m dsh_eval --experiment fixtures/evaluation/stateful-mutations.experiment.json --plan --max-samples 3
 python -m dsh_eval --experiment fixtures/evaluation/stateful-mutations.experiment.json --run --max-samples 3 --expected-plan-sha256 '<预览返回的摘要>' --runs-root runs/m
 ```
+
+## 工具控制组合与统一实验（099）
+
+新增 `python -m scripts.smoke_bridge --control`，与 --writes / --mutations 互斥。该无模型检查从现有编辑用例构造内存检查配置，不改写公开文件：read / edit / delete 期限分别为 100 / 2000 / 3000 ms，首个操作延迟分别为 600 / 250 / 1000 ms，三个请求同时待处理，单独取消 delete。期望 read 返回 TOOL_TIMEOUT、edit 成功、delete 取消；随后实际读回编辑结果、保留的删除目标与 guard 文件，共六次请求，经过真实 Cordis 注册及 fork IPC。
+
+`python -m unittest discover -s test -p test_tool_control.py -v` 另覆盖多请求缓存 / 取消隔离和真实子进程下的任务总期限：三个工具期限长于任务剩余时间时，任务停止并清空待执行操作，随后推进也不提交。Node 回归核对迟到 / 重复响应不会完成其他请求或新 requestId 的重试。
+
+单独取消不阻止其他工具完成，但原快照完整性规则保持：只要取消了未提交操作，最终快照仍保守标记不完整。已完成操作遇到迟到取消不会回滚，也不会取消其他等待者。这里验证的是受控虚拟操作和等待者隔离，不提供外部系统事务、整体任务必然通过或精确总退出时间保证。
+
+[099 验收](changes/2026-11-03-099-tool-control-unified-acceptance.md) 另外用当前 stateful-mutations 清单执行三个新真实模型任务，各一次、同一冻结计划，三项全部通过且独立报告一致。这次补齐了统一实验覆盖，097 的首轮失败和两个补验继续作为历史保留；普通三任务的模型验收不当作模型驱动单独取消的证明。
 
 ## 审查后补充：管道回写与发现断言
 

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { locateHost, loadHost, HOST_FIBER_ACTIVE } from "./lib/host.js";
 import { createToolBridge, registerStatefulTools } from "./lib/tool-bridge.js";
 
-const [mode, caseRunId, scenario = "reads"] = process.argv.slice(2);
+const [mode, caseRunId, scenario = "reads", budgetJson] = process.argv.slice(2);
 if (mode === "child") {
   const modulesDir = await locateHost();
   const { Context } = await loadHost(modulesDir);
@@ -20,9 +20,10 @@ if (mode === "child") {
   const prompt = await ctx.plugin(SystemPrompt, {});
   const tools = await ctx.plugin(Tools);
   assert.equal(tools.state, HOST_FIBER_ACTIVE);
-  const fixture = { writes: "write-retry", reads: "retry-read", mutations: "edit-delete-timeout" }[scenario];
+  const fixture = { writes: "write-retry", reads: "retry-read", mutations: "edit-delete-timeout", control: "edit-delete" }[scenario];
   if (!fixture) throw new Error("Unknown bridge smoke scenario");
   const task = JSON.parse(await readFile(new URL(`../fixtures/evaluation/${fixture}.case.json`, import.meta.url), "utf8"));
+  if (scenario === "control") task.budget = JSON.parse(budgetJson);
   const bridge = createToolBridge(process, caseRunId, (message) => { throw new Error(message); }, undefined, task.budget);
   try {
     registerStatefulTools(ctx, defineTool, bridge, task.environment.stateful.tools);
@@ -64,6 +65,22 @@ if (mode === "child") {
       await assert.rejects(ctx.tools.get("eval_edit").execute({ path: "settings.txt", oldText: "=", newText: ":" }, exec), /AMBIGUOUS_MATCH/);
       await assert.rejects(remove(), /NOT_FOUND/);
       assert.equal(await read("settings.txt"), "mode=ready\nowner=评测\n");
+    } else if (scenario === "control") {
+      const controller = new AbortController();
+      // All three requests remain outstanding together; only deletion receives abort.
+      const reading = read("guard.txt");
+      const editing = ctx.tools.get("eval_edit").execute({ path: "settings.txt", oldText: "mode=draft", newText: "mode=ready" }, exec);
+      const deleting = ctx.tools.get("eval_delete").execute({ path: "obsolete.txt" }, { ...exec, signal: controller.signal });
+      setTimeout(() => controller.abort(), 25);
+      const [readResult, editResult, deleteResult] = await Promise.allSettled([reading, editing, deleting]);
+      assert.equal(readResult.status, "rejected");
+      assert.match(readResult.reason.message, /TOOL_TIMEOUT/);
+      assert.deepEqual(editResult, { status: "fulfilled", value: "EDITED: settings.txt" });
+      assert.equal(deleteResult.status, "rejected");
+      assert.match(deleteResult.reason.message, /cancelled/);
+      assert.equal(await read("settings.txt"), "mode=ready\nowner=评测\n");
+      assert.equal(await read("obsolete.txt"), "remove\n");
+      assert.equal(await read("guard.txt"), "keep\n");
     } else {
       await assert.rejects(read("missing.md"), /NOT_FOUND/);
       assert.equal(await ctx.tools.get("eval_list").execute({ path: "." }, exec), "project.md");
@@ -77,7 +94,7 @@ if (mode === "child") {
     process.disconnect();
   }
 } else {
-  const child = fork(fileURLToPath(import.meta.url), ["child", caseRunId, scenario], {
+  const child = fork(fileURLToPath(import.meta.url), ["child", caseRunId, scenario, ...(budgetJson ? [budgetJson] : [])], {
     stdio: ["ignore", "inherit", "inherit", "ipc"], windowsHide: true,
   });
   const input = createInterface({ input: process.stdin });

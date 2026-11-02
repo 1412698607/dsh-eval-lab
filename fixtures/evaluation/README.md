@@ -1,5 +1,7 @@
 # 公开离线评测样例
 
+2026 年 11 月 3 日：[099](../../docs/changes/2026-11-03-099-tool-control-unified-acceptance.md) 使用现有修正后的 stateful-mutations 清单完成一个新冻结实验，三项均通过；用例与预算未再修改，097 历史失败保留。这仅是当前配置下每用例一次的验收，不代表总体模型表现。
+
 - [stateful-mutations.experiment.json](stateful-mutations.experiment.json)：上述三个状态变更用例、单配置、各一次。可先 `--plan --max-samples 3`，实际 `--run` 会调用模型；完整运行示例见 [状态化工具](../../docs/stateful-tools.md)。
 
 - [edit-delete.case.json](edit-delete.case.json)、[edit-delete-errors.case.json](edit-delete-errors.case.json)、[edit-delete-timeout.case.json](edit-delete-timeout.case.json)：正常编辑 / 删除、预期工具错误且状态不变、两个工具分别超时重试。`--run` 会调用模型，不改动旧 core 固定集。[096](../../docs/changes/2026-11-02-096-stateful-delete-edit.md) 为首版无模型验证；[097](../../docs/changes/2026-11-02-097-mutation-live-acceptance.md) 记录首轮 1 通过 / 2 失败及错误前缀修正后的两项新任务通过，原失败保留。
