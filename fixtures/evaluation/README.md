@@ -1,5 +1,9 @@
 # 公开离线评测样例
 
+- [stateful-mutations.experiment.json](stateful-mutations.experiment.json)：上述三个状态变更用例、单配置、各一次。可先 `--plan --max-samples 3`，实际 `--run` 会调用模型；完整运行示例见 [状态化工具](../../docs/stateful-tools.md)。
+
+- [edit-delete.case.json](edit-delete.case.json)、[edit-delete-errors.case.json](edit-delete-errors.case.json)、[edit-delete-timeout.case.json](edit-delete-timeout.case.json)：正常编辑 / 删除、预期工具错误且状态不变、两个工具分别超时重试。`--run` 会调用模型，不改动旧 core 固定集。[096](../../docs/changes/2026-11-02-096-stateful-delete-edit.md) 为首版无模型验证；[097](../../docs/changes/2026-11-02-097-mutation-live-acceptance.md) 记录首轮 1 通过 / 2 失败及错误前缀修正后的两项新任务通过，原失败保留。
+
 - [write-retry.case.json](write-retry.case.json)：版本 2 受控写入 / 工具级超时用例；首次写入超时、重试、读回及最终文件集合断言。`--run` 会调用模型；[095](../../docs/changes/2026-11-02-095-live-write-timeout-acceptance.md) 已有一个 DeepSeek Flash 真实任务、七断言及独立复验通过；未加入旧 core 固定集。配置与命令见 [状态化工具](../../docs/stateful-tools.md)。
 
 read-project / missing-file 的 case 与 events 文件是人工合成数据，没有调用模型或执行真实文件工具。新增的 live-read.case.json 是可交给真实运行入口的初始用例，文件本身不是已执行证据。

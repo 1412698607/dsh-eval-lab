@@ -53,7 +53,11 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 
 ## 状态化写入与最终文件断言（094）
 
-2026 年 11 月 2 日新增状态化扩展：stateful.tools 显式选择 eval_read / eval_list / eval_write，省略时仍为 read / list；toolDelaysMs 按工具的新请求顺序声明延迟序列。environment_files 断言形如 `{"id":"state","type":"environment_files","equals":{"result.txt":"done\n"}}`，精确比较最终全部虚拟文件，只适用于版本 2 stateful。它不接受 after，不可作为工具结果顺序约束的前置断言。
+2026 年 11 月 2 日新增状态化扩展：stateful.tools 显式选择 eval_read / eval_list / eval_write，096 另支持 eval_delete / eval_edit；省略时仍为 read / list。toolDelaysMs 按启用工具的新请求顺序声明延迟序列，toolTimeoutsMs 可为这五种工具分别配置期限。environment_files 断言形如 `{"id":"state","type":"environment_files","equals":{"result.txt":"done\n"}}`，精确比较最终全部虚拟文件，只适用于版本 2 stateful。它不接受 after，不可作为工具结果顺序约束的前置断言。
+
+eval_delete 的 arguments 为 `{path}`；eval_edit 为 `{path,oldText,newText}`，编辑字符串按原样匹配，要求唯一且非空 oldText（重叠也计入歧义），允许 newText 为空。普通工具错误通过 tool_result 的 isError / textEquals 断言；删除后的缺失由 environment_files 全映射确认，不从成功文本推断。完整语义和三个公开示例见 [状态化工具](stateful-tools.md) 与 [096](changes/2026-11-02-096-stateful-delete-edit.md)。
+
+097 修正错误呈现边界：当前宿主把工具体 Error.message 包装为 `Error: <message>` 保存到 tool/result 的文本内容中，textEquals 必须匹配完整呈现文本，不能直接复制 Python 桥接 response.text。用例修正和首轮失败分别保留，见 [真实验收记录](changes/2026-11-02-097-mutation-live-acceptance.md)；评测器不做异常前缀归一化。
 
 新执行的 runtime.json 可保存独立版本 1 的 environmentSnapshot；evidence 版本 2 可选 environmentSnapshotSha256，budgetEnforcement 可选布尔 toolTimeouts。声明快照须有 runtimeReport；离线核对快照摘要、身份、初始环境、工具预算和 complete，旧证据不补值。工具预算只声明未验证执行时不能据此通过。文件格式版本保持兼容，新增字段会被不支持它们的旧严格读取器拒绝。完整协议和取消边界见 [状态化工具](stateful-tools.md#写入工具超时与最终状态094)。
 

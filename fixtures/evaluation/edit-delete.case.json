@@ -1,0 +1,105 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "edit-delete",
+  "input": "Use only eval_edit, eval_delete and eval_read. In settings.txt replace the exact text mode=draft with mode=ready, preserving all other text. Then delete obsolete.txt. Read settings.txt to verify it. Preserve guard.txt. Return only done.",
+  "environment": {
+    "files": {
+      "settings.txt": "mode=draft\nowner=评测\n",
+      "obsolete.txt": "remove\n",
+      "guard.txt": "keep\n"
+    },
+    "stateful": {
+      "transientReadFailures": {},
+      "tools": [
+        "eval_read",
+        "eval_edit",
+        "eval_delete"
+      ]
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "id": "edit",
+      "type": "tool_result",
+      "tool": "eval_edit",
+      "arguments": {
+        "path": "settings.txt",
+        "oldText": "mode=draft",
+        "newText": "mode=ready"
+      },
+      "result": {
+        "isError": false,
+        "textEquals": "EDITED: settings.txt"
+      }
+    },
+    {
+      "id": "delete",
+      "type": "tool_result",
+      "tool": "eval_delete",
+      "arguments": {
+        "path": "obsolete.txt"
+      },
+      "result": {
+        "isError": false,
+        "textEquals": "DELETED: obsolete.txt"
+      },
+      "after": "edit"
+    },
+    {
+      "id": "readback",
+      "type": "tool_result",
+      "tool": "eval_read",
+      "arguments": {
+        "path": "settings.txt"
+      },
+      "result": {
+        "isError": false,
+        "textEquals": "mode=ready\nowner=评测\n"
+      },
+      "after": "delete"
+    },
+    {
+      "id": "eval_edit-count",
+      "type": "tool_call_count",
+      "tool": "eval_edit",
+      "min": 1,
+      "max": 1
+    },
+    {
+      "id": "eval_delete-count",
+      "type": "tool_call_count",
+      "tool": "eval_delete",
+      "min": 1,
+      "max": 1
+    },
+    {
+      "id": "state",
+      "type": "environment_files",
+      "equals": {
+        "settings.txt": "mode=ready\nowner=评测\n",
+        "guard.txt": "keep\n"
+      }
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "done"
+    },
+    {
+      "id": "end",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

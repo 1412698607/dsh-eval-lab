@@ -147,7 +147,7 @@ def validate_case(case):
         fields(stateful, ("transientReadFailures",), ("tools", "toolDelaysMs"))
         tools = stateful.get("tools", ["eval_read", "eval_list"])
         require(isinstance(tools, list) and tools and all(isinstance(tool, str) and tool in
-                ("eval_read", "eval_list", "eval_write") for tool in tools) and len(set(tools)) == len(tools),
+                ("eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit") for tool in tools) and len(set(tools)) == len(tools),
                 "stateful.tools must name distinct supported tools")
         delays = stateful.get("toolDelaysMs", {})
         require(isinstance(delays, dict), "toolDelaysMs must be an object")

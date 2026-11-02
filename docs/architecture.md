@@ -1,5 +1,7 @@
 # dsh-eval-lab 架构与技术取舍
 
+2026 年 11 月 2 日：[096](changes/2026-11-02-096-stateful-delete-edit.md) 在同一 Python 受控环境增加 delete / edit，JavaScript 显式注册对应工具。编辑在提交时检查唯一原文匹配（含重叠歧义），删除只操作单个已有文件；失败不修改状态。沿用 094 的 submit / poll、取消、工具期限、最终快照和 environment_files，未改变录制或结果版本，也未新增宿主文件权限。
+
 2026 年 11 月 2 日：[094](changes/2026-11-02-094-stateful-writes-tool-timeouts.md) 扩展受控虚拟环境。Python 监督循环提交 / 推进延迟操作并实施工具期限，eval_write 在到期检查后一次性更新内存文件；不在线程中 sleep，任务停止清空待提交操作。JavaScript 按用例注册工具、转发取消并保持独立桥接看门狗。清理后的环境快照存入 runtime.json，由 evidence 的对象摘要和运行 / 会话身份绑定；fresh evaluate 先检查轨迹，再核对状态证据并执行 environment_files。快照参与既有续跑归档冻结，浏览器显示保存的期望 / 实际文件映射。仅受控工具，无外部异步操作取消或完整会话恢复保证。
 
 当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次、M4.1 重复试验与指标汇总、M4.2 独立配置报告及 M5 只读本机浏览服务。
@@ -287,7 +289,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 ## M3.3 实时状态化工具边界
 
-`environment.py` 保存虚拟文本与每路径暂时失败计数；`runner.supervise` 在进程运行期间处理请求。`case-control.js` 用真实 Tools 服务注册默认 `eval_read` / `eval_list` 及显式启用的 `eval_write`。共享 `tool-bridge.js` 实现请求等待、取消和卸载清理；094 的工具期限由 Python 实施，生产桥接看门狗为该工具期限加 1000 ms。`case-host.js` 只转发桥接数据，基础设施错误触发专用宿主关闭。协议身份、重复请求和提交后取消语义见 [状态化工具与桥接](stateful-tools.md)。环境测试、真实注册及跨进程检查、真实模型轨迹三层分别验收，不修改 src 或录制协议。
+`environment.py` 保存虚拟文本与每路径暂时失败计数；`runner.supervise` 在进程运行期间处理请求。`case-control.js` 用真实 Tools 服务注册默认 `eval_read` / `eval_list` 及显式启用的 `eval_write` / `eval_delete` / `eval_edit`。共享 `tool-bridge.js` 实现请求等待、取消和卸载清理；094 的工具期限由 Python 实施，生产桥接看门狗为该工具期限加 1000 ms。`case-host.js` 只转发桥接数据，基础设施错误触发专用宿主关闭。协议身份、重复请求和提交后取消语义见 [状态化工具与桥接](stateful-tools.md)。环境测试、真实注册及跨进程检查、真实模型轨迹三层分别验收，不修改 src 或录制协议。
 
 ## M3.3 审查修复：管道写入与超时监督
 

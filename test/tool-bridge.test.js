@@ -87,6 +87,39 @@ test('tool timeout responses are recoverable and independent of bridge failure',
   } finally { h.bridge.close(); }
 });
 
+test('delete and exact edit are opt-in with distinct argument schemas', async () => {
+  const registered = new Map(), calls = [];
+  const ctx = { tools: { register: (tool) => registered.set(tool.name, tool) } };
+  const bridge = { request: (...args) => { calls.push(args); return Promise.resolve('OK'); } };
+  registerStatefulTools(ctx, (tool) => tool, bridge);
+  assert.deepEqual([...registered.keys()], ['eval_read', 'eval_list']);
+  registerStatefulTools(ctx, (tool) => tool, bridge, ['eval_delete', 'eval_edit']);
+  assert.deepEqual(Object.keys(registered.get('eval_delete').parameters), ['path']);
+  const edit = registered.get('eval_edit');
+  assert.deepEqual(Object.keys(edit.parameters), ['path', 'oldText', 'newText']);
+  assert.equal(edit.parameters.oldText.required, true);
+  assert.equal(edit.parameters.newText.required, true);
+  const args = { path: 'file', oldText: '旧值\r\n', newText: '' }, exec = {};
+  await edit.execute(args, exec);
+  await registered.get('eval_delete').execute({ path: 'file' }, exec);
+  assert.deepEqual(calls, [['edit', args, exec], ['delete', { path: 'file' }, exec]]);
+});
+
+test('edit ambiguity and missing delete target leave the bridge usable', async () => {
+  const h = harness();
+  try {
+    for (const [operation, text] of [['edit', 'AMBIGUOUS_MATCH: file'], ['delete', 'NOT_FOUND: file']]) {
+      const result = h.bridge.request(operation, { path: 'file' }, h.exec);
+      h.respond({ isError: true, text });
+      await assert.rejects(result, (error) => error.message === text);
+    }
+    const result = h.bridge.request('read', { path: 'file' }, h.exec);
+    h.respond({ text: 'unchanged' });
+    assert.equal(await result, 'unchanged');
+    assert.deepEqual(h.failures, []);
+  } finally { h.bridge.close(); }
+});
+
 test('configured per-tool policy gives the bridge a separate watchdog', async () => {
   const channel = new EventEmitter();
   channel.connected = true;

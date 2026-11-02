@@ -41,11 +41,16 @@ class StatefulEnvironment:
         if request_id in self.responses:
             previous, response = self.responses[request_id]
             require(previous == request, "Conflicting duplicate bridge request")
-        require(request["operation"] in ("read", "list", "write") and
+        require(request["operation"] in ("read", "list", "write", "delete", "edit") and
                 "eval_" + request["operation"] in self.tools, "Unknown or disabled bridge operation")
-        fields(request["arguments"], ("path", "content") if request["operation"] == "write" else ("path",))
+        arguments = (("path", "content") if request["operation"] == "write" else
+                     ("path", "oldText", "newText") if request["operation"] == "edit" else ("path",))
+        fields(request["arguments"], arguments)
         if request["operation"] == "write":
             require(isinstance(request["arguments"]["content"], str), "Write content must be text")
+        if request["operation"] == "edit":
+            require(all(isinstance(request["arguments"][key], str) for key in ("oldText", "newText")),
+                    "Edit oldText and newText must be text")
         path = request["arguments"]["path"]
         require(isinstance(path, str), "Tool path must be text")
         if request_id in self.pending:
@@ -136,6 +141,22 @@ class StatefulEnvironment:
                 text = "WROTE: " + path
         elif path not in self.files:
             error = "NOT_FOUND"
+        elif request["operation"] == "delete":
+            del self.files[path]
+            text = "DELETED: " + path
+        elif request["operation"] == "edit":
+            old, new = request["arguments"]["oldText"], request["arguments"]["newText"]
+            content = self.files[path]
+            start = content.find(old)
+            if not old:
+                error = "EMPTY_EDIT_TARGET"
+            elif start < 0:
+                error = "TEXT_NOT_FOUND"
+            elif content.find(old, start + 1) >= 0:
+                error = "AMBIGUOUS_MATCH"  # Overlapping occurrences also count as ambiguous.
+            else:
+                self.files[path] = content[:start] + new + content[start + len(old):]
+                text = "EDITED: " + path
         elif self.failures.get(path, 0) > 0:
             self.failures[path] -= 1
             error = "TEMPORARY_READ_FAILURE"

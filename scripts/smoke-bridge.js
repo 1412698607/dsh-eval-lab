@@ -20,7 +20,9 @@ if (mode === "child") {
   const prompt = await ctx.plugin(SystemPrompt, {});
   const tools = await ctx.plugin(Tools);
   assert.equal(tools.state, HOST_FIBER_ACTIVE);
-  const task = JSON.parse(await readFile(new URL(`../fixtures/evaluation/${scenario === "writes" ? "write-retry" : "retry-read"}.case.json`, import.meta.url), "utf8"));
+  const fixture = { writes: "write-retry", reads: "retry-read", mutations: "edit-delete-timeout" }[scenario];
+  if (!fixture) throw new Error("Unknown bridge smoke scenario");
+  const task = JSON.parse(await readFile(new URL(`../fixtures/evaluation/${fixture}.case.json`, import.meta.url), "utf8"));
   const bridge = createToolBridge(process, caseRunId, (message) => { throw new Error(message); }, undefined, task.budget);
   try {
     registerStatefulTools(ctx, defineTool, bridge, task.environment.stateful.tools);
@@ -38,6 +40,30 @@ if (mode === "child") {
       setTimeout(() => controller.abort(), 25);
       await assert.rejects(cancelled, /cancelled/);
       assert.equal(await read("result.txt"), "done\n");
+    } else if (scenario === "mutations") {
+      const edit = () => ctx.tools.get("eval_edit").execute({ path: "settings.txt", oldText: "mode=draft", newText: "mode=ready" }, exec);
+      const remove = () => ctx.tools.get("eval_delete").execute({ path: "obsolete.txt" }, exec);
+      await assert.rejects(edit(), /TOOL_TIMEOUT/);
+      assert.equal(await read("settings.txt"), "mode=draft\nowner=评测\n");
+      assert.equal(await edit(), "EDITED: settings.txt");
+      assert.equal(await read("settings.txt"), "mode=ready\nowner=评测\n");
+      await assert.rejects(remove(), /TOOL_TIMEOUT/);
+      assert.equal(await read("obsolete.txt"), "remove\n");
+      assert.equal(await remove(), "DELETED: obsolete.txt");
+      await assert.rejects(read("obsolete.txt"), /NOT_FOUND/);
+      for (const [name, args, path, expected] of [
+        ["eval_edit", { path: "settings.txt", oldText: "ready", newText: "late" }, "settings.txt", "mode=ready\nowner=评测\n"],
+        ["eval_delete", { path: "guard.txt" }, "guard.txt", "keep\n"],
+      ]) {
+        const controller = new AbortController();
+        const pending = ctx.tools.get(name).execute(args, { ...exec, signal: controller.signal });
+        setTimeout(() => controller.abort(), 25);
+        await assert.rejects(pending, /cancelled/);
+        assert.equal(await read(path), expected);
+      }
+      await assert.rejects(ctx.tools.get("eval_edit").execute({ path: "settings.txt", oldText: "=", newText: ":" }, exec), /AMBIGUOUS_MATCH/);
+      await assert.rejects(remove(), /NOT_FOUND/);
+      assert.equal(await read("settings.txt"), "mode=ready\nowner=评测\n");
     } else {
       await assert.rejects(read("missing.md"), /NOT_FOUND/);
       assert.equal(await ctx.tools.get("eval_list").execute({ path: "." }, exec), "project.md");

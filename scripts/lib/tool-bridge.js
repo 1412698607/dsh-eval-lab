@@ -1,16 +1,25 @@
 import { randomUUID } from "node:crypto";
 
 export function registerStatefulTools(ctx, defineTool, bridge, tools = ["eval_read", "eval_list"]) {
+  const descriptions = {
+    read: "Read a virtual fixture file. Retry temporary read failures.",
+    list: "List virtual fixture file paths under a directory; use . for the root.",
+    write: "Create or replace a virtual fixture file with exact text content. No host filesystem access.",
+    delete: "Delete one existing virtual fixture file. Missing files return NOT_FOUND; directories are not deleted.",
+    edit: "Replace exactly one occurrence of oldText in an existing virtual file. Empty, missing or ambiguous oldText fails without mutation. No whitespace normalization or regex matching.",
+  };
   for (const name of tools) {
-    if (!["eval_read", "eval_list", "eval_write"].includes(name)) throw new Error("Unsupported stateful tool");
+    if (!["eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit"].includes(name)) throw new Error("Unsupported stateful tool");
     const operation = name.slice(5);
     ctx.tools.register(defineTool({
       name: `eval_${operation}`,
-      description: operation === "read" ? "Read a virtual fixture file. Retry temporary read failures."
-        : operation === "write" ? "Create or replace a virtual fixture file with exact text content. No host filesystem access."
-          : "List virtual fixture file paths under a directory; use . for the root.",
+      description: descriptions[operation],
       parameters: { path: { type: "string", required: true, description: "Relative POSIX path in the virtual fixture." },
-        ...(operation === "write" ? { content: { type: "string", required: true, description: "Complete replacement text." } } : {}) },
+        ...(operation === "write" ? { content: { type: "string", required: true, description: "Complete replacement text." } } : {}),
+        ...(operation === "edit" ? {
+          oldText: { type: "string", required: true, description: "Nonempty exact text that occurs only once, including overlapping matches." },
+          newText: { type: "string", required: true, description: "Replacement text; empty removes the matched text." },
+        } : {}) },
       output: { schema: { type: "string" }, render: (_args, text) => [{ type: "text", text }] },
       execute: (args, exec) => bridge.request(operation, args, exec),
     }));

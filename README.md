@@ -4,6 +4,8 @@
 
 ## 当前功能
 
+- [受控删除与精确文本编辑](docs/stateful-tools.md)：显式启用 eval_delete / eval_edit，支持单文件删除和唯一原文替换；缺失、歧义、超时及取消均有状态保持检查。096 提供三份独立用例；[097](docs/changes/2026-11-02-097-mutation-live-acceptance.md) 记录真实验收发现的错误前缀期望缺陷及修正，首轮失败保留，当前三个场景各有通过证据。
+
 - [受控写入与工具级超时](docs/stateful-tools.md#写入工具超时与最终状态094)：显式启用 eval_write 创建 / 覆盖虚拟文件，配置默认及各工具的毫秒期限，用 environment_files 精确检查最终全部文件。已验证合成录制 / 续跑 / 报告和真实工具注册；[095](docs/changes/2026-11-02-095-live-write-timeout-acceptance.md) 另完成一个 DeepSeek Flash 写入 / 超时重试真实任务，七断言及独立复验通过。
 
 - 作为 Cordis 插件订阅 `session/event`，保留原始事件，包括消息、工具调用、工具结果及轮次边界。
