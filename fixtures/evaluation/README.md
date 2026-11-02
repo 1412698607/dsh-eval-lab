@@ -1,5 +1,7 @@
 # 公开离线评测样例
 
+- [write-retry.case.json](write-retry.case.json)：版本 2 受控写入 / 工具级超时用例；首次写入超时、重试、读回及最终文件集合断言。`--run` 会调用模型；[095](../../docs/changes/2026-11-02-095-live-write-timeout-acceptance.md) 已有一个 DeepSeek Flash 真实任务、七断言及独立复验通过；未加入旧 core 固定集。配置与命令见 [状态化工具](../../docs/stateful-tools.md)。
+
 read-project / missing-file 的 case 与 events 文件是人工合成数据，没有调用模型或执行真实文件工具。新增的 live-read.case.json 是可交给真实运行入口的初始用例，文件本身不是已执行证据。
 
 - `read-project.case.json` / `read-project.events.json`：输入要求读取 README 中的 projectName，包含关联的成功工具结果和最终文本。

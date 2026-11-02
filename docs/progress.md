@@ -1,5 +1,9 @@
 # dsh-eval-lab 开发进度
 
+[095 真实写入验收](changes/2026-11-02-095-live-write-timeout-acceptance.md) 已使用公开 write-retry 用例、DeepSeek Flash 完成一个真实任务：首次工具超时、重试写入成功、读回和完整最终文件映射共七断言通过，completed / complete / passed。独立 CLI 复验无结论变化，16 份选定源文件摘要不变，专用 CLI 退出；4 次已结算模型调用、3 次工具调用、30230 已报告 totalTokens，费用缺失。最终短期限唤醒版本完整 463 项 Python / 294.448 秒通过；仅单任务真实验收范围，无提交 / 推送或新 CI。
+
+[094 写入与工具期限](changes/2026-11-02-094-stateful-writes-tool-timeouts.md) 已实现显式虚拟文件创建 / 覆盖、完整最终文件集合断言、默认及按工具覆盖的期限和延迟注入。超时不提交写入，取消移除待执行操作；环境快照与运行身份 / 初始环境 / 工具策略绑定，复用原续跑和报告核验。完整 462 项 Python 通过；最终短期限唤醒调整另有 13 项写入与 17 项监督器定向 Python 通过，119 项 Node、44 JS 语法及 compileall 通过；真实工具注册 / IPC 的写入六请求和原读取四请求无模型检查通过。首轮完整 Python 发现重录夹具未同步快照身份及子进程环境限制，修正后的完整复验及最终定向复验范围见 094。未提交 / 推送或新增 CI，无新增模型任务。
+
 [093 区间交付](changes/2026-11-01-093-confidence-interval-delivery-ci.md) 已核实 091 / 092 的 16 份实现、测试和公开文档正常提交推送为 `02013a551a2e6d7ec5cd10e2e1bfc6f67fa49202`。该精确 SHA 的 push run 41298073920 / job 124823044871 / attempt 1、全部 13 个步骤均 completed / success，包含语法、Node / Python 测试、compileall 和合成示例；未读取具体云端测试数量。无新模型任务，历史失败与未提交快照保留；本次文档补记的提交 CI 独立核对。
 
 [092 区间复查](changes/2026-11-01-092-confidence-interval-review.md) 发现并修复大偏移、小波动下 t 方差缩放的精度损失：改为中心化后缩放，极端差值与端点还原仍有溢出保护；真实非零波动不再误标零方差。新增高精度参考及混合排除口径回归，最终 15 项统计 / 19.250 秒、17 项报告 / 26.831 秒、30 项前端 / 143.549 毫秒、compileall 与补丁通过。公式、纳入 / 排除、门禁规则不变；提交与新 CI 单独核对，无模型任务。
@@ -141,13 +145,15 @@
 | 开发语言 | JavaScript 宿主接入和生命周期及浏览交互；Python 已实现离线断言、状态化环境、真实单用例 / 批次、重复统计、离线报告及只读浏览服务 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 11 月 1 日，Asia/Shanghai；074–077 增加只读调度摘要、续跑目录、分开保存的详情汇总及执行批次检查点关联，未提交 / 推送或运行新 CI；073 的资料交付与历史验收保留 |
+| 最新复核日期 | 2026 年 11 月 2 日，Asia/Shanghai；HEAD 8129678，094 本地实现保留，095 完成一次真实写入 / 工具超时验收，尚未提交 / 推送；既有交付及 CI 记录保留，当前修改不继承历史 CI |
 | 真实模型基线 | CLI `0.2.0-rc.2`；071、065 及更早范围保留；072 新增 DeepSeek Flash / 百炼 Qwen3.7-Plus 的十用例 / 两轮四十任务，39 通过 / 1 失败，各用例两对 matched / live |
 
 ## 功能状态
 
 | 能力 | 实现与验证状态 | 入口 |
 | --- | --- | --- |
+| 受控写入与最终状态 | 显式 eval_write 创建 / 覆盖内存文件，environment_files 比较完整最终文件映射；快照摘要 / 身份 / 环境与策略核对，缺失不补造；合成与真实组件验证，095 另有单任务真实模型七断言通过 | [状态化工具](stateful-tools.md)、记录 094 |
+| 工具级期限 | budget.toolTimeoutMs 默认期限、toolTimeoutsMs 按工具覆盖；stateful.toolDelaysMs 注入延迟，任务监督循环持续响应取消，未提交操作到期不写入；仅受控工具 | [状态化工具](stateful-tools.md)、记录 094 |
 | 原生插件入口 | 订阅事件与检查点，使用 `ctx.effect()` 清理；真实卸载后封存通过 | `src/index.js` |
 | 可移植目录配置 | 显式配置 > 环境变量 > 用户目录；无效选中值报错 | `src/config.js` |
 | 输出通道 | 插件诊断统一 stderr，真实正常与磁盘错误子进程 stdout 为空 | `scripts/check-output.js` |
@@ -168,7 +174,7 @@
 | desktop / SDK | 尚未验证 | 后续按渠道需求验证 |
 | M6.4 脚本与无模型检查 | 三个专用子进程、合成事件及 fresh inspect；中断核对版本与完整已写前缀，独立格式只接受 synthetic | `scripts/check_web_lifecycle.py`、[Web 生命周期](web-lifecycle.md) |
 | M6.4 真实 Web 生命周期 | Windows / 当前 CLI 三类最终样本的历史验收保留；036 修复 035 的异常启动清理与普通退出时间关联，无模型原生 / 离线复验通过 | `scripts/web-lifecycle-live.js`、`scripts/verify_web_live.py`、记录 033 至 036 |
-| 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；五种断言（含 082 工具禁止 / 次数）、可选 after / textEquals 和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
+| 用例加载与通用离线任务断言 | 用例、证据 / 结果版本 1 / 2；六种断言（含工具禁止 / 次数及 094 最终状态）、可选 after / textEquals 和三维结果，版本 2 额外核对实际请求路由 | `dsh_eval/`、`docs/evaluation-format.md` |
 | 基线回归比较 | 085 支持两份独立实验的选定配置与显式续跑输入，fresh 复验、严格可比性、逐项变化、缺项及 0 / 1 / 2 退出码；当前无模型验证，未接入浏览器 | [基线回归比较](baseline-regression.md)、`dsh_eval/regression.py` |
 | 单用例真实驱动 | 独立 workspace / home / 新会话，真实路由、超时 / 取消和清理；可选用例 recorder 经冻结后传入隔离插件配置，批次 / 实验保留 | `dsh_eval/runner.py`、`scripts/case-host.js` |
 | 状态化工具环境与实时桥接 | 主体与历史真实模型样例通过；监督阻塞与目录断言过窄已修复，新增七项回归 | `dsh_eval/environment.py`、`docs/stateful-tools.md`、审查记录 013 |

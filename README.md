@@ -4,6 +4,8 @@
 
 ## 当前功能
 
+- [受控写入与工具级超时](docs/stateful-tools.md#写入工具超时与最终状态094)：显式启用 eval_write 创建 / 覆盖虚拟文件，配置默认及各工具的毫秒期限，用 environment_files 精确检查最终全部文件。已验证合成录制 / 续跑 / 报告和真实工具注册；[095](docs/changes/2026-11-02-095-live-write-timeout-acceptance.md) 另完成一个 DeepSeek Flash 写入 / 超时重试真实任务，七断言及独立复验通过。
+
 - 作为 Cordis 插件订阅 `session/event`，保留原始事件，包括消息、工具调用、工具结果及轮次边界。
 - 每次插件启动创建独立运行目录，每个会话写入独立 JSONL 文件。
 - 使用异步写入队列保持同一会话的观察顺序，通过 `session/flush` 和插件卸载等待已排队写入完成。
@@ -316,13 +318,15 @@ python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run --canc
 
 ## 状态化工具用例（M3.3）
 
+写入 / 超时示例为 [write-retry.case.json](fixtures/evaluation/write-retry.case.json)。无模型验证可运行 `python -m scripts.smoke_bridge --writes`；显式运行模型使用 `python -m dsh_eval --case fixtures/evaluation/write-retry.case.json --run`。首次写入超时后重试，检查目标文件及其他文件未改，旧十用例固定集保持原样。
+
 ```powershell
 python -m scripts.smoke_bridge
 python -m dsh_eval --case fixtures/evaluation/stale-path.case.json --run
 python -m dsh_eval --case fixtures/evaluation/retry-read.case.json --run
 ```
 
-第一条验证实际 Cordis 工具注册、fork IPC 和 Python 状态，不调用模型；后两条调用真实模型。版本 2 用例通过 `environment.stateful.transientReadFailures` 声明每条路径的暂时读取失败次数；虚拟文件留在 Python 内存，工作区为空，工具为 `eval_read` / `eval_list`。详见 [状态化工具与桥接](docs/stateful-tools.md)。
+第一条验证实际 Cordis 工具注册、fork IPC 和 Python 状态，不调用模型；后两条调用真实模型。版本 2 用例通过 `environment.stateful.transientReadFailures` 声明每条路径的暂时读取失败次数；虚拟文件留在 Python 内存，工作区为空，默认工具为 `eval_read` / `eval_list`；094 可显式启用 `eval_write` 并配置工具期限、最终状态断言。详见 [状态化工具与桥接](docs/stateful-tools.md)。
 
 ## 顺序批次回归（M3.4）
 

@@ -12,12 +12,13 @@ export function apply(ctx) {
   if (process.env.DSH_EVAL_STATEFUL === "1") {
     const requireHost = createRequire(join(process.env.DSH_EVAL_HOST_MODULES, "__eval_bridge__.cjs"));
     const { defineTool } = requireHost("@deepseek-ai/dsh-tools");
+    const policy = JSON.parse(process.env.DSH_EVAL_TOOL_POLICY || "{}");
     const bridge = createToolBridge(process, process.env.DSH_EVAL_CASE_RUN_ID, (message) => {
       if (process.connected) process.send({ type: "bridge-error", message });
       for (const agent of ctx.agents.list()) agent.cancel({ kind: "user" });
-    });
+    }, undefined, policy.budget ?? null);
     ctx.effect(() => () => bridge.close());
-    registerStatefulTools(ctx, defineTool, bridge);
+    registerStatefulTools(ctx, defineTool, bridge, policy.tools);
   }
   ctx.on("agent/created", ({ agent }) => {
     process.send({ type: "selection", sessionId: agent.session.id,

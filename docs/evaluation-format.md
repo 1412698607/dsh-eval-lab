@@ -1,6 +1,6 @@
 # 用例、证据与评测结果格式
 
-更新：2026 年 11 月 1 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束；082 新增 tool_forbidden / tool_call_count，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
+更新：2026 年 11 月 2 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束；082 新增 tool_forbidden / tool_call_count，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
 
 ## 运行入口
 
@@ -27,9 +27,10 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | modelProviders | 可选外部模型路由字典；端点、模型容量和凭据名称随用例冻结，密钥值不得内嵌，见下节 |
 | recorder | 可选对象，仅允许 maxEventBytes / maxPendingBytes 两个独立正安全整数，范围 1～9007199254740991；不属于模型路由配置，详见下节 |
 | budget.timeoutSeconds | 正整数，声明预算；离线评测不会实施它，不支持 token / 步骤上限 |
+| budget.toolTimeoutMs / toolTimeoutsMs | 版本 2 stateful 可选：默认工具期限及按启用工具覆盖，单位毫秒；1～3600000 整数，默认 5000；由 runner 实施 |
 | assertions | 非空数组，每条有唯一 id 和已支持的 type；所有断言均为必需 |
 
-五种断言：
+六种断言（environment_files 仅适用于版本 2 stateful）：
 
 | type | 必需参数与行为 |
 | --- | --- |
@@ -38,6 +39,7 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | turn_end | reason 对象，含非空 kind；与实际结束原因完整比较 |
 | tool_forbidden | tool；可选 arguments 参数筛选，匹配调用必须为零 |
 | tool_call_count | tool，以及至少一个 min / max；可选 arguments 参数筛选，匹配调用次数须处于含端点的范围 |
+| environment_files | equals 为完整最终虚拟文件映射；仅版本 2 stateful，必须有与执行关联且完整的状态快照 |
 
 tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；声明 after 时还必须满足下节的先后关系。它本身不限制额外调用；需要禁止或限制次数时显式添加下述行为断言。
 
@@ -48,6 +50,12 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 版本 2 保留版本 1 的必需字段和断言，允许 environment 增加 stateful 对象，其唯一必需字段 transientReadFailures 为“已有文件路径 → 非负整数次数”的映射，拒绝布尔值。没有 stateful 时仍使用实际文件环境；声明 stateful 后 files 只保存在 Python 内存，workspace 不写入这些文件。版本 1 不接受 stateful。证据和结果仍为版本 2，录制格式不变。示例见 [路径过时](../fixtures/evaluation/stale-path.case.json)、[失败恢复](../fixtures/evaluation/retry-read.case.json)；协议和取消语义见 [状态化工具](stateful-tools.md)。
 
 版本 2 允许 tool_result 的 `arguments` 为 `{}`，表示不限制调用参数值，仍必须有正确工具名、合法对象形式的实际参数、按 callId 关联的结果、预期 isError / 文本约束和正确的任务顺序。非空对象仍逐键精确匹配；版本 1 继续要求非空对象。路径过时用例的发现断言使用空对象，并要求 eval_list 成功返回包含 docs/current.md 的列表，因此根目录 `.` 和 `docs` 都可通过，旧路径失败、读取新文件及答案断言保持原要求。此兼容扩展不增加新版本编号；旧快照中的非空参数约束仍按原语义检查。修复依据见 [记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
+
+## 状态化写入与最终文件断言（094）
+
+2026 年 11 月 2 日新增状态化扩展：stateful.tools 显式选择 eval_read / eval_list / eval_write，省略时仍为 read / list；toolDelaysMs 按工具的新请求顺序声明延迟序列。environment_files 断言形如 `{"id":"state","type":"environment_files","equals":{"result.txt":"done\n"}}`，精确比较最终全部虚拟文件，只适用于版本 2 stateful。它不接受 after，不可作为工具结果顺序约束的前置断言。
+
+新执行的 runtime.json 可保存独立版本 1 的 environmentSnapshot；evidence 版本 2 可选 environmentSnapshotSha256，budgetEnforcement 可选布尔 toolTimeouts。声明快照须有 runtimeReport；离线核对快照摘要、身份、初始环境、工具预算和 complete，旧证据不补值。工具预算只声明未验证执行时不能据此通过。文件格式版本保持兼容，新增字段会被不支持它们的旧严格读取器拒绝。完整协议和取消边界见 [状态化工具](stateful-tools.md#写入工具超时与最终状态094)。
 
 ## 可选工具结果约束：两个用例版本通用
 

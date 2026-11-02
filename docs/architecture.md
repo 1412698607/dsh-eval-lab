@@ -1,5 +1,7 @@
 # dsh-eval-lab 架构与技术取舍
 
+2026 年 11 月 2 日：[094](changes/2026-11-02-094-stateful-writes-tool-timeouts.md) 扩展受控虚拟环境。Python 监督循环提交 / 推进延迟操作并实施工具期限，eval_write 在到期检查后一次性更新内存文件；不在线程中 sleep，任务停止清空待提交操作。JavaScript 按用例注册工具、转发取消并保持独立桥接看门狗。清理后的环境快照存入 runtime.json，由 evidence 的对象摘要和运行 / 会话身份绑定；fresh evaluate 先检查轨迹，再核对状态证据并执行 environment_files。快照参与既有续跑归档冻结，浏览器显示保存的期望 / 实际文件映射。仅受控工具，无外部异步操作取消或完整会话恢复保证。
+
 当前插件版本 `0.1.2` 实现新增事件录制及离线一致性检查。Node 负责宿主 / 录制 / inspect，Python 已实现离线断言、真实单用例、状态化工具环境、M3.4 顺序批次、M4.1 重复试验与指标汇总、M4.2 独立配置报告及 M5 只读本机浏览服务。
 
 M6.1 已扩展运行级会话清单：新 run.json 为版本 2，会话写入以清单登记为前置依赖，close 最后保存运行终态；JSONL / status 仍为版本 1。Node inspect 对照应有成员与目录，Python 继续复用整体检查结果。格式与边界见 [会话清单](run-manifest.md)。
@@ -63,7 +65,7 @@ inspect --run <目录>
 | `scripts/check_web_lifecycle.py`、`scripts/verify_web_lifecycle.py` | 新目录检查入口、fresh inspect 与离线生命周期判定；本阶段拒绝 live，取消 / 中断不计任务成功 |
 | `scripts/verify_live.py` | 先重新调用 Node inspect，再检查固定 fixture 的任务证据 |
 | `dsh_eval/formats.py` | 严格版本 1 用例 / 证据校验，拒绝未知字段、重复键与非有限数字 |
-| `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、五种断言、执行 / 录制 / 断言分类 |
+| `dsh_eval/evaluate.py` | 重新 Node inspect、单任务证据关联、六种断言、执行 / 录制 / 断言分类 |
 | `dsh_eval/__main__.py` | 评测 / 实验及续跑预览 / 运行 / 报告 / 基线比较 / 浏览入口、UTF-8 stdout；--plan 与 --run 互斥，原任务 0 / 1 / 2 不变 |
 | `dsh_eval/runner.py` | 初始文件、新执行目录、准备 / 任务预算、控制消息、退出回收、版本 2 清单和离线评测 |
 | `dsh_eval/experiment.py` | 共用加载 / 预检、稳定样本身份与可选种子排序；预览只返回计划，执行冻结原顺序并复用串行 batch，核对关联与汇总 |
@@ -285,7 +287,7 @@ sealed 比较整个文件的计数、字节、首尾序号和摘要。recording 
 
 ## M3.3 实时状态化工具边界
 
-`environment.py` 保存虚拟文本与每路径暂时失败计数；`runner.supervise` 在进程运行期间处理请求。`case-control.js` 用真实 Tools 服务注册 `eval_read` / `eval_list`，共享 `tool-bridge.js` 实现请求等待、取消、5 秒响应期限与卸载清理。`case-host.js` 只转发桥接数据，基础设施错误触发专用宿主关闭。协议身份、重复请求和提交后取消语义见 [状态化工具与桥接](stateful-tools.md)。环境测试、真实注册及跨进程检查、真实模型轨迹三层分别验收，不修改 src 或录制协议。
+`environment.py` 保存虚拟文本与每路径暂时失败计数；`runner.supervise` 在进程运行期间处理请求。`case-control.js` 用真实 Tools 服务注册默认 `eval_read` / `eval_list` 及显式启用的 `eval_write`。共享 `tool-bridge.js` 实现请求等待、取消和卸载清理；094 的工具期限由 Python 实施，生产桥接看门狗为该工具期限加 1000 ms。`case-host.js` 只转发桥接数据，基础设施错误触发专用宿主关闭。协议身份、重复请求和提交后取消语义见 [状态化工具与桥接](stateful-tools.md)。环境测试、真实注册及跨进程检查、真实模型轨迹三层分别验收，不修改 src 或录制协议。
 
 ## M3.3 审查修复：管道写入与超时监督
 

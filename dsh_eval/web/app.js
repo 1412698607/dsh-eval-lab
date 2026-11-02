@@ -267,7 +267,7 @@ function assertionCards(documentData) {
     const matches = definitions.filter((item) => item && typeof row.id === "string" && item.id === row.id && item.type === row.type);
     const definition = matches.length === 1 ? matches[0] : null;
     const behavior = ["tool_forbidden", "tool_call_count"].includes(row.type);
-    const expected = row.type === "final_text" ? definition?.equals : row.type === "turn_end" ? definition?.reason
+    const expected = ["final_text", "environment_files"].includes(row.type) ? definition?.equals : row.type === "turn_end" ? definition?.reason
       : behavior && definition ? { tool: definition.tool, arguments: definition.arguments ?? {},
         ...(row.type === "tool_forbidden" ? { max: 0 }
           : { ...(Object.hasOwn(definition, "min") ? { min: definition.min } : {}),

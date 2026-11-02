@@ -87,6 +87,19 @@ test("assertion cards prioritize saved failures, compare frozen expectations and
   assert.ok(descendants(get("detail"), "h2").some((item) => item.textContent === "断言明细"));
 });
 
+test("environment state cards show exact saved expected and actual files", async () => {
+  const artifact = diagnosticResult();
+  artifact.data.case.assertions = [{ id: "state", type: "environment_files", equals: { "result.txt": "done\n", "guard.txt": "keep" } }];
+  artifact.data.assertions.results = [{ id: "state", type: "environment_files", outcome: "failed",
+    actual: { "result.txt": "done\n", "guard.txt": "changed" }, evidence: { environmentSnapshotSha256: "a".repeat(64) } }];
+  const get = await openDiagnostic(artifact);
+  const cards = descendants(section(get, "断言诊断 · 失败优先"), "article");
+  assert.match(cards[0].textContent, /keep/);
+  assert.match(cards[0].textContent, /changed/);
+  assert.match(cards[0].textContent, /guard.txt/);
+  assert.equal(descendants(cards[0], "button").length, 0);
+});
+
 test("text differences preserve empty strings, unicode, whitespace and text-only HTML", async () => {
   for (const [expected, actual] of [["", " "], ["甲🙂乙", "甲🙃乙"], ["a\nb", "a b"], ["<img src=x>", "<script>alert(1)</script>"], ["same", "same"]]) {
     const artifact = diagnosticResult();

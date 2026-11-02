@@ -6,6 +6,7 @@ import subprocess
 
 from .formats import load_json, parse_json, require, validate_case, validate_evidence
 from .metrics import empty_metrics, number, recording_metrics
+from .environment import snapshot_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 KNOWN = {"user/message", "assistant/message", "tool/call", "tool/result", "turn/end"}
@@ -89,6 +90,12 @@ def _call_matches(assertion, call, arguments):
 def check_assertion(assertion, view, previous=None):
     base = {"id": assertion["id"], "type": assertion["type"]}
     kind = assertion["type"]
+    if kind == "environment_files":
+        snapshot = view.get("environmentSnapshot")
+        if snapshot is None:
+            return {**base, "outcome": "insufficient_evidence", "reason": "No verified complete environment snapshot"}
+        return {**base, "outcome": "passed" if _same(snapshot["files"], assertion["equals"]) else "failed",
+                "actual": snapshot["files"], "evidence": {"environmentSnapshotSha256": snapshot_digest(snapshot)}}
     if kind == "final_text":
         actual = text_of(view["final"]["data"]["message"]).strip()
         return {**base, "outcome": "passed" if actual == assertion["equals"] else "failed",
@@ -218,6 +225,25 @@ def evaluate(case_path, evidence_path):
             return result
         # Preserve unknown event types; only interpret the documented task events.
         view = task_view(events, case["input"])
+        if any(key in case["budget"] for key in ("toolTimeoutMs", "toolTimeoutsMs")):
+            require(evidence["budgetEnforcement"].get("toolTimeouts") is True
+                    and "environmentSnapshotSha256" in evidence, "Tool deadline enforcement is unverified")
+        if "environmentSnapshotSha256" in evidence:
+            runtime = load_json(result["association"]["runtimeReport"])
+            require(type(runtime.get("runtimeFormatVersion")) is int and runtime["runtimeFormatVersion"] == 1
+                    and runtime.get("caseRunId") == evidence["caseRunId"], "Environment runtime identity mismatch")
+            snapshot = runtime.get("environmentSnapshot")
+            require(isinstance(snapshot, dict) and snapshot_digest(snapshot) == evidence["environmentSnapshotSha256"],
+                    "Environment snapshot is missing or changed")
+            require(type(snapshot.get("environmentSnapshotFormatVersion")) is int and snapshot["environmentSnapshotFormatVersion"] == 1
+                    and snapshot.get("complete") is True and all(snapshot.get(key) == evidence[key]
+                        for key in ("caseRunId", "sessionId", "runId")), "Incomplete or mismatched environment snapshot")
+            require(snapshot.get("environmentSha256") == snapshot_digest(case["environment"])
+                    and _same(snapshot.get("toolBudget"), {key: value for key, value in case["budget"].items() if key != "timeoutSeconds"}),
+                    "Environment snapshot input/policy mismatch")
+            require(isinstance(snapshot.get("files"), dict) and all(isinstance(path, str) and isinstance(text, str)
+                    for path, text in snapshot["files"].items()), "Malformed environment snapshot files")
+            view["environmentSnapshot"] = snapshot
         require(evidence["configuration"] == case["configRef"], "Actual configuration differs from case configRef")
         if evidence["evidenceFormatVersion"] == 2 and evidence["source"] == "live":
             headers = [event["data"]["header"]["config"] for event in events if event.get("type") == "request/header"]

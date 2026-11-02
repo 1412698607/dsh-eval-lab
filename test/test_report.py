@@ -17,6 +17,7 @@ from dsh_eval.experiment import run_experiment
 from dsh_eval.formats import load_json, parse_json
 from dsh_eval.report import generate_report
 from dsh_eval.runner import ROOT
+from dsh_eval.environment import snapshot_digest
 
 
 class ReportFixture:
@@ -111,6 +112,15 @@ console.log(JSON.stringify(await recordExample(data.casePath, data.events, data.
         evidence["runDir"] = str(run_directory.relative_to(case_directory))
         sample["runDir"] = run_directory.relative_to(self.base).as_posix()
         self.batch["entries"][index]["runDir"] = run_directory.relative_to(self.base / Path(self.saved["batchResultPath"]).parent).as_posix()
+        # This helper builds a new synthetic recording of the read-only fixture.
+        # Keep its declared environment evidence attached to the new identities.
+        if "environmentSnapshotSha256" in evidence:
+            runtime_path = case_directory / evidence["runtimeReport"]
+            runtime = load_json(runtime_path)
+            snapshot = runtime["environmentSnapshot"]
+            snapshot.update(runId=recorded["runId"], sessionId=recorded["sessionId"])
+            evidence["environmentSnapshotSha256"] = snapshot_digest(snapshot)
+            self.save(runtime_path, runtime)
         self.save(evidence_path, evidence)
         self.persist()
 

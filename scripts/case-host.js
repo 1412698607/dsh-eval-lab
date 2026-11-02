@@ -112,6 +112,7 @@ export async function runCase(directory) {
       cwd: setup.workspace, windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"],
       env: { ...process.env, DSH_HOME: setup.home, DSH_EVAL_OUTPUT_DIR: traces, DSH_TELEMETRY_DISABLED: "1",
         DSH_EVAL_STATEFUL: caseData.environment.stateful ? "1" : "0", DSH_EVAL_CASE_RUN_ID: basename(directory),
+        DSH_EVAL_TOOL_POLICY: JSON.stringify({ tools: caseData.environment.stateful?.tools, budget: caseData.budget }),
         DSH_EVAL_HOST_MODULES: setup.modulesDir },
     });
     report.childPid = child.pid ?? null;
@@ -125,7 +126,7 @@ export async function runCase(directory) {
         report.requests.push({ sessionId: message.sessionId, provider: message.provider, model: message.model });
       } else if (message?.type === "streaming") {
         report.streamed = true;
-      } else if (message?.type === "tool-request") {
+      } else if (["tool-request", "tool-cancel"].includes(message?.type)) {
         if (message.sessionId !== report.sessionId || message.caseRunId !== basename(directory)) {
           report.error = "Tool request identity mismatch";
           stop("invalid-bridge");
