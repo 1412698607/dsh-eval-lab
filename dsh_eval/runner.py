@@ -25,8 +25,11 @@ def save_json(path, value):
 
 
 def prepare_workspace(directory, case):
-    """Write only into a fresh directory, with portable Windows-safe fixture names."""
+    """Create a fresh workspace and materialize only native file fixtures."""
     workspace = Path(directory) / "workspace"
+    if "stateful" in case["environment"]:
+        workspace.mkdir()
+        return workspace  # Virtual file names are keys in the Python environment.
     names = set()
     for name in case["environment"]["files"]:
         for part in name.split("/"):
@@ -39,8 +42,6 @@ def prepare_workspace(directory, case):
                     (str(path).replace("\\", "/") for path in Path(name).parents) if parent != "."),
             "Case-insensitive file/directory collision")
     workspace.mkdir()
-    if "stateful" in case["environment"]:
-        return workspace  # Virtual files must only be accessible through the live bridge.
     for name, content in case["environment"]["files"].items():
         path = workspace / name
         require(path.resolve().is_relative_to(workspace.resolve()), "Fixture escaped workspace")

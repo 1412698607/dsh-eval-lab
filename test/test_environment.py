@@ -79,6 +79,25 @@ class EnvironmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(list(prepare_workspace(directory, self.case).iterdir()), [])
 
+    def test_virtual_initial_files_keep_posix_names_during_workspace_preparation(self):
+        files = {"   /leaf.txt": "leaf", "A": "upper", "a": "lower",
+                 "DIR": "file", "dir/child": "nested", "CON.txt": "reserved"}
+        self.case["environment"]["files"].update(files)
+        validate_case(self.case)
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = prepare_workspace(directory, self.case)
+            self.assertEqual(list(workspace.iterdir()), [])
+            with self.assertRaises(FileExistsError):
+                prepare_workspace(directory, self.case)
+        env = StatefulEnvironment(self.case["environment"], "case-run")
+        env.bind("session")
+        for path, content in files.items():
+            with self.subTest(path=path):
+                response = env.handle(self.request(path))
+                self.assertFalse(response["isError"])
+                self.assertEqual(response["text"], content)
+        self.assertEqual(env.handle(self.request("   ", "list"))["text"], "   /leaf.txt")
+
     def test_real_process_roundtrip_is_served_while_running(self):
         code = """import sys,json
 print(json.dumps({'type':'selection','sessionId':'session'}),flush=True)

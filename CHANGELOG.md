@@ -1,5 +1,13 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月4日 虚拟初始文件准备
+
+- [104](docs/changes/2026-11-04-104-virtual-workspace-preparation.md) 修正 runner 在准备纯内存文件时误用 Windows 落盘限制的问题，使合法虚拟路径可以直接作为用例初始状态。
+
+## 2026年11月4日 文件映射交付验收
+
+- [103](docs/changes/2026-11-04-103-file-map-delivery-ci.md) 核实 101、102 的提交 `0b63cce` 及对应 Windows 无模型 CI，首次运行全部 13 步骤成功。
+
 ## 2026年11月4日 虚拟目录枚举兼容性
 
 - [102](docs/changes/2026-11-04-102-file-map-review.md) 修正 101 复查中发现的目录枚举回归。受控工具写入带纯空白父目录的合法路径后，可按原目录名列出文件。

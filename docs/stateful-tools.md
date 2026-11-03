@@ -36,6 +36,8 @@ python -m dsh_eval --case fixtures/evaluation/retry-read.case.json --run
 
 含 NUL 的路径、整体为纯空白的文件路径也返回 `INVALID_PATH`。合法文件名中的空格和 Unicode 字符按原样保留。例如 `"   /leaf.txt"` 的父目录可用 `eval_list("   ")` 列出。初始文件、最终状态期望和归档快照使用相同的文件路径及目录冲突规则。
 
+用例声明 `environment.stateful` 时，初始文件和工具新建的文件都按原名保存在 Python 内存。例如 `A` 和 `a` 是两个不同文件，`CON.txt` 也是有效的虚拟文件名。runner 创建一个新的空 workspace 供宿主启动，只有需要写入真实文件的用例才执行 Windows 文件名与大小写冲突检查。
+
 ## 请求、响应与生命周期
 
 ```text

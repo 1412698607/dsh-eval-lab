@@ -22,7 +22,7 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | --- | --- |
 | caseFormatVersion / caseId | 整数 1 / 非空用例标识；标识不是文件路径 |
 | input | 非空任务文本，与 user/message 的文本块拼接结果精确相等 |
-| environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象；拒绝绝对路径、冒号、反斜杠、空 / 点 / 上级分量和文件目录冲突；离线仅保留声明，M3.2 实际写入独立 workspace 并补查 Windows 名称 / 大小写冲突 |
+| environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象。拒绝绝对路径、冒号、反斜杠、NUL、整体为空白的文件名、空 / 点 / 上级分量，以及文件与父目录冲突。stateful 用例在内存中按大小写区分文件。需要写入独立 workspace 的用例另查 Windows 名称与大小写冲突 |
 | configRef | provider / model / profile / pluginVersion 四个非空字符串；不得内嵌凭据 |
 | modelProviders | 可选外部模型路由字典；端点、模型容量和凭据名称随用例冻结，密钥值不得内嵌，见下节 |
 | recorder | 可选对象，仅允许 maxEventBytes / maxPendingBytes 两个独立正安全整数，范围 1～9007199254740991；不属于模型路由配置，详见下节 |

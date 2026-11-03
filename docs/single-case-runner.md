@@ -20,7 +20,7 @@ python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run
 
 录制限制由用例顶层可选 `recorder: { maxEventBytes, maxPendingBytes }` 声明，各自省略默认 1 MiB / 16 MiB；例如 `"recorder": { "maxEventBytes": 4194304 }` 将单条上限调为 4 MiB，队列仍为 16 MiB。它不属于 configRef，不继承用户原 profile，不增加 CLI 覆盖；只接受正安全整数。完整用例原样冻结，隔离 profile 的 eval-lab config 与 setup.json.recorder 保存解析后的有效值，实际值也保存在 traces 下的 run.json。详见 [用例格式](evaluation-format.md) 与 [资源边界](recorder-resources.md)。
 
-Python 生成新 caseRunId，保存用例快照、在独立 workspace 写入初始文件，校验 Windows 保留文件名、大小写和文件目录冲突，再调用 Node 准备及运行。宿主使用 read-only 策略，测试用例要求实际 read，参数键为该版本的 `file_path`。不注入答案，不重写 Agent 循环；任意其他工具名 / 参数仍须由相应用例正确声明。
+Python 生成新 caseRunId 并保存用例快照。普通文件用例先校验 Windows 保留文件名、大小写和文件目录冲突，再把初始文件写入新 workspace。声明 `environment.stateful` 的用例创建空 workspace，虚拟文件按用例原名交给内存工具环境。随后 runner 调用 Node 准备及运行。普通读取用例使用宿主的 read-only 策略和实际 read，参数键为该版本的 `file_path`。其他工具名和参数由相应用例声明。
 
 默认输出为 `runs/evaluation/<caseRunId>/`，可用 `--runs-root <父目录>` 改变父目录；运行内部只创建新的 UUID 子目录，不复用工作区或覆盖旧结果。
 
