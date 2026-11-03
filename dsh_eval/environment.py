@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import PurePosixPath
 
-from .formats import fields, nonempty, require
+from .formats import fields, nonempty, require, valid_relative_path
 
 
 def snapshot_digest(value):
@@ -124,7 +124,7 @@ class StatefulEnvironment:
         path = request["arguments"]["path"]
         error = None
         text = ""
-        if "\\" in path or ":" in path or path.startswith("/") or any(p in ("", "..") for p in path.split("/")) or (path != "." and "." in path.split("/")):
+        if path != "." and not valid_relative_path(path, directory=request["operation"] == "list"):
             error = "INVALID_PATH"
         elif request["operation"] == "list":
             prefix = "" if path == "." else path + "/"

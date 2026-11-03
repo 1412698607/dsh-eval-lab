@@ -42,6 +42,19 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(self.environment.handle(self.request('.', 'list'))['text'], 'project.md')
         self.assertTrue(self.environment.handle(self.request())['isError'])
 
+    def test_list_accepts_whitespace_directory_of_a_valid_file(self):
+        self.case["environment"]["stateful"]["tools"] = ["eval_write", "eval_list", "eval_read"]
+        validate_case(self.case)
+        env = StatefulEnvironment(self.case["environment"], "case-run")
+        env.bind("session")
+        write = self.request("   /leaf.txt", "write")
+        write["arguments"]["content"] = "leaf"
+        self.assertFalse(env.submit(write, 0)[0]["isError"])
+        self.assertEqual(env.handle(self.request("   ", "list"))["text"], "   /leaf.txt")
+        for path in ("", "bad\0dir", "a/../b"):
+            with self.subTest(path=path):
+                self.assertEqual(env.handle(self.request(path, "list"))["text"], "INVALID_PATH: " + path)
+
     def test_identity_protocol_and_conflicting_duplicates_rejected(self):
         request = self.request(request_id='same')
         self.environment.handle(request)

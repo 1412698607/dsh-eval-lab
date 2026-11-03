@@ -61,6 +61,8 @@ eval_delete 的 arguments 为 `{path}`；eval_edit 为 `{path,oldText,newText}`�
 
 新执行的 runtime.json 可保存独立版本 1 的 environmentSnapshot；evidence 版本 2 可选 environmentSnapshotSha256，budgetEnforcement 可选布尔 toolTimeouts。声明快照须有 runtimeReport；离线核对快照摘要、身份、初始环境、工具预算和 complete，旧证据不补值。工具预算只声明未验证执行时不能据此通过。文件格式版本保持兼容，新增字段会被不支持它们的旧严格读取器拒绝。完整协议和取消边界见 [状态化工具](stateful-tools.md#写入工具超时与最终状态094)。
 
+归档快照的 `files` 必须是相对文件路径到文本的映射。路径不能整体为空白或包含 NUL，同一映射中的文件不能同时作为另一文件的父目录。例如 `{"a":"x","a/b":"y"}` 即使摘要匹配，离线复验也返回 `unevaluable`，断言标记为 `insufficient_evidence`。合法映射与预期内容不符仍按断言失败处理。
+
 ## 可选工具结果约束：两个用例版本通用
 
 下面两条断言要求先取得 README 的结果，再发起空文件读取，并检查返回文本确实为空：

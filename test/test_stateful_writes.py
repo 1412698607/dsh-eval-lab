@@ -62,6 +62,24 @@ class WriteEnvironmentTests(unittest.TestCase):
         self.assertEqual(self.env.files["result.txt"], "done\n")
         self.assertEqual(self.env.attempts["eval_write"], 2)
 
+    def test_write_and_case_validation_agree_on_file_paths(self):
+        for path in ("   ", "bad\0name", "a//b", "a/../b"):
+            with self.subTest(path=path):
+                before = dict(self.env.files)
+                response = self.env.handle(self.request(name="write-" + path, path=path))
+                self.assertEqual(response["text"], "INVALID_PATH: " + path)
+                self.assertEqual(self.env.files, before)
+                for files in (self.case["environment"]["files"], self.case["assertions"][4]["equals"]):
+                    files[path] = "value"
+                    with self.assertRaises(ValueError):
+                        validate_case(self.case)
+                    del files[path]
+        path = "子目录/ file name .txt"
+        self.assertFalse(self.env.handle(self.request(path=path))["isError"])
+        self.case["environment"]["files"][path] = "done\n"
+        self.case["assertions"][4]["equals"][path] = "done\n"
+        validate_case(self.case)
+
     def test_default_override_deadline_and_boundary(self):
         self.env.delays = {"eval_read": [40], "eval_write": [40]}
         self.env.budget = {"toolTimeoutMs": 30, "toolTimeoutsMs": {"eval_write": 80}}
@@ -215,6 +233,18 @@ class WriteEvaluationTests(unittest.TestCase):
         self.save(self.path, self.case)
         result = evaluate(self.path, self.evidence_path)
         self.assertEqual(result["assertions"]["results"][4]["outcome"], "insufficient_evidence")
+
+    def test_matching_digest_cannot_validate_an_impossible_file_map(self):
+        snapshot = self.runtime["environmentSnapshot"]
+        for files in ({"../bad": ""}, {"bad\0name": ""}, {"   ": ""}, {"a": "", "a/b": ""}):
+            with self.subTest(files=files):
+                snapshot["files"] = files
+                self.save(self.runtime_path, self.runtime)
+                self.save(self.evidence_path, {**self.evidence, "environmentSnapshotSha256": snapshot_digest(snapshot)})
+                result = evaluate(self.path, self.evidence_path)
+                self.assertEqual(result["recording"]["outcome"], "complete")
+                self.assertEqual(result["outcome"], "unevaluable")
+                self.assertEqual(result["assertions"]["outcome"], "insufficient_evidence")
 
     def test_write_snapshots_survive_experiment_resume_and_report_recheck(self):
         manifest = {"experimentFormatVersion": 1, "experimentName": "write-resume", "repetitions": 2,

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from .formats import load_json, parse_json, require, validate_case, validate_evidence
+from .formats import load_json, parse_json, require, validate_case, validate_evidence, validate_file_map
 from .metrics import empty_metrics, number, recording_metrics
 from .environment import snapshot_digest
 
@@ -241,8 +241,7 @@ def evaluate(case_path, evidence_path):
             require(snapshot.get("environmentSha256") == snapshot_digest(case["environment"])
                     and _same(snapshot.get("toolBudget"), {key: value for key, value in case["budget"].items() if key != "timeoutSeconds"}),
                     "Environment snapshot input/policy mismatch")
-            require(isinstance(snapshot.get("files"), dict) and all(isinstance(path, str) and isinstance(text, str)
-                    for path, text in snapshot["files"].items()), "Malformed environment snapshot files")
+            validate_file_map(snapshot.get("files"), "Environment snapshot files")
             view["environmentSnapshot"] = snapshot
         require(evidence["configuration"] == case["configRef"], "Actual configuration differs from case configRef")
         if evidence["evidenceFormatVersion"] == 2 and evidence["source"] == "live":

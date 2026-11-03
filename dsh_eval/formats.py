@@ -48,6 +48,21 @@ def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+def valid_relative_path(path, *, directory=False):
+    return (isinstance(path, str) and (directory or bool(path.strip()))
+            and "\0" not in path and "\\" not in path and ":" not in path
+            and all(part not in ("", ".", "..") for part in path.split("/")))
+
+
+def validate_file_map(files, label):
+    require(isinstance(files, dict), f"{label} must be an object")
+    for path, content in files.items():
+        require(valid_relative_path(path), f"{label} keys must be relative POSIX file paths")
+        require(isinstance(content, str), f"{label} content must be text")
+    require(not any(str(parent) in files for path in files for parent in PurePosixPath(path).parents),
+            f"{label} file/directory collision")
+
+
 def configuration(value):
     fields(value, ("provider", "model", "profile", "pluginVersion"))
     require(all(nonempty(item) for item in value.values()), "Configuration values must be nonempty strings")
@@ -134,14 +149,7 @@ def validate_case(case):
     require(nonempty(case["caseId"]) and nonempty(case["input"]), "caseId and input must be nonempty strings")
     fields(case["environment"], ("files",), ("stateful",) if case["caseFormatVersion"] == 2 else ())
     files = case["environment"]["files"]
-    require(isinstance(files, dict), "environment.files must be an object")
-    for path, content in files.items():
-        require(nonempty(path) and "\\" not in path and ":" not in path and not path.startswith("/")
-                and all(part not in ("", ".", "..") for part in path.split("/"))
-                and not PurePosixPath(path).is_absolute(), "Fixture paths must be relative POSIX file paths")
-        require(isinstance(content, str), "Fixture content must be text")
-    require(not any(str(parent) in files for path in files for parent in PurePosixPath(path).parents),
-            "Fixture file/directory collision")
+    validate_file_map(files, "environment.files")
     if "stateful" in case["environment"]:
         stateful = case["environment"]["stateful"]
         fields(stateful, ("transientReadFailures",), ("tools", "toolDelaysMs"))
@@ -190,13 +198,7 @@ def validate_case(case):
         elif kind == "environment_files":
             fields(assertion, ("id", "type", "equals"))
             require("stateful" in case["environment"], "environment_files requires stateful execution")
-            expected = assertion["equals"]
-            require(isinstance(expected, dict) and all(nonempty(path) and isinstance(content, str)
-                    and "\\" not in path and ":" not in path and not path.startswith("/")
-                    and all(part not in ("", ".", "..") for part in path.split("/"))
-                    for path, content in expected.items()), "Expected files must be relative POSIX paths and text")
-            require(not any(str(parent) in expected for path in expected for parent in PurePosixPath(path).parents),
-                    "Expected file/directory collision")
+            validate_file_map(assertion["equals"], "Expected files")
         elif kind == "tool_result":
             fields(assertion, ("id", "type", "tool", "arguments", "result"), ("after",))
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
