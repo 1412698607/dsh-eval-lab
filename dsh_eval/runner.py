@@ -34,7 +34,7 @@ def prepare_workspace(directory, case):
     for name in case["environment"]["files"]:
         for part in name.split("/"):
             require(part == part.rstrip(" .") and not PureWindowsPath(part).is_reserved()
-                    and not any(character in part for character in '<>"|?*\x00'), "Unsupported fixture filename")
+                    and not any(ord(char) < 32 or char in '<>"|?*' for char in part), "Unsupported fixture filename")
         folded = name.casefold()
         require(folded not in names, "Case-insensitive fixture path collision")
         names.add(folded)

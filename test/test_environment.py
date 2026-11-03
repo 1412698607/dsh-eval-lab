@@ -81,7 +81,7 @@ class EnvironmentTests(unittest.TestCase):
 
     def test_virtual_initial_files_keep_posix_names_during_workspace_preparation(self):
         files = {"   /leaf.txt": "leaf", "A": "upper", "a": "lower",
-                 "DIR": "file", "dir/child": "nested", "CON.txt": "reserved"}
+                 "DIR": "file", "dir/child": "nested", "CON.txt": "reserved", "tab\tname": "tab"}
         self.case["environment"]["files"].update(files)
         validate_case(self.case)
         with tempfile.TemporaryDirectory() as directory:

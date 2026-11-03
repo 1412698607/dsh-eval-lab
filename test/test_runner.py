@@ -49,6 +49,17 @@ class WorkspaceTests(unittest.TestCase):
                 prepare_workspace(self.directory, validate_case(case))
         self.assertFalse((self.directory / "workspace").exists())
 
+    def test_control_characters_in_native_paths_rejected_before_any_write(self):
+        case = live_case()
+        for code in range(1, 32):  # NUL is already rejected by the case format.
+            part = "bad" + chr(code) + "name"
+            for path in (part, part + "/child.txt"):
+                with self.subTest(code=code, path=path):
+                    case["environment"]["files"] = {"first.txt": "keep\n", path: "text"}
+                    with self.assertRaisesRegex(ValueError, "Unsupported fixture filename"):
+                        prepare_workspace(self.directory, validate_case(case))
+                    self.assertFalse((self.directory / "workspace").exists())
+
     def test_startup_failure_preserves_null_facts_and_can_be_re_evaluated(self):
         case_file = self.directory / "input.json"
         case_file.write_text(json.dumps(live_case()), encoding="utf-8")

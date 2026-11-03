@@ -1,5 +1,13 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月4日 普通工作区文件名控制字符检查
+
+- [106](docs/changes/2026-11-04-106-native-filename-control-characters.md) 修复初始磁盘文件的路径含制表符等控制字符时，runner 留下部分文件的问题。
+
+## 2026年11月4日 虚拟工作区交付验收
+
+- [105](docs/changes/2026-11-04-105-virtual-workspace-delivery-ci.md) 核实 103、104 的共同提交 `acf3a0a` 及其 Windows 无模型 CI，首次运行全部 13 个步骤通过。
+
 ## 2026年11月4日 虚拟初始文件准备
 
 - [104](docs/changes/2026-11-04-104-virtual-workspace-preparation.md) 修正 runner 在准备纯内存文件时误用 Windows 落盘限制的问题，使合法虚拟路径可以直接作为用例初始状态。
