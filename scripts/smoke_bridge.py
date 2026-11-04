@@ -15,11 +15,15 @@ def main():
     mode.add_argument("--writes", action="store_true")
     mode.add_argument("--mutations", action="store_true")
     mode.add_argument("--control", action="store_true")
+    mode.add_argument("--rename", action="store_true")
     args = parser.parse_args()
     case_run_id = str(uuid4())
     writes, mutations, control = args.writes, args.mutations, args.control
     scenario = "control" if control else "mutations" if mutations else "writes" if writes else "reads"
-    name = {"control": "edit-delete", "mutations": "edit-delete-timeout", "writes": "write-retry", "reads": "retry-read"}[scenario]
+    if args.rename:
+        scenario = "rename"
+    name = {"control": "edit-delete", "mutations": "edit-delete-timeout", "writes": "write-retry",
+            "reads": "retry-read", "rename": "rename-no-overwrite"}[scenario]
     case = load_json(ROOT / "fixtures/evaluation" / (name + ".case.json"))
     if control:
         case["budget"] = {"timeoutSeconds": 20, "toolTimeoutMs": 5000,
@@ -40,7 +44,9 @@ def main():
                                **_process_options())
     report = supervise(process, 20, environment=environment)
     assert report["adapterExitCode"] == 0 and report["protocolError"] is None and report["intervention"] is None, report
-    assert len(environment.responses) == (15 if mutations else 6 if writes or control else 4)
+    assert len(environment.responses) == {"mutations": 15, "writes": 6, "control": 6, "reads": 4, "rename": 5}[scenario]
+    if args.rename:
+        assert environment.files == {"archive/final.txt": "评测\r\n", "guard.txt": "keep\n"}
     if writes:
         assert environment.files == {"guard.txt": "keep\n", "result.txt": "done\n"}, environment.files
     if mutations:

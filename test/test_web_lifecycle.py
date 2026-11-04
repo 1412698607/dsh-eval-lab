@@ -64,6 +64,19 @@ class WebLifecycleEventTests(unittest.TestCase):
             events[index]["data"]["message"]["content"][0]["text"] = "WRONG"
             self.assertEqual(check_events(events, self.case, "normal-exit", 5)["outcome"], "failed")
 
+    def test_normal_exit_preserves_diagnostic_text_failure(self):
+        self.case["caseFormatVersion"] = 2
+        answer = next(a for a in self.case["assertions"] if a["type"] == "final_text")
+        answer["role"] = "diagnostic"
+        validate_case(self.case)
+        events = reference_events()
+        decorated = "**dsh-eval-web-fixture**"
+        events[4]["data"]["message"]["content"][0]["text"] = decorated
+        result = check_events(events, self.case, "normal-exit", 5)
+        row = next(r for r in result["assertions"]["results"] if r["id"] == answer["id"])
+        self.assertEqual(result["outcome"], "passed")
+        self.assertEqual((row["role"], row["outcome"], row["actual"]), ("diagnostic", "failed", decorated))
+
     def test_correct_answer_without_result_does_not_pass(self):
         events = resequence([event for event in reference_events() if event["type"] != "tool/result"])
         result = check_events(events, self.case, "normal-exit", events[-1]["seq"])

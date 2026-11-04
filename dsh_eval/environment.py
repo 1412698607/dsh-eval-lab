@@ -7,6 +7,11 @@ from pathlib import PurePosixPath
 from .formats import fields, nonempty, require, valid_relative_path
 
 
+_ARGUMENTS = {"read": ("path",), "list": ("path",), "delete": ("path",),
+              "write": ("path", "content"), "edit": ("path", "oldText", "newText"),
+              "rename": ("path", "destination")}
+
+
 def snapshot_digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
 
@@ -41,11 +46,12 @@ class StatefulEnvironment:
         if request_id in self.responses:
             previous, response = self.responses[request_id]
             require(previous == request, "Conflicting duplicate bridge request")
-        require(request["operation"] in ("read", "list", "write", "delete", "edit") and
-                "eval_" + request["operation"] in self.tools, "Unknown or disabled bridge operation")
-        arguments = (("path", "content") if request["operation"] == "write" else
-                     ("path", "oldText", "newText") if request["operation"] == "edit" else ("path",))
-        fields(request["arguments"], arguments)
+        operation = request["operation"]
+        require(isinstance(operation, str) and operation in _ARGUMENTS and
+                "eval_" + operation in self.tools, "Unknown or disabled bridge operation")
+        fields(request["arguments"], _ARGUMENTS[operation])
+        if operation == "rename":
+            require(isinstance(request["arguments"]["destination"], str), "Rename destination must be text")
         if request["operation"] == "write":
             require(isinstance(request["arguments"]["content"], str), "Write content must be text")
         if request["operation"] == "edit":
@@ -56,10 +62,13 @@ class StatefulEnvironment:
         if request_id in self.pending:
             require(self.pending[request_id][0] == request, "Conflicting pending bridge request")
 
-    def _respond(self, request, error, text=""):
+    def _respond(self, request, error, text="", error_path=None):
         response = {"type": "tool-response", "bridgeVersion": 1, "requestId": request["requestId"],
                     "caseRunId": self.case_run_id, "sessionId": self.session_id,
-                    "isError": error is not None, "text": f"{error}: {request['arguments']['path']}" if error else text}
+                    "isError": error is not None, "text": text}
+        if error is not None:
+            path = request["arguments"]["path"] if error_path is None else error_path
+            response["text"] = f"{error}: {path}"
         self.responses[request["requestId"]] = (deepcopy(request), deepcopy(response))
         return response
 
@@ -116,6 +125,10 @@ class StatefulEnvironment:
                 "toolBudget": {key: value for key, value in case["budget"].items() if key != "timeoutSeconds"},
                 "complete": bool(completed and not self.pending and not self.cancelled), "files": dict(self.files)}
 
+    def _directory_collision(self, path):
+        return any(str(parent) in self.files for parent in PurePosixPath(path).parents) or any(
+            name.startswith(path + "/") for name in self.files)
+
     def handle(self, request):
         """Immediate virtual operation; production calls enter through submit/poll."""
         self._validate(request)
@@ -133,14 +146,23 @@ class StatefulEnvironment:
             if not matches:
                 error = "NOT_FOUND"
         elif request["operation"] == "write":
-            if path == "." or any(str(parent) in self.files for parent in PurePosixPath(path).parents) or any(
-                    name.startswith(path + "/") for name in self.files):
+            if path == "." or self._directory_collision(path):
                 error = "PATH_COLLISION"
             else:
                 self.files[path] = request["arguments"]["content"]
                 text = "WROTE: " + path
         elif path not in self.files:
             error = "NOT_FOUND"
+        elif request["operation"] == "rename":
+            destination = request["arguments"]["destination"]
+            if not valid_relative_path(destination):
+                return self._respond(request, "INVALID_PATH", error_path=destination)
+            if destination in self.files:
+                return self._respond(request, "TARGET_EXISTS", error_path=destination)
+            if self._directory_collision(destination):
+                return self._respond(request, "PATH_COLLISION", error_path=destination)
+            self.files[destination] = self.files.pop(path)
+            text = f"RENAMED: {path} -> {destination}"
         elif request["operation"] == "delete":
             del self.files[path]
             text = "DELETED: " + path

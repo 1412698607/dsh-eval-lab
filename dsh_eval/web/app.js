@@ -259,6 +259,8 @@ function assertionCards(documentData) {
   const definitions = Array.isArray(data.case?.assertions) ? data.case.assertions : [];
   const body = node("div", null, "assertion-list");
   body.append(node("p", "显示保存的断言结论与本结果内嵌的用例快照。浏览不会重新评测；定位到事件也不代表证据已经复验。", "subtext"));
+  const hasRoles = results.some((row) => row && Object.hasOwn(row, "role"));
+  if (hasRoles) body.append(node("p", "断言汇总只计入必需项。诊断项单独记录，诊断失败仍显示在这里。", "subtext"));
   if (data.assertions?.reason) body.append(node("p", data.assertions.reason, "error"));
   if (!results.length) body.append(node("p", "没有保存逐条断言结果。", "subtext"));
   const ordered = results.filter((row) => row && typeof row === "object")
@@ -266,6 +268,7 @@ function assertionCards(documentData) {
   for (const row of ordered) {
     const matches = definitions.filter((item) => item && typeof row.id === "string" && item.id === row.id && item.type === row.type);
     const definition = matches.length === 1 ? matches[0] : null;
+    const confirmationToken = row.type === "final_text" && row.match === "confirmation_token";
     const behavior = ["tool_forbidden", "tool_call_count"].includes(row.type);
     const expected = ["final_text", "environment_files"].includes(row.type) ? definition?.equals : row.type === "turn_end" ? definition?.reason
       : behavior && definition ? { tool: definition.tool, arguments: definition.arguments ?? {},
@@ -275,14 +278,25 @@ function assertionCards(documentData) {
       : row.type === "tool_result" && definition ? { tool: definition.tool, arguments: definition.arguments, result: definition.result,
         ...(definition.after ? { after: definition.after } : {}) } : undefined;
     const card = node("article", null, "assertion-card" + (row.outcome === "failed" ? " assertion-failed" : ""));
-    card.append(append(node("div", null, "assertion-heading"), node("h3", row.id ?? "断言标识缺失"), badge(row.outcome), node("span", row.type, "subtext")));
+    const heading = append(node("div", null, "assertion-heading"), node("h3", row.id ?? "断言标识缺失"), badge(row.outcome), node("span", row.type, "subtext"));
+    if (hasRoles) {
+      const role = Object.hasOwn(row, "role") ? row.role : "required";
+      const label = role === "diagnostic" ? "诊断项" : role === "required" ? "必需项" : "未知角色";
+      heading.append(node("span", label, "badge"));
+    }
+    card.append(heading);
     if (row.reason) card.append(node("p", row.reason));
+    if (confirmationToken) card.append(node("p", "确认词匹配只接受一个由 A–Z 或 a–z 组成的词，忽略大小写。整词可以用 ** 或 __ 加粗，末尾允许一个英文句号，句号可放在加粗标记内或外。", "subtext"));
     if (behavior) card.append(node("p", "实际值为任务范围内匹配的工具调用次数，包括失败、未返回及最终答案后的调用；这是保存的离线评测结果，不是运行时拦截。", "subtext"));
     let values = [expected === undefined ? node("p", "期望值缺失或无法唯一匹配用例快照。", "subtext") : json(expected),
       Object.hasOwn(row, "actual") ? json(row.actual) : node("p", "未保存实际值；可通过下方证据查看原始事件。", "subtext")];
     if (typeof expected === "string" && typeof row.actual === "string") {
-      values = textDifference(expected, row.actual);
-      card.append(node("p", expected === row.actual ? "保存文本相同；原结论保持不变。" : "高亮首尾相同部分之间的差异；不移除 Markdown 或归一化答案。", "subtext"));
+      if (confirmationToken) {
+        values = [node("pre", expected, "assertion-value"), node("pre", row.actual, "assertion-value")];
+      } else {
+        values = textDifference(expected, row.actual);
+        card.append(node("p", expected === row.actual ? "保存文本相同；原结论保持不变。" : "高亮首尾相同部分之间的差异；不移除 Markdown 或归一化答案。", "subtext"));
+      }
       if (row.type === "final_text") card.append(node("p", "实际值为评测时保存的文本（已去除首尾空白）；原始答案见事件。", "subtext"));
     }
     card.append(append(node("div", null, "two-columns assertion-values"),
@@ -372,11 +386,11 @@ function renderDocument(documentData) {
   }
   if (documentData.kind === "case") {
     target.append(panel("任务", node("p", data.input)), append(node("div", null, "two-columns"),
-      panel("配置与预算", json({ configuration: data.configRef, budget: data.budget })), panel("初始环境", json(data.environment))), panel("必要断言", json(data.assertions)));
+      panel("配置与预算", json({ configuration: data.configRef, budget: data.budget })), panel("初始环境", json(data.environment))), panel("断言定义", json(data.assertions)));
   }
   if (documentData.kind === "evaluation") {
     target.append(cards([["任务结论", display(data.outcome)], ["执行状态", display(data.execution?.status)],
-      ["录制状态", display(data.recording?.outcome)], ["断言状态", display(data.assertions?.outcome)]]));
+      ["录制状态", display(data.recording?.outcome)], ["断言汇总", display(data.assertions?.outcome)]]));
     target.append(assertionCards(documentData));
     target.append(append(node("div", null, "two-columns"), panel("请求配置、实际配置与来源声明", json({ requestedConfiguration: data.case?.configRef,
       configuration: data.configuration, source: data.source, caseRunId: data.caseRunId, budgetEnforcement: data.budgetEnforcement })),

@@ -80,11 +80,62 @@ test("assertion cards prioritize saved failures, compare frozen expectations and
   const panel = section(get, "断言诊断 · 失败优先"), cards = descendants(panel, "article");
   assert.match(cards[0].textContent, /^answer 未通过/);
   assert.match(cards[1].textContent, /^end 通过/);
+  assert.doesNotMatch(panel.textContent, /诊断项|必需项/);
   assert.match(cards[0].textContent, /core-current/);
   assert.match(cards[0].textContent, /\*\*core-current\*\*/);
   assert.equal(descendants(cards[0], "mark").find((item) => item.className === "actual-difference").textContent, "**core-current**");
   assert.ok(findButton(cards[0], "最终答案 · seq 109"));
   assert.ok(descendants(get("detail"), "h2").some((item) => item.textContent === "断言明细"));
+});
+
+test("diagnostic assertion outcomes stay visible alongside the saved aggregate", async () => {
+  for (const [rowOutcome, savedVerdict, rowLabel, verdictLabel] of [
+    ["failed", "passed", "未通过", "通过"],
+    ["insufficient_evidence", "unevaluable", "证据不足", "无法评测"],
+  ]) {
+    const artifact = diagnosticResult();
+    artifact.data.case.assertions[0].role = "diagnostic";
+    artifact.data.assertions.results[1].role = "diagnostic";
+    artifact.data.assertions.results[1].outcome = rowOutcome;
+    if (savedVerdict === "unevaluable") artifact.data.assertions.results[0].outcome = "insufficient_evidence";
+    artifact.data.assertions.outcome = savedVerdict === "unevaluable" ? "insufficient_evidence" : "passed";
+    artifact.data.outcome = savedVerdict;
+    const get = await openDiagnostic(artifact), panel = section(get, "断言诊断 · 失败优先");
+    assert.match(panel.textContent, /断言汇总只计入必需项/);
+    const cards = descendants(panel, "article");
+    const answer = cards.find((card) => descendants(card, "h3")[0].textContent === "answer");
+    assert.ok(answer.textContent.includes(rowLabel));
+    assert.match(answer.textContent, /诊断项/);
+    assert.match(cards.find((card) => card !== answer).textContent, /必需项/);
+    const summary = descendants(get("detail"), "div").filter((item) => item.className === "card");
+    assert.equal(summary.find((item) => item.children[0].textContent === "任务结论").children[1].textContent, verdictLabel);
+    assert.equal(summary.find((item) => item.children[0].textContent === "断言汇总").children[1].textContent,
+      savedVerdict === "unevaluable" ? "证据不足" : "通过");
+  }
+});
+
+test("confirmation token cards show the saved rule, literal texts and verdict without exact-match highlights", async () => {
+  for (const [outcome, actual, label] of [
+    ["passed", "**Done.**", "通过"], ["failed", "done after retry", "未通过"], ["not_run", undefined, "未执行"],
+  ]) {
+    const artifact = diagnosticResult(), row = artifact.data.assertions.results[1];
+    Object.assign(artifact.data.case.assertions[0], { equals: "done", match: "confirmation_token" });
+    Object.assign(row, { outcome, match: "confirmation_token" });
+    if (actual === undefined) { delete row.actual; delete row.evidence; }
+    else row.actual = actual;
+    const get = await openDiagnostic(artifact);
+    const card = descendants(section(get, "断言诊断 · 失败优先"), "article").find((item) => descendants(item, "h3")[0].textContent === "answer");
+    assert.match(card.textContent, /确认词匹配/);
+    assert.ok(card.textContent.startsWith("answer " + label));
+    assert.equal(descendants(card, "mark").length, 0);
+    if (actual === undefined) {
+      assert.match(card.textContent, /未保存实际值/);
+    } else {
+      const values = descendants(card, "pre");
+      assert.equal(literalText(values[0]), "done");
+      assert.equal(literalText(values[1]), actual);
+    }
+  }
 });
 
 test("environment state cards show exact saved expected and actual files", async () => {

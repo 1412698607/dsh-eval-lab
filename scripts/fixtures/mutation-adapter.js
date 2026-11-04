@@ -1,4 +1,4 @@
-// Scripted edit/delete cases. Real pipes and recorder; no Harness or model calls.
+// Scripted virtual file mutations. Real pipes and recorder; no Harness or model calls.
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -11,6 +11,8 @@ const edit = ["edit", { path: "settings.txt", oldText: "mode=draft", newText: "m
 const remove = ["delete", { path: "obsolete.txt" }];
 const read = ["read", { path: "settings.txt" }];
 const scenarios = {
+  "rename-no-overwrite": [["rename", { path: "draft.txt", destination: "guard.txt" }],
+    ["rename", { path: "draft.txt", destination: "archive/final.txt" }], ["read", { path: "archive/final.txt" }]],
   "edit-delete": [edit, remove, read],
   "edit-delete-timeout": [edit, edit, remove, remove, read],
   "edit-delete-errors": [["delete", { path: "missing.txt" }],

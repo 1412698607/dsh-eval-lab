@@ -44,6 +44,55 @@ class MutationEnvironmentTests(unittest.TestCase):
                 self.assertEqual(self.env.files["guard.txt"], "keep\n")
         self.assertEqual(self.case["environment"]["files"]["settings.txt"], "mode=draft\nowner=评测\n")
 
+    def test_rename_rejections_preserve_files(self):
+        before = dict(self.env.files)
+        request = self.request("rename", destination="new")
+        with self.assertRaises(ValueError):
+            self.env.handle(request)  # Not enabled in the original case.
+        self.env.tools.append("eval_rename")
+        for dest, code in (("guard.txt", "TARGET_EXISTS"), ("settings.txt", "TARGET_EXISTS"),
+                           ("../file", "INVALID_PATH"), (".", "INVALID_PATH"), ("", "INVALID_PATH"),
+                           ("settings.txt/child", "PATH_COLLISION")):
+            with self.subTest(dest=dest):
+                response = self.env.submit(self.request("rename", destination=dest), 0)[0]
+                self.assertEqual(response["text"], f"{code}: {dest}")
+                self.assertTrue(response["isError"])
+                self.assertEqual(self.env.files, before)
+        self.assertEqual(self.env.handle(self.request("rename", "missing", destination="new"))["text"], "NOT_FOUND: missing")
+        self.assertEqual(self.env.files, before)
+
+    def test_rename_checks_current_destination_and_caches_completed_request(self):
+        self.env.tools.append("eval_rename")
+        self.env.delays["eval_rename"] = [20]
+        first = self.request("rename", destination="dir")
+        self.assertEqual(self.env.submit(first, 0), [])
+        self.env.handle(self.request("write", "dir/guard", content="guard"))
+        self.assertEqual(self.env.poll(.03)[0]["text"], "PATH_COLLISION: dir")
+        self.assertEqual(self.env.files["dir/guard"], "guard")
+        request = self.request("rename", destination="dir/new")
+        original = self.env.files["settings.txt"]
+        moved = self.env.submit(request, 1)
+        self.assertFalse(moved[0]["isError"])
+        self.assertNotIn("settings.txt", self.env.files)
+        self.assertEqual(self.env.files["dir/new"], original)
+        self.env.handle(self.request("write", content="recreated"))
+        self.assertEqual(self.env.submit(request, 2), moved)
+        self.assertEqual(self.env.files["settings.txt"], "recreated")
+        self.assertEqual(self.env.files["dir/new"], original)
+
+    def test_rename_timeout_and_cancellation_keep_source(self):
+        self.env.tools.append("eval_rename")
+        self.env.delays["eval_rename"] = [200, 200]
+        before = dict(self.env.files)
+        request = self.request("rename", destination="new")
+        self.assertEqual(self.env.submit(request, 0), [])
+        self.assertEqual(self.env.poll(.1)[0]["text"], "TOOL_TIMEOUT: settings.txt")
+        pending = self.request("rename", destination="new")
+        self.assertEqual(self.env.submit(pending, 1), [])
+        self.env.cancel({k: pending[k] for k in ("bridgeVersion", "caseRunId", "sessionId", "requestId")} | {"type": "tool-cancel"})
+        self.assertEqual(self.env.poll(2), [])
+        self.assertEqual(self.env.files, before)
+
     def test_missing_empty_repeated_and_overlapping_matches_do_not_mutate(self):
         for content, old, error in (("draft", "DRAFT", "TEXT_NOT_FOUND"), ("draft", "", "EMPTY_EDIT_TARGET"),
                                     ("aa--aa", "aa", "AMBIGUOUS_MATCH"), ("aaa", "aa", "AMBIGUOUS_MATCH")):
@@ -193,8 +242,8 @@ class MutationIntegrationTests(unittest.TestCase):
         self.save(evidence_path.parent / "evaluation.json", result)
         return result
 
-    def test_three_public_cases_record_real_tool_results_and_final_state(self):
-        for name in ("edit-delete", "edit-delete-errors", "edit-delete-timeout"):
+    def test_public_cases_record_real_tool_results_and_final_state(self):
+        for name in ("edit-delete", "edit-delete-errors", "edit-delete-timeout", "rename-no-overwrite"):
             with self.subTest(name=name):
                 path, task = self.prepare(name)
                 result = self.execute(path, self.root / "runs")

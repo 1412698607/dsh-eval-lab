@@ -87,8 +87,24 @@ def _call_matches(assertion, call, arguments):
         key in arguments and _same(arguments[key], value) for key, value in assertion.get("arguments", {}).items())
 
 
+def _assertion_identity(assertion):
+    return {key: assertion[key] for key in ("id", "type", "role", "match") if key in assertion}
+
+
+def _matches_final_text(assertion, actual):
+    expected = assertion["equals"]
+    if assertion.get("match") != "confirmation_token":
+        return actual == expected
+    word = expected.lower()
+    forms = [word, word + "."]
+    for marker in ("**", "__"):
+        bold = f"{marker}{word}{marker}"
+        forms.extend((bold, bold + ".", f"{marker}{word}.{marker}"))
+    return actual.isascii() and actual.lower() in forms
+
+
 def check_assertion(assertion, view, previous=None):
-    base = {"id": assertion["id"], "type": assertion["type"]}
+    base = _assertion_identity(assertion)
     kind = assertion["type"]
     if kind == "environment_files":
         snapshot = view.get("environmentSnapshot")
@@ -98,7 +114,7 @@ def check_assertion(assertion, view, previous=None):
                 "actual": snapshot["files"], "evidence": {"environmentSnapshotSha256": snapshot_digest(snapshot)}}
     if kind == "final_text":
         actual = text_of(view["final"]["data"]["message"]).strip()
-        return {**base, "outcome": "passed" if actual == assertion["equals"] else "failed",
+        return {**base, "outcome": "passed" if _matches_final_text(assertion, actual) else "failed",
                 "actual": actual, "evidence": {"answerSeq": view["final"]["seq"]}}
     if kind == "turn_end":
         actual = view["end"]["data"].get("reason")
@@ -161,6 +177,14 @@ def check_assertions(assertions, view):
     return list(results.values())
 
 
+def assertion_outcome(rows):
+    """Aggregate scored rows after the recording and execution gates have passed."""
+    outcomes = {row["outcome"] for row in rows if row.get("role", "required") == "required"}
+    if not outcomes or not outcomes <= {"passed", "failed"}:
+        return "insufficient_evidence"
+    return "failed" if "failed" in outcomes else "passed"
+
+
 def evaluate(case_path, evidence_path):
     case_path, evidence_path = Path(case_path).resolve(), Path(evidence_path).resolve()
     case = validate_case(load_json(case_path))
@@ -169,7 +193,7 @@ def evaluate(case_path, evidence_path):
     recording = (inspect_recording(run_dir) if run_dir else
                  {"outcome": "unverified", "reasons": ["No recorder run was observed"]})
     execution = {**evidence["execution"], "reportedStatus": evidence["execution"]["status"]}
-    rows = [{"id": item["id"], "type": item["type"], "outcome": "not_run"} for item in case["assertions"]]
+    rows = [{**_assertion_identity(item), "outcome": "not_run"} for item in case["assertions"]]
     assertions = {"outcome": "not_run", "results": rows}
     result = {"evaluationFormatVersion": evidence["evidenceFormatVersion"], "evaluatedAt": datetime.now(timezone.utc).isoformat(),
               "caseRunId": evidence["caseRunId"], "caseId": case["caseId"], "case": case,
@@ -250,9 +274,7 @@ def evaluate(case_path, evidence_path):
                                     and header.get("model") == evidence["configuration"]["model"] for header in headers),
                     "Actual request routes do not match the evidence configuration")
         rows[:] = check_assertions(case["assertions"], view)
-        outcomes = {row["outcome"] for row in rows}
-        assertions["outcome"] = ("insufficient_evidence" if "insufficient_evidence" in outcomes
-                                 else "failed" if "failed" in outcomes else "passed")
+        assertions["outcome"] = assertion_outcome(rows)
         if assertions["outcome"] in ("passed", "failed"):
             result["outcome"] = assertions["outcome"]
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:

@@ -6,16 +6,18 @@ export function registerStatefulTools(ctx, defineTool, bridge, tools = ["eval_re
     list: "List virtual fixture file paths under a directory; use . for the root.",
     write: "Create or replace a virtual fixture file with exact text content. No host filesystem access.",
     delete: "Delete one existing virtual fixture file. Missing files return NOT_FOUND; directories are not deleted.",
+    rename: "Move one existing virtual file to a new relative path. The destination must be unused. No overwrite or directory moves.",
     edit: "Replace exactly one occurrence of oldText in an existing virtual file. Empty, missing or ambiguous oldText fails without mutation. No whitespace normalization or regex matching.",
   };
   for (const name of tools) {
-    if (!["eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit"].includes(name)) throw new Error("Unsupported stateful tool");
+    if (!["eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit", "eval_rename"].includes(name)) throw new Error("Unsupported stateful tool");
     const operation = name.slice(5);
     ctx.tools.register(defineTool({
       name: `eval_${operation}`,
       description: descriptions[operation],
       parameters: { path: { type: "string", required: true, description: "Relative POSIX path in the virtual fixture." },
         ...(operation === "write" ? { content: { type: "string", required: true, description: "Complete replacement text." } } : {}),
+        ...(operation === "rename" ? { destination: { type: "string", required: true, description: "New relative POSIX file path." } } : {}),
         ...(operation === "edit" ? {
           oldText: { type: "string", required: true, description: "Nonempty exact text that occurs only once, including overlapping matches." },
           newText: { type: "string", required: true, description: "Replacement text; empty removes the matched text." },

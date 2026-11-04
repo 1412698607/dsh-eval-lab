@@ -31,8 +31,9 @@ python -m dsh_eval --case fixtures/evaluation/retry-read.case.json --run
 | eval_write（显式启用） | path、content：相对文件路径及完整文本 | 创建或覆盖虚拟文件；空文本有效，目录 / 文件冲突返回 PATH_COLLISION；成功返回 WROTE: 路径 |
 | eval_delete（显式启用） | path：相对文件路径 | 只删除已有单个文件，成功返回 DELETED: 路径；文件缺失或目录路径返回 NOT_FOUND，不递归 |
 | eval_edit（显式启用） | path、oldText、newText | 在提交时读取文件，唯一精确匹配 oldText 后替换；成功返回 EDITED: 路径，newText 可为空 |
+| eval_rename（显式启用） | path、destination | 移动一个已有虚拟文件到新的相对路径，保留正文。成功返回 `RENAMED: 源 -> 目标` |
 
-拒绝绝对路径、盘符、反斜杠、空分量、上级和非根点分量，返回 INVALID_PATH。所有操作只改变内存虚拟文件，不读写或删除真实文件系统内容；未实现重命名。状态只取决于路径、操作和该环境当前计数，不按全局调用次数播放答案。每次执行重新创建状态。
+拒绝绝对路径、盘符、反斜杠、空分量、上级和非根点分量，返回 INVALID_PATH。所有工具操作均在内存中执行。每次用例执行重新创建虚拟文件和按路径配置的故障计数。
 
 含 NUL 的路径、整体为纯空白的文件路径也返回 `INVALID_PATH`。合法文件名中的空格和 Unicode 字符按原样保留。例如 `"   /leaf.txt"` 的父目录可用 `eval_list("   ")` 列出。初始文件、最终状态期望和归档快照使用相同的文件路径及目录冲突规则。
 
@@ -104,7 +105,15 @@ python -m unittest discover -s test -p test_stateful_mutations.py -v
 python -m dsh_eval --case fixtures/evaluation/edit-delete.case.json --run
 ```
 
-详细验证见 [096](changes/2026-11-02-096-stateful-delete-edit.md)。三个用例均独立于旧 core 固定集；095 的单次真实写入样本不作为删除 / 编辑的模型验证。当前不提供重命名、递归删除、批量替换、事务回滚或外部文件操作。
+详细验证见 [096](changes/2026-11-02-096-stateful-delete-edit.md)。三个用例均独立于旧 core 固定集；095 的单次真实写入样本不作为删除 / 编辑的模型验证。096 当时未包含重命名。
+
+## 单文件重命名（108）
+
+[109](changes/2026-11-04-109-live-rename-acceptance.md) 使用真实模型完成一次重命名任务。改名和最终状态断言通过，严格最终回复失败；归档保留完整六次工具调用及独立复验结果。
+
+`eval_rename({path, destination})` 在请求就绪时检查源文件，缺失或为目录返回 `NOT_FOUND`。目标须是有效的相对文件路径；已有文件（包括源文件自身）返回 `TARGET_EXISTS`，文件与目录冲突返回 `PATH_COLLISION`。目标路径错误的消息指向 destination。所有这些错误都会保留原文件与目标文件。成功时允许移动到新的隐式目录，按原样保留大小写和正文。瞬时读取故障配置仍属于各自的路径。
+
+运行 `python -m scripts.smoke_bridge --rename` 验证拒绝覆盖、读取仍在的源文件、成功改名、目标读回和原路径缺失。公开用例见[禁止覆盖的改名](../fixtures/evaluation/rename-no-overwrite.case.json)。
 
 [097 真实验收](changes/2026-11-02-097-mutation-live-acceptance.md) 已完成首轮三个 DeepSeek Flash 任务：正常操作通过，两个错误 / 超时用例因精确期望漏写 Error 前缀而失败，操作次数与最终状态均正确。修正当前用例及合成录制后，两个新任务补验通过；原失败和原冻结输入保留。097 阶段三个场景分别有通过证据，不称为同一修正后矩阵的 3/3，也不推断总体模型表现。
 

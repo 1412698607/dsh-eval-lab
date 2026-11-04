@@ -1,5 +1,9 @@
 # 公开离线评测样例
 
+该重命名用例的首次真实任务保留了最终文本失败，完整轨迹顺序与状态核对见 [109](../../docs/changes/2026-11-04-109-live-rename-acceptance.md)。
+
+[rename-no-overwrite](rename-no-overwrite.case.json) 要求先尝试将文件移动到已占用的路径，再选择可用目标并读回。七条断言核对操作顺序、两次改名调用、精确内容和最终文件集合。该用例独立于固定十用例矩阵。
+
 2026 年 11 月 3 日：[099](../../docs/changes/2026-11-03-099-tool-control-unified-acceptance.md) 使用现有修正后的 stateful-mutations 清单完成一个新冻结实验，三项均通过；用例与预算未再修改，097 历史失败保留。这仅是当前配置下每用例一次的验收，不代表总体模型表现。
 
 - [stateful-mutations.experiment.json](stateful-mutations.experiment.json)：上述三个状态变更用例、单配置、各一次。可先 `--plan --max-samples 3`，实际 `--run` 会调用模型；完整运行示例见 [状态化工具](../../docs/stateful-tools.md)。

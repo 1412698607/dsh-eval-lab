@@ -1,5 +1,26 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月4日 同轨迹断言对照
+
+- [112](docs/changes/2026-11-04-112-same-trace-assertion-comparison.md) 新增离线命令，分别展示更改断言后任务总判定、单项判定及证据的差异。
+
+## 2026年11月4日 确认词匹配
+
+- [111](docs/changes/2026-11-04-111-confirmation-token.md) 允许单词确认语使用大小写、加粗和单个英文句号，结果保留原文，默认仍精确比较。
+
+## 2026年11月4日 必需断言与诊断断言
+
+- [110](docs/changes/2026-11-04-110-assertion-roles.md) 支持按必需断言判定任务，同时保留诊断项的精确检查结果。109 的历史判定与派生规则的离线对照分别记录。
+
+## 2026年11月4日 单文件重命名真实验收
+
+- [109](docs/changes/2026-11-04-109-live-rename-acceptance.md) 一个真实任务完成，改名顺序与最终状态通过，严格最终文本失败，离线复验保持原判定。
+
+## 2026年11月4日 单文件重命名与工作区交付
+
+- [108](docs/changes/2026-11-04-108-stateful-rename.md) 增加受控虚拟文件重命名、禁止覆盖的用例及组件检查。
+- [107](docs/changes/2026-11-04-107-native-filename-delivery-ci.md) 核实 105、106 的共同提交与精确 SHA 的 CI 结果。
+
 ## 2026年11月4日 普通工作区文件名控制字符检查
 
 - [106](docs/changes/2026-11-04-106-native-filename-control-characters.md) 修复初始磁盘文件的路径含制表符等控制字符时，runner 留下部分文件的问题。

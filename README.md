@@ -4,6 +4,14 @@
 
 ## 当前功能
 
+- 对只要求回复一个确认词的任务，版本 2 支持[确认词匹配](docs/evaluation-format.md#确认词匹配)。用例可接受 `done`、`Done.` 或 `**Done.**`，同时拒绝否定和附加说明。旧用例继续精确比较。
+
+- 版本 2 用例支持[必需断言与诊断断言](docs/evaluation-format.md#断言角色)。例如将最终回复格式标为诊断后，任务可按工具操作和最终状态判分，报告仍保留原回复及格式失败。
+
+- [单文件重命名真实验收](docs/changes/2026-11-04-109-live-rename-acceptance.md)：一次 DeepSeek Flash 任务中，工具顺序和最终快照符合用例；精确回复断言失败，总判定经离线复验保持 failed。
+
+- [虚拟文件重命名](docs/stateful-tools.md)：用例可显式启用 `eval_rename`，移动单个文件并拒绝覆盖目标。运行 `python -m scripts.smoke_bridge --rename` 可验证真实工具注册和 IPC，无需调用模型。
+
 - [工具控制组合与统一验收](docs/changes/2026-11-03-099-tool-control-unified-acceptance.md)：多请求并存时的期限、单独取消及迟到响应已有无模型回归和真实组件检查；修正后的三任务清单已在同一冻结实验中全部通过，普通模型任务与取消组合验证范围分开。
 
 - [受控删除与精确文本编辑](docs/stateful-tools.md)：显式启用 eval_delete / eval_edit，支持单文件删除和唯一原文替换；缺失、歧义、超时及取消均有状态保持检查。096 提供三份独立用例；[097](docs/changes/2026-11-02-097-mutation-live-acceptance.md) 记录真实验收发现的错误前缀期望缺陷及修正，首轮失败保留，当前三个场景各有通过证据。
@@ -308,6 +316,16 @@ python -m dsh_eval --case 'fixtures/evaluation/read-project.case.json' --evidenc
 `demo:eval` 输出读取项目名称、报告缺失文件两组 casePath / evidencePath，分别代入评测命令。它用原有记录器生成合成日志，不调用模型，也不执行用例环境。评测先重新运行 Node inspect，再核对输入、工具参数、callId 结果关联、答案和结束顺序。结果文件必须不存在，复验请省略 `--output` 或使用新文件名。
 
 退出码 `0` / `1` / `2` 分别对应任务 passed / failed / unevaluable（输入或输出错误也为 `2`）。仅执行正常且录制有效才判断任务通过或失败；缺工具证据、取消、超时、运行错误和录制损坏分别保留原因。完整字段、预算声明和单任务限制见 [评测格式](docs/evaluation-format.md) 与 [合成样例](fixtures/evaluation/README.md)。
+
+### 在同一份轨迹上比较两套断言
+
+上一节生成的合成证据和已有任务归档都可用于断言对照。取证据旁的 `case.json` 复制为候选用例，只修改 `assertions`，然后运行：
+
+```powershell
+python -m dsh_eval --compare-assertions 'runs/<任务目录>/evidence.json' --candidate 'runs/candidate.case.json' --output 'runs/assertion-comparison.json'
+```
+
+命令对同一份轨迹复评两次，按断言 ID 展示规则、顺序和判定差异。比较完成即退出 0，任务本身的 passed / failed 见报告两侧。详见[同轨迹断言对照](docs/evaluation-format.md#同轨迹断言对照)。
 
 ## 单用例真实运行（M3.2）
 

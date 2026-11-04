@@ -155,7 +155,7 @@ def validate_case(case):
         fields(stateful, ("transientReadFailures",), ("tools", "toolDelaysMs"))
         tools = stateful.get("tools", ["eval_read", "eval_list"])
         require(isinstance(tools, list) and tools and all(isinstance(tool, str) and tool in
-                ("eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit") for tool in tools) and len(set(tools)) == len(tools),
+                ("eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit", "eval_rename") for tool in tools) and len(set(tools)) == len(tools),
                 "stateful.tools must name distinct supported tools")
         delays = stateful.get("toolDelaysMs", {})
         require(isinstance(delays, dict), "toolDelaysMs must be an object")
@@ -188,23 +188,32 @@ def validate_case(case):
     assertions = case["assertions"]
     require(isinstance(assertions, list) and assertions, "At least one assertion is required")
     ids = set()
-    tool_ids = set()
+    tool_roles = {}
+    role_field = ("role",) if case["caseFormatVersion"] == 2 else ()
     for assertion in assertions:
         require(isinstance(assertion, dict), "Assertion must be an object")
+        role = assertion.get("role", "required")
+        require(role in ("required", "diagnostic"), "Assertion role must be required or diagnostic")
         kind = assertion.get("type")
         if kind == "final_text":
-            fields(assertion, ("id", "type", "equals"))
+            fields(assertion, ("id", "type", "equals"), ("role", "match") if case["caseFormatVersion"] == 2 else ())
             require(nonempty(assertion["equals"]), "Final text must be nonempty")
+            if "match" in assertion:
+                require(assertion["match"] == "confirmation_token", "Unsupported final_text match")
+                require(re.fullmatch(r"[A-Za-z]+", assertion["equals"]) is not None,
+                        "confirmation_token requires a single ASCII word in equals")
         elif kind == "environment_files":
-            fields(assertion, ("id", "type", "equals"))
+            fields(assertion, ("id", "type", "equals"), role_field)
             require("stateful" in case["environment"], "environment_files requires stateful execution")
             validate_file_map(assertion["equals"], "Expected files")
         elif kind == "tool_result":
-            fields(assertion, ("id", "type", "tool", "arguments", "result"), ("after",))
+            fields(assertion, ("id", "type", "tool", "arguments", "result"), role_field + ("after",))
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
             if "after" in assertion:
-                require(nonempty(assertion["after"]) and assertion["after"] in tool_ids,
+                require(nonempty(assertion["after"]) and assertion["after"] in tool_roles,
                         "after must name an earlier tool_result assertion")
+                require(role == "diagnostic" or tool_roles[assertion["after"]] == "required",
+                        "Required tool_result cannot depend on a diagnostic assertion")
             require(isinstance(assertion["arguments"], dict)
                     and (case["caseFormatVersion"] == 2 or assertion["arguments"]),
                     "Expected tool arguments must be an object (nonempty in case version 1)")
@@ -217,8 +226,8 @@ def validate_case(case):
             if "textEquals" in assertion["result"]:
                 require(isinstance(assertion["result"]["textEquals"], str), "textEquals must be text")
         elif kind in ("tool_forbidden", "tool_call_count"):
-            fields(assertion, ("id", "type", "tool"),
-                   ("arguments", "min", "max") if kind == "tool_call_count" else ("arguments",))
+            bounds = ("min", "max") if kind == "tool_call_count" else ()
+            fields(assertion, ("id", "type", "tool"), role_field + ("arguments",) + bounds)
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
             require(isinstance(assertion.get("arguments", {}), dict), "Expected tool arguments must be an object")
             if kind == "tool_call_count":
@@ -230,14 +239,16 @@ def validate_case(case):
                 require(assertion.get("min", 0) <= assertion.get("max", 9007199254740991),
                         "Tool call count min must not exceed max")
         elif kind == "turn_end":
-            fields(assertion, ("id", "type", "reason"))
+            fields(assertion, ("id", "type", "reason"), role_field)
             require(isinstance(assertion["reason"], dict) and nonempty(assertion["reason"].get("kind")), "Expected end reason is required")
         else:
             raise ValueError(f"Unsupported assertion type: {kind}")
         require(nonempty(assertion["id"]) and assertion["id"] not in ids, "Assertion IDs must be nonempty and unique")
         ids.add(assertion["id"])
         if kind == "tool_result":
-            tool_ids.add(assertion["id"])
+            tool_roles[assertion["id"]] = role
+    require(any(item.get("role", "required") == "required" for item in assertions),
+            "At least one assertion must have the required role")
     return case
 
 
