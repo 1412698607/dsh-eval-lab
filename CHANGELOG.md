@@ -1,5 +1,13 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月9日 整份实验的规则影响预览
+
+- [119](docs/changes/2026-11-09-119-experiment-assertion-preview.md) 对已完成实验逐样本预览候选断言的影响，并在 117 原归档上比较宽松确认词与必需的精确回复。
+
+## 2026年11月9日 对照浏览与诊断汇总交付
+
+- [118](docs/changes/2026-11-09-118-comparison-browser-delivery-ci.md) 核实 113–117 的共同提交及 Windows CI。
+
 ## 2026年11月4日 新规则四任务真实验收
 
 - [117](docs/changes/2026-11-04-117-live-confirmation-matrix.md) 四任务必需项全部通过，其中一次加粗回复保留精确格式诊断失败；独立复验和快照核对一致。

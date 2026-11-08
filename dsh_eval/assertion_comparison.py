@@ -13,10 +13,15 @@ def _contained(directory, path):
     return resolved
 
 
+class _NotAnInputFile(ValueError):
+    pass
+
+
 def _file_digest(path):
     if not path.exists():
         return None
-    require(path.is_file(), f"Expected a comparison input file: {path.name}")
+    if not path.is_file():
+        raise _NotAnInputFile(f"Expected a comparison input file: {path.name}")
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
@@ -27,7 +32,7 @@ def _read_input(path, hashes):
     return parse_json(data.decode("utf-8"))
 
 
-def _source_state(evidence_path, case_paths, evidence):
+def _source_state(evidence_path, case_paths, evidence, *, file_digest=_file_digest):
     directory = evidence_path.parent
     files = [evidence_path, *case_paths]
     if "runtimeReport" in evidence:
@@ -40,7 +45,7 @@ def _source_state(evidence_path, case_paths, evidence):
             # checks for pending state files. Never traverse the host/workspace.
             files.extend(_contained(directory, path) for path in run_dir.iterdir()
                          if path.name.endswith((".jsonl", ".status.json", ".tmp")))
-    return {str(path): _file_digest(path) for path in files}
+    return {str(path): file_digest(path) for path in files}
 
 
 def _side(case_path, case, evaluation):
