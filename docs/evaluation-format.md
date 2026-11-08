@@ -26,6 +26,38 @@ python -m dsh_eval --compare-assertions '<任务目录>/evidence.json' --candida
 
 两侧均可评时状态为 `compared`，退出 0，即使新旧判定都是 failed。某一侧无法评测时返回 `inconclusive`，退出 2；输入无效、源文件发生可检测变化或输出冲突也退出 2。省略 `--output` 时只打印 JSON，指定文件须为源任务目录外的新文件。该命令无模型调用。请使用停止写入的归档；关键文件摘要的前后比对无法提供文件系统级原子快照。
 
+## 整份实验的规则影响预览
+
+```powershell
+python -m dsh_eval --compare-experiment-assertions '<实验目录>/experiment-result.json' --candidate 'runs/exact-rename-rules.json' --output 'runs/rule-impact.json'
+```
+
+输入为一份已完成、计划指纹可核验的普通实验，以及版本 1 的规则映射。映射中的 `cases` 以 **caseEntryId** 为键，每个值是该用例的完整候选断言数组。须覆盖冻结清单中所有入口，同一入口的所有配置与重复轮次使用同一套候选规则。任务、初始环境、配置和预算都取自样本原输入。
+
+例如，要用 117 的归档检查“如果必须精确回复 done，有几个任务会失败”，可以在仓库根目录运行以下 Python 代码来生成规则文件：
+
+```python
+import json
+from pathlib import Path
+
+archive = Path("runs/n4/<实验 ID>")
+def read(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+saved = read(archive / "experiment-result.json")
+manifest = read(archive / saved["manifestPath"])
+rules = {"assertionRuleMapFormatVersion": 1, "cases": {}}
+for entry in manifest["cases"]:
+    assertions = read(archive / entry["casePath"])["assertions"]
+    answer = next(row for row in assertions if row["id"] == "answer")
+    assert answer.pop("match") == "confirmation_token"
+    rules["cases"][entry["entryId"]] = assertions
+with Path("runs/exact-rename-rules.json").open("x", encoding="utf-8") as output:
+    json.dump(rules, output, ensure_ascii=False, indent=2)
+```
+
+每个计划样本都有一行，带用例入口、配置、轮次、运行身份和原规则 / 候选规则的结论。可评样本计入通过变失败、失败变通过、仍通过或仍失败。缺少可信证据的样本单列，保留原因。两套规则即使有翻转，成功完成对照仍退出 0；有不可评项或输入不合法退出 2。默认输出到 stdout，`--output` 仅可创建源实验目录外的新文件。本入口不续跑任务，证据中的 live/synthetic 表示原轨迹来源，`modelCalled` 为 false。
+
 ## 用例：caseFormatVersion 1
 
 参考 [读取用例](../fixtures/evaluation/read-project.case.json) 与 [缺失文件用例](../fixtures/evaluation/missing-file.case.json)。下表中 modelProviders / recorder 可选，其余字段必需；未知字段、未知版本 / 断言、重复断言 ID、重复 JSON 键和非有限数字会被拒绝。

@@ -329,6 +329,16 @@ python -m dsh_eval --compare-assertions 'runs/<任务目录>/evidence.json' --ca
 
 命令对同一份轨迹复评两次，按断言 ID 展示规则、顺序和判定差异。比较完成即退出 0，任务本身的 passed / failed 见报告两侧。保存为 `assertion-comparison.json` 可在只读浏览器中查看两侧明细与关联事件。详见[同轨迹断言对照](docs/evaluation-format.md#同轨迹断言对照)。
 
+### 预览整份实验更改断言后的结果
+
+准备按用例入口 ID 指定完整候选断言的规则映射，然后运行：
+
+```powershell
+python -m dsh_eval --compare-experiment-assertions 'runs/<实验目录>/experiment-result.json' --candidate 'runs/exact-rename-rules.json' --output 'runs/rule-impact.json'
+```
+
+命令只读复评已完成实验的同一批录制，按用例、配置和轮次列出翻转及触发变化的断言。报告保留全部计划样本和无法评测的数量。[规则映射示例与退出码](docs/evaluation-format.md#整份实验的规则影响预览)
+
 ## 单用例真实运行（M3.2）
 
 以下命令会调用用例指定的真实模型，使用本机匹配版本宿主和已有凭据引用：
