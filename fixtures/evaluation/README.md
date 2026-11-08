@@ -1,6 +1,10 @@
 # 公开离线评测样例
 
-该重命名用例的首次真实任务保留了最终文本失败，完整轨迹顺序与状态核对见 [109](../../docs/changes/2026-11-04-109-live-rename-acceptance.md)。
+确认词与超时矩阵的四个真实任务结果见 [117](../../docs/changes/2026-11-04-117-live-confirmation-matrix.md)。其中一项加粗确认语在运行前固定的匹配规则下通过，并保留精确回复诊断失败。
+
+[rename-confirmation.experiment.json](rename-confirmation.experiment.json) 固定两个用例、DeepSeek Flash 单配置、各两轮。两份新用例事先声明确认词为必需、精确 done 为诊断，分别覆盖目标占用后改名及超时后重试。无模型输入验证见 [116](../../docs/changes/2026-11-04-116-rename-confirmation-matrix.md)。
+
+旧用例 rename-no-overwrite 的首次真实任务保留了最终文本失败，完整轨迹顺序与状态核对见 [109](../../docs/changes/2026-11-04-109-live-rename-acceptance.md)。
 
 [rename-no-overwrite](rename-no-overwrite.case.json) 要求先尝试将文件移动到已占用的路径，再选择可用目标并读回。七条断言核对操作顺序、两次改名调用、精确内容和最终文件集合。该用例独立于固定十用例矩阵。
 

@@ -75,6 +75,93 @@ async function openDiagnostic(artifact, requests = []) {
   return get;
 }
 
+function comparisonArtifact() {
+  const identity = { id: "runs:trace/" + "a".repeat(64) + ".jsonl", runId: "run", sessionId: "session" };
+  const rule = { id: "answer", type: "final_text", equals: "done" };
+  const result = { id: "answer", type: "final_text", outcome: "failed", actual: "**Done.**", evidence: { answerSeq: 48 } };
+  return { kind: "assertion_comparison", links: [], assertionTrace: identity, data: {
+    assertionComparisonFormatVersion: 1, caseId: "rename", status: "compared", source: "live",
+    baseline: { outcome: "failed", assertionOutcome: "failed", recordingOutcome: "complete", executionStatus: "completed", assertionsSha256: "old" },
+    candidate: { outcome: "passed", assertionOutcome: "passed", recordingOutcome: "complete", executionStatus: "completed", assertionsSha256: "new" },
+    summary: { taskOutcomeChanged: true, changedAssertionIds: ["answer"] },
+    assertions: [{ id: "answer", ruleChanged: true, resultChanged: true, outcomeChanged: false, positionChanged: false,
+      baseline: { position: 1, definition: rule, result },
+      candidate: { position: 1, definition: { ...rule, role: "diagnostic" }, result: { ...result, role: "diagnostic" } } },
+    { id: "end", ruleChanged: false, resultChanged: false, outcomeChanged: false, positionChanged: false,
+      baseline: { position: 2, definition: { id: "end", type: "turn_end" }, result: { outcome: "passed" } },
+      candidate: { position: 2, definition: { id: "end", type: "turn_end" }, result: { outcome: "passed" } } }],
+  } };
+}
+
+async function openComparison(artifact = comparisonArtifact(), requests = []) {
+  const get = await viewer([{ id: "runs:comparison/assertion-comparison.json", kind: "assertion_comparison",
+    title: "改名对照", path: "comparison", outcome: "passed", baselineOutcome: "failed", candidateOutcome: "passed", sources: ["live"] }], artifact, requests);
+  get("navigation").children.find((item) => item.children[1].textContent === "断言对照").trigger("click");
+  assert.match(get("catalog").textContent, /未通过 → 通过/);
+  findButton(get("catalog"), "改名对照").trigger("click");
+  await new Promise(setImmediate);
+  return get;
+}
+
+test("assertion comparisons preserve both verdicts, literal results and changed-only filtering", async () => {
+  const get = await openComparison();
+  assert.match(get("detail").textContent, /原任务结论 未通过/);
+  assert.match(get("detail").textContent, /候选任务结论 通过/);
+  const panel = section(get, "逐项规则与判定对照");
+  assert.equal(descendants(panel, "article").length, 2);
+  assert.match(panel.textContent, /必需项/);
+  assert.match(panel.textContent, /诊断项/);
+  assert.ok(panel.textContent.includes("**Done.**"));
+  findButton(panel, "仅看变化").trigger("click");
+  assert.equal(descendants(panel, "article").length, 1);
+  assert.equal(descendants(panel, "h3")[0].textContent, "answer");
+  findButton(panel, "显示全部断言").trigger("click");
+  assert.equal(descendants(panel, "article").length, 2);
+});
+
+test("comparison filters include evidence-only changes, missing sides and unchanged comparisons", async () => {
+  const artifact = comparisonArtifact();
+  artifact.data.status = "inconclusive";
+  artifact.data.candidate.outcome = "unevaluable";
+  artifact.data.candidate.assertionReason = "missing trace";
+  artifact.data.assertions = [
+    { id: "evidence", resultChanged: true, ruleChanged: false, outcomeChanged: false, positionChanged: false,
+      baseline: { position: 1, definition: { type: "tool_result" }, result: { outcome: "passed", evidence: { afterResultSeq: 1 } } },
+      candidate: { position: 1, definition: { type: "tool_result" }, result: { outcome: "passed", evidence: { afterResultSeq: 2 } } } },
+    { id: "added", ruleChanged: true, baseline: null, candidate: { position: 2, definition: { type: "final_text", match: "confirmation_token" }, result: { outcome: "not_run" } } },
+    { id: "removed", ruleChanged: true, baseline: { position: 3, definition: { type: "final_text" }, result: { outcome: "failed" } }, candidate: null },
+    { id: "moved", positionChanged: true, baseline: { position: 2 }, candidate: { position: 1 } },
+  ];
+  delete artifact.assertionTrace;
+  const get = await openComparison(artifact), panel = section(get, "逐项规则与判定对照");
+  assert.match(get("detail").textContent, /无法完成对照/);
+  assert.match(get("detail").textContent, /missing trace/);
+  findButton(panel, "仅看变化").trigger("click");
+  assert.equal(descendants(panel, "article").length, 4);
+  assert.match(panel.textContent, /此侧无该断言/);
+  assert.match(panel.textContent, /confirmation_token/);
+  assert.match(panel.textContent, /关联轨迹不可用/);
+  assert.equal(descendants(panel, "button").length, 1);
+  const same = comparisonArtifact();
+  same.data.assertions.forEach((row) => { row.ruleChanged = row.resultChanged = row.outcomeChanged = row.positionChanged = false; });
+  const unchanged = await openComparison(same), unchangedPanel = section(unchanged, "逐项规则与判定对照");
+  findButton(unchangedPanel, "仅看变化").trigger("click");
+  assert.match(unchangedPanel.textContent, /没有标记为变化的断言/);
+});
+
+test("comparison event jumps reuse the associated trace identity", async () => {
+  const artifact = comparisonArtifact(), requests = [];
+  const get = await openComparison((path) => path.includes("seq=") ? { kind: "trace", links: [], offset: 0, nextOffset: null,
+    focus: { seq: 48, line: 1 }, rows: [{ line: 1, data: { event: { seq: 48, type: "assistant/message" } } }] } : artifact, requests);
+  findButton(section(get, "逐项规则与判定对照"), "最终答案 · seq 48").trigger("click");
+  await new Promise(setImmediate);
+  const query = new URLSearchParams(requests.at(-1).split("?")[1]);
+  assert.equal(query.get("seq"), "48");
+  assert.equal(query.get("runId"), "run");
+  assert.equal(query.get("sessionId"), "session");
+  assert.match(get("detail").textContent, /已定位 seq 48/);
+});
+
 test("assertion cards prioritize saved failures, compare frozen expectations and preserve the raw verdict", async () => {
   const get = await openDiagnostic(diagnosticResult());
   const panel = section(get, "断言诊断 · 失败优先"), cards = descendants(panel, "article");
@@ -428,6 +515,38 @@ async function openReport(artifact, requests = []) {
   await new Promise(setImmediate);
   return get;
 }
+
+test("diagnostic report summaries retain coverage and open sample rechecks", async () => {
+  const artifact = resumedReport(), requests = [];
+  artifact.data.summary.diagnosticSummary = { observedSamples: 1, missingSamples: 1, samplesWithDiagnostics: 1,
+    samplesWithFailures: 1, passedSamplesWithFailures: 1,
+    assertionCounts: { passed: 0, failed: 1, insufficient_evidence: 0, not_run: 0 } };
+  artifact.data.samples[0].diagnosticSummary = { declaredAssertions: 1, outcomes: { failed: 1 },
+    failedAssertionIds: ["format-answer"], insufficientAssertionIds: [], notRunAssertionIds: [] };
+  artifact.data.samples[1].diagnosticSummary = null;
+  artifact.links.push({ label: "1 / evaluationPath", id: "runs:recheck/evaluation.json" });
+  const get = await openReport((path) => path.includes("recheck") ? diagnosticResult() : artifact, requests);
+  const panel = section(get, "诊断项覆盖与结果");
+  assert.match(panel.textContent, /1 \/ 1/);
+  assert.match(panel.textContent, /0 \/ 1 \/ 0 \/ 0/);
+  assert.match(panel.textContent, /format-answer/);
+  assert.match(panel.textContent, /任务通过率仍取决于必需项/);
+  const name = artifact.data.samples[0].sampleId || artifact.data.samples[0].caseRunId;
+  findButton(panel, name).trigger("click");
+  await new Promise(setImmediate);
+  assert.ok(requests.at(-1).includes("recheck%2Fevaluation.json"));
+});
+
+test("old reports omit diagnostic panels and partial summaries show missing counts", async () => {
+  const old = await openReport(resumedReport());
+  assert.equal(section(old, "诊断项覆盖与结果"), undefined);
+  const artifact = resumedReport();
+  artifact.data.summary.diagnosticSummary = { observedSamples: 0 };
+  const get = await openReport(artifact);
+  const panel = section(get, "诊断项覆盖与结果");
+  assert.match(panel.textContent, /0 \/ 缺失/);
+  assert.match(panel.textContent, /缺失 \/ 缺失 \/ 缺失 \/ 缺失/);
+});
 
 test("version two shows both batches, execution origins and separate historical and new usage", async () => {
   const requests = [], get = await openReport(resumedReport(), requests);

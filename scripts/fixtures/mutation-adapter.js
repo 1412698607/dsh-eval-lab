@@ -10,7 +10,13 @@ const task = JSON.parse(await readFile(join(directory, "case.json"), "utf8"));
 const edit = ["edit", { path: "settings.txt", oldText: "mode=draft", newText: "mode=ready" }];
 const remove = ["delete", { path: "obsolete.txt" }];
 const read = ["read", { path: "settings.txt" }];
+const rename = ["rename", { path: "draft.txt", destination: "archive/final.txt" }];
+const renameConfirmation = [["rename", { path: "draft.txt", destination: "guard.txt" }],
+  rename, ["read", { path: "archive/final.txt" }]];
 const scenarios = {
+  "rename-confirmation": renameConfirmation,
+  "rename-timeout-retry": [rename, ["read", { path: "draft.txt" }],
+    ["read", { path: "archive/final.txt" }], rename, ["read", { path: "archive/final.txt" }]],
   "rename-no-overwrite": [["rename", { path: "draft.txt", destination: "guard.txt" }],
     ["rename", { path: "draft.txt", destination: "archive/final.txt" }], ["read", { path: "archive/final.txt" }]],
   "edit-delete": [edit, remove, read],
@@ -41,7 +47,11 @@ for (const [operation, args] of scenarios[task.caseId]) {
   record("tool/result", { message: { toolCallId: requestId, isError: response.isError,
     content: [{ type: "text", text: response.isError ? `Error: ${response.text}` : response.text }] } });
 }
-const reason = { kind: "completed" }, answer = task.caseId === "edit-delete-errors" ? "rejected" : "done";
+const decoratedConfirmation = ["rename-confirmation", "rename-timeout-retry"].includes(task.caseId);
+let answer = "done";
+if (task.caseId === "edit-delete-errors") answer = "rejected";
+else if (decoratedConfirmation) answer = "**Done.**";
+const reason = { kind: "completed" };
 record("assistant/message", { message: { content: [{ type: "text", text: answer }] } });
 record("turn/end", { reason });
 await recorder.close();

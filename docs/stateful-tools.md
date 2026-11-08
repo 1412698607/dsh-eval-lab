@@ -109,6 +109,10 @@ python -m dsh_eval --case fixtures/evaluation/edit-delete.case.json --run
 
 ## 单文件重命名（108）
 
+116 提供[确认词](../fixtures/evaluation/rename-confirmation.case.json)与[超时重试](../fixtures/evaluation/rename-timeout-retry.case.json)两份新用例。运行 `python -m scripts.smoke_bridge --rename-retry` 可验证首次超时后源仍在、目标缺失、重试成功及最终读回的六个真实组件请求。
+
+[117 四任务真实验收](changes/2026-11-04-117-live-confirmation-matrix.md) 在运行前冻结确认词和精确诊断两条规则，验证了一次实际加粗回复和两次超时重试。四个任务的操作与状态必需项均通过。
+
 [109](changes/2026-11-04-109-live-rename-acceptance.md) 使用真实模型完成一次重命名任务。改名和最终状态断言通过，严格最终回复失败；归档保留完整六次工具调用及独立复验结果。
 
 `eval_rename({path, destination})` 在请求就绪时检查源文件，缺失或为目录返回 `NOT_FOUND`。目标须是有效的相对文件路径；已有文件（包括源文件自身）返回 `TARGET_EXISTS`，文件与目录冲突返回 `PATH_COLLISION`。目标路径错误的消息指向 destination。所有这些错误都会保留原文件与目标文件。成功时允许移动到新的隐式目录，按原样保留大小写和正文。瞬时读取故障配置仍属于各自的路径。

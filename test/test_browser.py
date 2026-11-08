@@ -51,6 +51,62 @@ class BrowserTests(unittest.TestCase):
         self.write(self.runs / "one/evaluation.json", self.evaluation)
         return path, "runs:one/traces/recording/" + filename, session
 
+    def comparison(self):
+        path, trace_id, session = self.diagnostic_trace()
+        self.write(self.runs / "one/evidence.json", {"evidenceFormatVersion": 2, "caseRunId": "one",
+            "runId": "recording", "sessionId": session, "runDir": "traces/recording"})
+        self.write(self.runs / "one/case.json", self.case)
+        self.write(self.runs / "candidate.case.json", self.case)
+        report = {"assertionComparisonFormatVersion": 1, "caseId": "rename", "caseRunId": "one",
+                  "runId": "recording", "sessionId": session, "source": "live", "status": "compared",
+                  "evidencePath": "../one/evidence.json", "baseline": {"casePath": "../one/case.json", "outcome": "failed"},
+                  "candidate": {"casePath": "../candidate.case.json", "outcome": "passed"},
+                  "summary": {"taskOutcomeChanged": True, "changedAssertionIds": ["answer"]}, "assertions": []}
+        file = self.write(self.runs / "comparison/assertion-comparison.json", report)
+        return report, file, trace_id
+
+    def test_assertion_comparison_catalog_links_and_trace_are_read_only(self):
+        report, _, trace_id = self.comparison()
+        before = self.digest()
+        with (patch("dsh_eval.evaluate.evaluate", side_effect=AssertionError("must not evaluate")),
+              patch("dsh_eval.runner.run_case", side_effect=AssertionError("must not run"))):
+            item = next(row for row in self.browser.catalog()["items"] if row["kind"] == "assertion_comparison")
+            self.assertEqual((item["outcome"], item["baselineOutcome"], item["candidateOutcome"], item["sources"]),
+                             ("passed", "failed", "passed", ["live"]))
+            doc = self.browser.document(item["id"])
+            self.assertEqual(doc["data"], report)
+            self.assertEqual(doc["assertionTrace"]["id"], trace_id)
+            self.assertEqual({link["label"]: link["id"] for link in doc["links"]},
+                             {"evidencePath": "runs:one/evidence.json", "baseline / casePath": "runs:one/case.json",
+                              "candidate / casePath": "runs:candidate.case.json"})
+        self.assertEqual(self.digest(), before)
+
+    def test_comparison_trace_requires_in_scope_matching_evidence(self):
+        report, path, _ = self.comparison()
+        for update in ({"evidencePath": "../../outside/evidence.json"}, {"evidencePath": "../home/evidence.json"},
+                       {"sessionId": "other"}, {"runId": "other"}, {"caseRunId": "other"}):
+            with self.subTest(update=update):
+                self.write(path, {**report, **update})
+                self.assertNotIn("assertionTrace", self.browser.document("runs:comparison/assertion-comparison.json"))
+        original_evidence = json.loads((self.runs / "one/evidence.json").read_text(encoding="utf-8"))
+        for key in ("caseRunId", "runId", "sessionId"):
+            with self.subTest(missing_on_both=key):
+                self.write(path, {k: v for k, v in report.items() if k != key})
+                self.write(self.runs / "one/evidence.json", {k: v for k, v in original_evidence.items() if k != key})
+                self.assertNotIn("assertionTrace", self.browser.document("runs:comparison/assertion-comparison.json"))
+        self.write(self.runs / "one/evidence.json", {"caseFormatVersion": 2})
+        self.write(path, report)
+        self.assertNotIn("assertionTrace", self.browser.document("runs:comparison/assertion-comparison.json"))
+
+    def test_inconclusive_comparison_and_missing_sides_remain_visible(self):
+        report, path, _ = self.comparison()
+        self.write(path, {**report, "status": "inconclusive", "candidate": None})
+        item = next(row for row in self.browser.catalog()["items"] if row["kind"] == "assertion_comparison")
+        self.assertIsNone(item["outcome"])
+        self.assertEqual(item["status"], "inconclusive")
+        self.write(path, {**report, "assertionComparisonFormatVersion": True})
+        self.assertIn("error", next(row for row in self.browser.catalog()["items"] if row["path"] == item["path"]))
+
     def test_assertion_trace_uses_associated_session_and_existing_allowed_file(self):
         path, identifier, session = self.diagnostic_trace()
         self.write(path.with_name("a" * 64 + ".jsonl"), {})

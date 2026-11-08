@@ -1,5 +1,19 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月4日 新规则四任务真实验收
+
+- [117](docs/changes/2026-11-04-117-live-confirmation-matrix.md) 四任务必需项全部通过，其中一次加粗回复保留精确格式诊断失败；独立复验和快照核对一致。
+
+## 2026年11月4日 对照浏览、诊断统计及新规则矩阵
+
+- [116](docs/changes/2026-11-04-116-rename-confirmation-matrix.md) 新建确认词与超时重试用例，以及固定四任务实验。
+- [115](docs/changes/2026-11-04-115-diagnostic-report-summary.md) 增加离线报告的诊断覆盖、状态计数及样本定位。
+- [114](docs/changes/2026-11-04-114-assertion-comparison-browser.md) 让同轨迹对照可按变化浏览并打开关联事件。
+
+## 2026年11月4日 评测规则交付与后续计划
+
+- [113](docs/changes/2026-11-04-113-evaluation-rules-delivery-ci.md) 同步 107–112 的共同提交与 CI，列出对照浏览、诊断汇总和新规则验收的接续顺序。
+
 ## 2026年11月4日 同轨迹断言对照
 
 - [112](docs/changes/2026-11-04-112-same-trace-assertion-comparison.md) 新增离线命令，分别展示更改断言后任务总判定、单项判定及证据的差异。

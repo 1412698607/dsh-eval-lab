@@ -4,6 +4,8 @@
 
 ## 当前功能
 
+- [新规则四任务验收](docs/changes/2026-11-04-117-live-confirmation-matrix.md) 验证目标占用和超时后重试。一次真实回复 `**done**` 通过确认词必需项，同时保留精确回复诊断失败；新报告和浏览器可定位该样本。
+
 - 对只要求回复一个确认词的任务，版本 2 支持[确认词匹配](docs/evaluation-format.md#确认词匹配)。用例可接受 `done`、`Done.` 或 `**Done.**`，同时拒绝否定和附加说明。旧用例继续精确比较。
 
 - 版本 2 用例支持[必需断言与诊断断言](docs/evaluation-format.md#断言角色)。例如将最终回复格式标为诊断后，任务可按工具操作和最终状态判分，报告仍保留原回复及格式失败。
@@ -129,7 +131,7 @@ npm.cmd test
 npm.cmd run demo
 ```
 
-`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及历史 CI 见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md) / [046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。最新已推送实现为 `c7b627a`；该精确 SHA 的 JavaScript 语法、Node 测试、Python 测试、compileall 和无模型示例 CI 步骤全部成功，见 [交付验收 070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)，具体云端测试数量未读取。
+`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及历史 CI 见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md) / [046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。历史提交 `c7b627a` 的 CI 见 [070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)。最新交付依据见[进度文档的当前基线](docs/progress.md#当前基线)。
 
 真实组件接入检查：
 
@@ -325,7 +327,7 @@ python -m dsh_eval --case 'fixtures/evaluation/read-project.case.json' --evidenc
 python -m dsh_eval --compare-assertions 'runs/<任务目录>/evidence.json' --candidate 'runs/candidate.case.json' --output 'runs/assertion-comparison.json'
 ```
 
-命令对同一份轨迹复评两次，按断言 ID 展示规则、顺序和判定差异。比较完成即退出 0，任务本身的 passed / failed 见报告两侧。详见[同轨迹断言对照](docs/evaluation-format.md#同轨迹断言对照)。
+命令对同一份轨迹复评两次，按断言 ID 展示规则、顺序和判定差异。比较完成即退出 0，任务本身的 passed / failed 见报告两侧。保存为 `assertion-comparison.json` 可在只读浏览器中查看两侧明细与关联事件。详见[同轨迹断言对照](docs/evaluation-format.md#同轨迹断言对照)。
 
 ## 单用例真实运行（M3.2）
 

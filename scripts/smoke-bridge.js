@@ -21,7 +21,7 @@ if (mode === "child") {
   const tools = await ctx.plugin(Tools);
   assert.equal(tools.state, HOST_FIBER_ACTIVE);
   const fixture = { writes: "write-retry", reads: "retry-read", mutations: "edit-delete-timeout",
-    control: "edit-delete", rename: "rename-no-overwrite" }[scenario];
+    control: "edit-delete", rename: "rename-no-overwrite", "rename-retry": "rename-timeout-retry" }[scenario];
   if (!fixture) throw new Error("Unknown bridge smoke scenario");
   const task = JSON.parse(await readFile(new URL(`../fixtures/evaluation/${fixture}.case.json`, import.meta.url), "utf8"));
   if (scenario === "control") task.budget = JSON.parse(budgetJson);
@@ -30,7 +30,15 @@ if (mode === "child") {
     registerStatefulTools(ctx, defineTool, bridge, task.environment.stateful.tools);
     const exec = { agent: { session: { id: "bridge-smoke-session" } }, signal: new AbortController().signal };
     const read = (path) => ctx.tools.get("eval_read").execute({ path }, exec);
-    if (scenario === "rename") {
+    if (scenario === "rename-retry") {
+      const rename = () => ctx.tools.get("eval_rename").execute({ path: "draft.txt", destination: "archive/final.txt" }, exec);
+      await assert.rejects(rename(), /TOOL_TIMEOUT: draft\.txt/);
+      assert.equal(await read("draft.txt"), "评测\r\n");
+      await assert.rejects(read("archive/final.txt"), /NOT_FOUND: archive\/final\.txt/);
+      assert.equal(await rename(), "RENAMED: draft.txt -> archive/final.txt");
+      assert.equal(await read("archive/final.txt"), "评测\r\n");
+      await assert.rejects(read("draft.txt"), /NOT_FOUND: draft\.txt/);
+    } else if (scenario === "rename") {
       const rename = (destination) => ctx.tools.get("eval_rename").execute({ path: "draft.txt", destination }, exec);
       await assert.rejects(rename("guard.txt"), /TARGET_EXISTS: guard\.txt/);
       assert.equal(await read("draft.txt"), "评测\r\n");
