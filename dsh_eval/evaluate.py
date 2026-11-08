@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 import subprocess
 
-from .formats import load_json, parse_json, require, validate_case, validate_evidence
+from .formats import load_json, parse_json, require, validate_case, validate_evidence, validate_file_map
 from .metrics import empty_metrics, number, recording_metrics
+from .environment import snapshot_digest
 
 ROOT = Path(__file__).resolve().parents[1]
 KNOWN = {"user/message", "assistant/message", "tool/call", "tool/result", "turn/end"}
@@ -86,12 +87,34 @@ def _call_matches(assertion, call, arguments):
         key in arguments and _same(arguments[key], value) for key, value in assertion.get("arguments", {}).items())
 
 
+def _assertion_identity(assertion):
+    return {key: assertion[key] for key in ("id", "type", "role", "match") if key in assertion}
+
+
+def _matches_final_text(assertion, actual):
+    expected = assertion["equals"]
+    if assertion.get("match") != "confirmation_token":
+        return actual == expected
+    word = expected.lower()
+    forms = [word, word + "."]
+    for marker in ("**", "__"):
+        bold = f"{marker}{word}{marker}"
+        forms.extend((bold, bold + ".", f"{marker}{word}.{marker}"))
+    return actual.isascii() and actual.lower() in forms
+
+
 def check_assertion(assertion, view, previous=None):
-    base = {"id": assertion["id"], "type": assertion["type"]}
+    base = _assertion_identity(assertion)
     kind = assertion["type"]
+    if kind == "environment_files":
+        snapshot = view.get("environmentSnapshot")
+        if snapshot is None:
+            return {**base, "outcome": "insufficient_evidence", "reason": "No verified complete environment snapshot"}
+        return {**base, "outcome": "passed" if _same(snapshot["files"], assertion["equals"]) else "failed",
+                "actual": snapshot["files"], "evidence": {"environmentSnapshotSha256": snapshot_digest(snapshot)}}
     if kind == "final_text":
         actual = text_of(view["final"]["data"]["message"]).strip()
-        return {**base, "outcome": "passed" if actual == assertion["equals"] else "failed",
+        return {**base, "outcome": "passed" if _matches_final_text(assertion, actual) else "failed",
                 "actual": actual, "evidence": {"answerSeq": view["final"]["seq"]}}
     if kind == "turn_end":
         actual = view["end"]["data"].get("reason")
@@ -154,6 +177,14 @@ def check_assertions(assertions, view):
     return list(results.values())
 
 
+def assertion_outcome(rows):
+    """Aggregate scored rows after the recording and execution gates have passed."""
+    outcomes = {row["outcome"] for row in rows if row.get("role", "required") == "required"}
+    if not outcomes or not outcomes <= {"passed", "failed"}:
+        return "insufficient_evidence"
+    return "failed" if "failed" in outcomes else "passed"
+
+
 def evaluate(case_path, evidence_path):
     case_path, evidence_path = Path(case_path).resolve(), Path(evidence_path).resolve()
     case = validate_case(load_json(case_path))
@@ -162,7 +193,7 @@ def evaluate(case_path, evidence_path):
     recording = (inspect_recording(run_dir) if run_dir else
                  {"outcome": "unverified", "reasons": ["No recorder run was observed"]})
     execution = {**evidence["execution"], "reportedStatus": evidence["execution"]["status"]}
-    rows = [{"id": item["id"], "type": item["type"], "outcome": "not_run"} for item in case["assertions"]]
+    rows = [{**_assertion_identity(item), "outcome": "not_run"} for item in case["assertions"]]
     assertions = {"outcome": "not_run", "results": rows}
     result = {"evaluationFormatVersion": evidence["evidenceFormatVersion"], "evaluatedAt": datetime.now(timezone.utc).isoformat(),
               "caseRunId": evidence["caseRunId"], "caseId": case["caseId"], "case": case,
@@ -218,6 +249,24 @@ def evaluate(case_path, evidence_path):
             return result
         # Preserve unknown event types; only interpret the documented task events.
         view = task_view(events, case["input"])
+        if any(key in case["budget"] for key in ("toolTimeoutMs", "toolTimeoutsMs")):
+            require(evidence["budgetEnforcement"].get("toolTimeouts") is True
+                    and "environmentSnapshotSha256" in evidence, "Tool deadline enforcement is unverified")
+        if "environmentSnapshotSha256" in evidence:
+            runtime = load_json(result["association"]["runtimeReport"])
+            require(type(runtime.get("runtimeFormatVersion")) is int and runtime["runtimeFormatVersion"] == 1
+                    and runtime.get("caseRunId") == evidence["caseRunId"], "Environment runtime identity mismatch")
+            snapshot = runtime.get("environmentSnapshot")
+            require(isinstance(snapshot, dict) and snapshot_digest(snapshot) == evidence["environmentSnapshotSha256"],
+                    "Environment snapshot is missing or changed")
+            require(type(snapshot.get("environmentSnapshotFormatVersion")) is int and snapshot["environmentSnapshotFormatVersion"] == 1
+                    and snapshot.get("complete") is True and all(snapshot.get(key) == evidence[key]
+                        for key in ("caseRunId", "sessionId", "runId")), "Incomplete or mismatched environment snapshot")
+            require(snapshot.get("environmentSha256") == snapshot_digest(case["environment"])
+                    and _same(snapshot.get("toolBudget"), {key: value for key, value in case["budget"].items() if key != "timeoutSeconds"}),
+                    "Environment snapshot input/policy mismatch")
+            validate_file_map(snapshot.get("files"), "Environment snapshot files")
+            view["environmentSnapshot"] = snapshot
         require(evidence["configuration"] == case["configRef"], "Actual configuration differs from case configRef")
         if evidence["evidenceFormatVersion"] == 2 and evidence["source"] == "live":
             headers = [event["data"]["header"]["config"] for event in events if event.get("type") == "request/header"]
@@ -225,9 +274,7 @@ def evaluate(case_path, evidence_path):
                                     and header.get("model") == evidence["configuration"]["model"] for header in headers),
                     "Actual request routes do not match the evidence configuration")
         rows[:] = check_assertions(case["assertions"], view)
-        outcomes = {row["outcome"] for row in rows}
-        assertions["outcome"] = ("insufficient_evidence" if "insufficient_evidence" in outcomes
-                                 else "failed" if "failed" in outcomes else "passed")
+        assertions["outcome"] = assertion_outcome(rows)
         if assertions["outcome"] in ("passed", "failed"):
             result["outcome"] = assertions["outcome"]
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:

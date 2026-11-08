@@ -4,6 +4,22 @@
 
 ## 当前功能
 
+- [新规则四任务验收](docs/changes/2026-11-04-117-live-confirmation-matrix.md) 验证目标占用和超时后重试。一次真实回复 `**done**` 通过确认词必需项，同时保留精确回复诊断失败；新报告和浏览器可定位该样本。
+
+- 对只要求回复一个确认词的任务，版本 2 支持[确认词匹配](docs/evaluation-format.md#确认词匹配)。用例可接受 `done`、`Done.` 或 `**Done.**`，同时拒绝否定和附加说明。旧用例继续精确比较。
+
+- 版本 2 用例支持[必需断言与诊断断言](docs/evaluation-format.md#断言角色)。例如将最终回复格式标为诊断后，任务可按工具操作和最终状态判分，报告仍保留原回复及格式失败。
+
+- [单文件重命名真实验收](docs/changes/2026-11-04-109-live-rename-acceptance.md)：一次 DeepSeek Flash 任务中，工具顺序和最终快照符合用例；精确回复断言失败，总判定经离线复验保持 failed。
+
+- [虚拟文件重命名](docs/stateful-tools.md)：用例可显式启用 `eval_rename`，移动单个文件并拒绝覆盖目标。运行 `python -m scripts.smoke_bridge --rename` 可验证真实工具注册和 IPC，无需调用模型。
+
+- [工具控制组合与统一验收](docs/changes/2026-11-03-099-tool-control-unified-acceptance.md)：多请求并存时的期限、单独取消及迟到响应已有无模型回归和真实组件检查；修正后的三任务清单已在同一冻结实验中全部通过，普通模型任务与取消组合验证范围分开。
+
+- [受控删除与精确文本编辑](docs/stateful-tools.md)：显式启用 eval_delete / eval_edit，支持单文件删除和唯一原文替换；缺失、歧义、超时及取消均有状态保持检查。096 提供三份独立用例；[097](docs/changes/2026-11-02-097-mutation-live-acceptance.md) 记录真实验收发现的错误前缀期望缺陷及修正，首轮失败保留，当前三个场景各有通过证据。
+
+- [受控写入与工具级超时](docs/stateful-tools.md#写入工具超时与最终状态094)：显式启用 eval_write 创建 / 覆盖虚拟文件，配置默认及各工具的毫秒期限，用 environment_files 精确检查最终全部文件。已验证合成录制 / 续跑 / 报告和真实工具注册；[095](docs/changes/2026-11-02-095-live-write-timeout-acceptance.md) 另完成一个 DeepSeek Flash 写入 / 超时重试真实任务，七断言及独立复验通过。
+
 - 作为 Cordis 插件订阅 `session/event`，保留原始事件，包括消息、工具调用、工具结果及轮次边界。
 - 每次插件启动创建独立运行目录，每个会话写入独立 JSONL 文件。
 - 使用异步写入队列保持同一会话的观察顺序，通过 `session/flush` 和插件卸载等待已排队写入完成。
@@ -28,7 +44,7 @@
 - [四任务真实用量停止验收](docs/changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash 按 1 / 1 / 2 完成两用例各两轮，前两段 token 阈值 1、末段 100000。独立版本 3 报告四项 verified / matched / live，历史复用与末轮新增各两项；只验证当前短根及单配置，不提供任务内硬限额或总体模型优劣结论。
 - [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
-- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。最新已验收实现为 `02013a5`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 093](docs/changes/2026-11-01-093-confidence-interval-delivery-ci.md)；旧验收保留历史，具体云端测试数量未读取。
+- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。最新已验收实现为 `ca45099`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 098](docs/changes/2026-11-03-098-mutation-delivery-ci.md)；旧验收保留历史，具体云端测试数量未读取。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
@@ -115,7 +131,7 @@ npm.cmd test
 npm.cmd run demo
 ```
 
-`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及历史 CI 见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md) / [046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。最新已推送实现为 `c7b627a`；该精确 SHA 的 JavaScript 语法、Node 测试、Python 测试、compileall 和无模型示例 CI 步骤全部成功，见 [交付验收 070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)，具体云端测试数量未读取。
+`demo` 写入 8 条模拟事件，不调用模型、不产生模型费用。它只展示日志输出，不代表完成真实 Agent 评测。`test` 在同一进程运行，明确只选 `test/*.test.js`，避免递归执行忽略目录中的历史测试副本；测试内部的真实子进程仍需运行环境支持。041–044 复审修复及历史 CI 见 [045](docs/changes/2026-10-25-045-plan-review-fixes.md) / [046](docs/changes/2026-10-25-046-plan-guard-delivery-ci.md)。历史提交 `c7b627a` 的 CI 见 [070](docs/changes/2026-11-01-070-output-path-delivery-ci.md)。最新交付依据见[进度文档的当前基线](docs/progress.md#当前基线)。
 
 真实组件接入检查：
 
@@ -303,6 +319,16 @@ python -m dsh_eval --case 'fixtures/evaluation/read-project.case.json' --evidenc
 
 退出码 `0` / `1` / `2` 分别对应任务 passed / failed / unevaluable（输入或输出错误也为 `2`）。仅执行正常且录制有效才判断任务通过或失败；缺工具证据、取消、超时、运行错误和录制损坏分别保留原因。完整字段、预算声明和单任务限制见 [评测格式](docs/evaluation-format.md) 与 [合成样例](fixtures/evaluation/README.md)。
 
+### 在同一份轨迹上比较两套断言
+
+上一节生成的合成证据和已有任务归档都可用于断言对照。取证据旁的 `case.json` 复制为候选用例，只修改 `assertions`，然后运行：
+
+```powershell
+python -m dsh_eval --compare-assertions 'runs/<任务目录>/evidence.json' --candidate 'runs/candidate.case.json' --output 'runs/assertion-comparison.json'
+```
+
+命令对同一份轨迹复评两次，按断言 ID 展示规则、顺序和判定差异。比较完成即退出 0，任务本身的 passed / failed 见报告两侧。保存为 `assertion-comparison.json` 可在只读浏览器中查看两侧明细与关联事件。详见[同轨迹断言对照](docs/evaluation-format.md#同轨迹断言对照)。
+
 ## 单用例真实运行（M3.2）
 
 以下命令会调用用例指定的真实模型，使用本机匹配版本宿主和已有凭据引用：
@@ -316,13 +342,15 @@ python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run --canc
 
 ## 状态化工具用例（M3.3）
 
+写入 / 超时示例为 [write-retry.case.json](fixtures/evaluation/write-retry.case.json)。无模型验证可运行 `python -m scripts.smoke_bridge --writes`；显式运行模型使用 `python -m dsh_eval --case fixtures/evaluation/write-retry.case.json --run`。首次写入超时后重试，检查目标文件及其他文件未改，旧十用例固定集保持原样。
+
 ```powershell
 python -m scripts.smoke_bridge
 python -m dsh_eval --case fixtures/evaluation/stale-path.case.json --run
 python -m dsh_eval --case fixtures/evaluation/retry-read.case.json --run
 ```
 
-第一条验证实际 Cordis 工具注册、fork IPC 和 Python 状态，不调用模型；后两条调用真实模型。版本 2 用例通过 `environment.stateful.transientReadFailures` 声明每条路径的暂时读取失败次数；虚拟文件留在 Python 内存，工作区为空，工具为 `eval_read` / `eval_list`。详见 [状态化工具与桥接](docs/stateful-tools.md)。
+第一条验证实际 Cordis 工具注册、fork IPC 和 Python 状态，不调用模型；后两条调用真实模型。版本 2 用例通过 `environment.stateful.transientReadFailures` 声明每条路径的暂时读取失败次数；虚拟文件留在 Python 内存，工作区为空，默认工具为 `eval_read` / `eval_list`；094 可显式启用 `eval_write` 并配置工具期限、最终状态断言。详见 [状态化工具与桥接](docs/stateful-tools.md)。
 
 ## 顺序批次回归（M3.4）
 
@@ -405,7 +433,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 11 月 1 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 11 月 3 日（Asia/Shanghai）。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

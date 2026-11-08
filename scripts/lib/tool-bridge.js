@@ -1,21 +1,36 @@
 import { randomUUID } from "node:crypto";
 
-export function registerStatefulTools(ctx, defineTool, bridge) {
-  for (const operation of ["read", "list"]) {
+export function registerStatefulTools(ctx, defineTool, bridge, tools = ["eval_read", "eval_list"]) {
+  const descriptions = {
+    read: "Read a virtual fixture file. Retry temporary read failures.",
+    list: "List virtual fixture file paths under a directory; use . for the root.",
+    write: "Create or replace a virtual fixture file with exact text content. No host filesystem access.",
+    delete: "Delete one existing virtual fixture file. Missing files return NOT_FOUND; directories are not deleted.",
+    rename: "Move one existing virtual file to a new relative path. The destination must be unused. No overwrite or directory moves.",
+    edit: "Replace exactly one occurrence of oldText in an existing virtual file. Empty, missing or ambiguous oldText fails without mutation. No whitespace normalization or regex matching.",
+  };
+  for (const name of tools) {
+    if (!["eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit", "eval_rename"].includes(name)) throw new Error("Unsupported stateful tool");
+    const operation = name.slice(5);
     ctx.tools.register(defineTool({
       name: `eval_${operation}`,
-      description: operation === "read" ? "Read a virtual fixture file. Retry temporary read failures."
-        : "List virtual fixture file paths under a directory; use . for the root.",
-      parameters: { path: { type: "string", required: true, description: "Relative POSIX path in the virtual fixture." } },
+      description: descriptions[operation],
+      parameters: { path: { type: "string", required: true, description: "Relative POSIX path in the virtual fixture." },
+        ...(operation === "write" ? { content: { type: "string", required: true, description: "Complete replacement text." } } : {}),
+        ...(operation === "rename" ? { destination: { type: "string", required: true, description: "New relative POSIX file path." } } : {}),
+        ...(operation === "edit" ? {
+          oldText: { type: "string", required: true, description: "Nonempty exact text that occurs only once, including overlapping matches." },
+          newText: { type: "string", required: true, description: "Replacement text; empty removes the matched text." },
+        } : {}) },
       output: { schema: { type: "string" }, render: (_args, text) => [{ type: "text", text }] },
       execute: (args, exec) => bridge.request(operation, args, exec),
     }));
   }
 }
 
-// One dedicated Harness child. All operations are immediate in Python; abort closes
-// the local waiter. A response arriving after abort cannot resume a tool call.
-export function createToolBridge(channel, caseRunId, onFailure, timeoutMs = 5000) {
+// Python schedules controlled operations and owns tool deadlines. This independent
+// watchdog detects an unresponsive bridge; abort also cancels uncommitted virtual work.
+export function createToolBridge(channel, caseRunId, onFailure, timeoutMs = 5000, budget = null) {
   const pending = new Map();
   let closed = false;
   const fail = (message) => {
@@ -49,7 +64,13 @@ export function createToolBridge(channel, caseRunId, onFailure, timeoutMs = 5000
         }
         const requestId = randomUUID();
         let timer;
-        const abort = () => finish(new Error("Tool call cancelled"));
+        const abort = () => {
+          finish(new Error("Tool call cancelled"));
+          try {
+            channel.send({ type: "tool-cancel", bridgeVersion: 1, requestId, caseRunId, sessionId },
+              (error) => { if (error) fail("Bridge cancel failed"); });
+          } catch { fail("Bridge cancel failed"); }
+        };
         const finish = (error, response) => {
           if (!pending.delete(requestId)) return;
           clearTimeout(timer);
@@ -60,7 +81,8 @@ export function createToolBridge(channel, caseRunId, onFailure, timeoutMs = 5000
         };
         pending.set(requestId, { sessionId, finish });
         exec.signal.addEventListener("abort", abort, { once: true });
-        timer = setTimeout(() => fail("Bridge response deadline reached"), timeoutMs);
+        const deadline = budget ? (budget.toolTimeoutsMs?.[`eval_${operation}`] ?? budget.toolTimeoutMs ?? 5000) + 1000 : timeoutMs;
+        timer = setTimeout(() => fail("Bridge response deadline reached"), deadline);
         try {
           channel.send({ type: "tool-request", bridgeVersion: 1, requestId, caseRunId, sessionId, operation, arguments: args },
             (error) => { if (error) fail("Bridge send failed"); });

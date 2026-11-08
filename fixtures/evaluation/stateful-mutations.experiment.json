@@ -1,0 +1,22 @@
+{
+  "experimentFormatVersion": 1,
+  "experimentName": "stateful-mutations-acceptance",
+  "repetitions": 1,
+  "failurePolicy": "continue",
+  "cases": [
+    { "entryId": "edit-delete", "casePath": "edit-delete.case.json" },
+    { "entryId": "expected-errors", "casePath": "edit-delete-errors.case.json" },
+    { "entryId": "timeout-retry", "casePath": "edit-delete-timeout.case.json" }
+  ],
+  "configurations": [
+    {
+      "configurationId": "deepseek-flash",
+      "configRef": {
+        "provider": "deepseek-official",
+        "model": "deepseek-flash",
+        "profile": "headless",
+        "pluginVersion": "0.1.2"
+      }
+    }
+  ]
+}

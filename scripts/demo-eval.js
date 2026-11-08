@@ -7,7 +7,8 @@ import { pluginVersion } from "../src/metadata.js";
 
 // Public synthetic events pass through the actual recorder, not a second status implementation.
 export async function recordExample(casePath, events, outputDir, { seal = true } = {}) {
-  const caseData = JSON.parse(await readFile(casePath, "utf8"));
+  const caseText = await readFile(casePath, "utf8");
+  const caseData = JSON.parse(caseText);
   const caseRunId = randomUUID();
   const sessionId = `synthetic-${caseRunId}`;
   const recorder = createRecorder({ outputDir: resolve(outputDir) });
@@ -17,6 +18,7 @@ export async function recordExample(casePath, events, outputDir, { seal = true }
   if (seal) await recorder.close();
   else await recorder.flush();
   const evidencePath = join(recorder.runDir, "evidence.json");
+  await writeFile(join(recorder.runDir, "case.json"), caseText, { flag: "wx" });
   await writeFile(evidencePath, JSON.stringify({
     evidenceFormatVersion: 1, caseRunId, caseId: caseData.caseId,
     runId: recorder.runId, sessionId, runDir: ".", source: "synthetic",

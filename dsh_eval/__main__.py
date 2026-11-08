@@ -16,9 +16,10 @@ def main(argv=None):
     selection.add_argument("--resume-experiment", help="Preview or continue unstarted samples from a bound experiment or explicit continuation result")
     selection.add_argument("--report", help="Recheck a terminal experiment-result.json or experiment-resume-result.json without model calls")
     selection.add_argument("--compare-baseline", help="Recheck an old experiment against --candidate for regressions; no model calls")
+    selection.add_argument("--compare-assertions", metavar="EVIDENCE", help="Compare the frozen case.json with --candidate on one archived recording")
     selection.add_argument("--browse", action="store_true", help="Serve a read-only local viewer; never executes tasks")
     parser.add_argument("--evidence", help="Version 1 or 2 offline evidence manifest")
-    parser.add_argument("--candidate", help="Candidate experiment or experiment continuation result for --compare-baseline")
+    parser.add_argument("--candidate", help="Candidate experiment result for --compare-baseline, or case JSON for --compare-assertions")
     parser.add_argument("--baseline-config", help="Select the baseline configuration ID (required for multiple configurations)")
     parser.add_argument("--candidate-config", help="Select the candidate configuration ID (required for multiple configurations)")
     parser.add_argument("--allow-config-change", action="append", default=[], choices=("provider", "model", "profile", "pluginVersion"),
@@ -38,13 +39,20 @@ def main(argv=None):
     parser.add_argument("--cancel-after-stream", action="store_true", help="Exercise cancellation after the first real model stream chunk")
     parser.add_argument("--output", help="Create a new result JSON; existing files are never overwritten")
     args = parser.parse_args(argv)
-    if args.compare_baseline:
+    if args.compare_assertions is not None:
+        if not args.candidate:
+            parser.error("--compare-assertions requires --candidate CASE")
+        if args.run or args.plan or args.evidence is not None:
+            parser.error("--compare-assertions is offline and takes its evidence as the argument")
+        if args.baseline_config is not None or args.candidate_config is not None or args.allow_config_change:
+            parser.error("--compare-assertions only compares assertion definitions")
+    elif args.compare_baseline:
         if args.candidate is None:
             parser.error("--compare-baseline requires --candidate")
         if args.run or args.plan or args.evidence:
             parser.error("--compare-baseline only rechecks saved experiments; cannot use --run, --plan or --evidence")
     elif any(value is not None for value in (args.candidate, args.baseline_config, args.candidate_config)) or args.allow_config_change:
-        parser.error("Candidate and configuration comparison options require --compare-baseline")
+        parser.error("--candidate requires a comparison mode; configuration options require --compare-baseline")
     for option, value in (("--stop-after", args.stop_after), ("--stop-after-tokens", args.stop_after_tokens)):
         if value is not None:
             if not args.run or not (args.batch or args.experiment or args.resume_batch or args.resume_experiment):
@@ -73,7 +81,7 @@ def main(argv=None):
         parser.error("--reports-root requires --report")
     if (args.batch or args.experiment or args.resume_batch or args.resume_experiment) and (not (args.run or args.plan) or args.evidence or args.output):
         parser.error("--batch requires --run; experiments and continuations require --run or --plan; none accepts --evidence or --output")
-    if not (args.batch or args.experiment or args.resume_batch or args.resume_experiment or args.report or args.browse or args.compare_baseline) and args.run == bool(args.evidence):
+    if not (args.batch or args.experiment or args.resume_batch or args.resume_experiment or args.report or args.browse or args.compare_baseline or args.compare_assertions is not None) and args.run == bool(args.evidence):
         parser.error("Choose --run or --evidence")
     if args.run and args.output:
         parser.error("--run saves evaluation.json in its new run directory; omit --output")
@@ -86,7 +94,12 @@ def main(argv=None):
             return 0
         if args.output and args.case and Path(args.output).resolve() in (Path(args.case).resolve(), Path(args.evidence).resolve()):
             raise ValueError("Output must differ from input paths")
-        if args.compare_baseline:
+        if args.compare_assertions is not None:
+            from .assertion_comparison import compare_assertions
+            if args.output and Path(args.output).resolve().is_relative_to(Path(args.compare_assertions).resolve().parent):
+                raise ValueError("Choose a new comparison output outside the source task directory")
+            result = compare_assertions(args.compare_assertions, args.candidate)
+        elif args.compare_baseline:
             from .regression import compare_baseline
             result = compare_baseline(args.compare_baseline, args.candidate, baseline_config=args.baseline_config,
                                       candidate_config=args.candidate_config, allow_config_changes=args.allow_config_change)
@@ -125,7 +138,7 @@ def main(argv=None):
             with Path(args.output).open("x", encoding="utf-8", newline="\n") as stream:
                 stream.write(text)
         print(text, end="")
-        if args.compare_baseline:
+        if args.compare_baseline or args.compare_assertions is not None:
             return result["exitCode"]
         if args.plan:
             if args.resume_experiment:
@@ -133,13 +146,14 @@ def main(argv=None):
             return 2 if args.resume_batch and not result["canResume"] else 0
         return 0 if args.report else {"passed": 0, "failed": 1, "unevaluable": 2}[result["outcome"]]
     except (OSError, ValueError, KeyError, TypeError) as error:
-        version_key = ("regressionComparisonFormatVersion" if args.compare_baseline else
+        version_key = ("assertionComparisonFormatVersion" if args.compare_assertions is not None else
+                       "regressionComparisonFormatVersion" if args.compare_baseline else
                        "experimentResumePlanFormatVersion" if args.plan and args.resume_experiment else "experimentResumeResultFormatVersion" if args.resume_experiment else
                        "batchResumePlanFormatVersion" if args.plan and args.resume_batch else "experimentPlanFormatVersion" if args.plan else
                        "batchResumeResultFormatVersion" if args.resume_batch else "browserFormatVersion" if args.browse else "comparisonReportFormatVersion" if args.report else "experimentResultFormatVersion" if args.experiment else
                        "batchResultFormatVersion" if args.batch else "evaluationFormatVersion")
         state = {"valid": False, "modelCalled": False} if args.plan else {"outcome": "unevaluable"}
-        if args.compare_baseline:
+        if args.compare_baseline or args.compare_assertions is not None:
             state.update(status="error", exitCode=2, modelCalled=False)
         print(json.dumps({version_key: 1, **state, "error": str(error)}, ensure_ascii=False))
         return 2

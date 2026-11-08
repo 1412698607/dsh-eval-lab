@@ -42,6 +42,19 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(self.environment.handle(self.request('.', 'list'))['text'], 'project.md')
         self.assertTrue(self.environment.handle(self.request())['isError'])
 
+    def test_list_accepts_whitespace_directory_of_a_valid_file(self):
+        self.case["environment"]["stateful"]["tools"] = ["eval_write", "eval_list", "eval_read"]
+        validate_case(self.case)
+        env = StatefulEnvironment(self.case["environment"], "case-run")
+        env.bind("session")
+        write = self.request("   /leaf.txt", "write")
+        write["arguments"]["content"] = "leaf"
+        self.assertFalse(env.submit(write, 0)[0]["isError"])
+        self.assertEqual(env.handle(self.request("   ", "list"))["text"], "   /leaf.txt")
+        for path in ("", "bad\0dir", "a/../b"):
+            with self.subTest(path=path):
+                self.assertEqual(env.handle(self.request(path, "list"))["text"], "INVALID_PATH: " + path)
+
     def test_identity_protocol_and_conflicting_duplicates_rejected(self):
         request = self.request(request_id='same')
         self.environment.handle(request)
@@ -65,6 +78,25 @@ class EnvironmentTests(unittest.TestCase):
     def test_virtual_files_are_not_materialized_for_native_tool_bypass(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(list(prepare_workspace(directory, self.case).iterdir()), [])
+
+    def test_virtual_initial_files_keep_posix_names_during_workspace_preparation(self):
+        files = {"   /leaf.txt": "leaf", "A": "upper", "a": "lower",
+                 "DIR": "file", "dir/child": "nested", "CON.txt": "reserved", "tab\tname": "tab"}
+        self.case["environment"]["files"].update(files)
+        validate_case(self.case)
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = prepare_workspace(directory, self.case)
+            self.assertEqual(list(workspace.iterdir()), [])
+            with self.assertRaises(FileExistsError):
+                prepare_workspace(directory, self.case)
+        env = StatefulEnvironment(self.case["environment"], "case-run")
+        env.bind("session")
+        for path, content in files.items():
+            with self.subTest(path=path):
+                response = env.handle(self.request(path))
+                self.assertFalse(response["isError"])
+                self.assertEqual(response["text"], content)
+        self.assertEqual(env.handle(self.request("   ", "list"))["text"], "   /leaf.txt")
 
     def test_real_process_roundtrip_is_served_while_running(self):
         code = """import sys,json

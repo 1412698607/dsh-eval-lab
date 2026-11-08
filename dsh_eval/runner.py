@@ -11,7 +11,7 @@ import json
 
 from .evaluate import ROOT, evaluate
 from .formats import load_json, parse_json, require, validate_case
-from .environment import StatefulEnvironment
+from .environment import StatefulEnvironment, snapshot_digest
 from . import output_paths
 
 ADAPTER = ROOT / "scripts" / "case-host.js"
@@ -25,13 +25,16 @@ def save_json(path, value):
 
 
 def prepare_workspace(directory, case):
-    """Write only into a fresh directory, with portable Windows-safe fixture names."""
+    """Create a fresh workspace and materialize only native file fixtures."""
     workspace = Path(directory) / "workspace"
+    if "stateful" in case["environment"]:
+        workspace.mkdir()
+        return workspace  # Virtual file names are keys in the Python environment.
     names = set()
     for name in case["environment"]["files"]:
         for part in name.split("/"):
             require(part == part.rstrip(" .") and not PureWindowsPath(part).is_reserved()
-                    and not any(character in part for character in '<>"|?*\x00'), "Unsupported fixture filename")
+                    and not any(ord(char) < 32 or char in '<>"|?*' for char in part), "Unsupported fixture filename")
         folded = name.casefold()
         require(folded not in names, "Case-insensitive fixture path collision")
         names.add(folded)
@@ -39,8 +42,6 @@ def prepare_workspace(directory, case):
                     (str(path).replace("\\", "/") for path in Path(name).parents) if parent != "."),
             "Case-insensitive file/directory collision")
     workspace.mkdir()
-    if "stateful" in case["environment"]:
-        return workspace  # Virtual files must only be accessible through the live bridge.
     for name, content in case["environment"]["files"].items():
         path = workspace / name
         require(path.resolve().is_relative_to(workspace.resolve()), "Fixture escaped workspace")
@@ -147,7 +148,17 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
         if intervention is not None or process.poll() is not None:
             return
         intervention, intervention_time = kind, time.monotonic()
+        if environment is not None:
+            environment.cancel_all()
         outgoing.put({"type": kind})
+
+    def pump_tools():
+        now = time.monotonic()
+        if intervention is None and now - started >= timeout_seconds:
+            stop("timeout")
+        if environment is not None and intervention is None:
+            for response in environment.poll(now):
+                outgoing.put(response)
 
     try:
         while process.poll() is None or reader.is_alive() or not events.empty():
@@ -159,9 +170,16 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                     stop_process_tree(process)
                     break
                 try:
-                    line = events.get(timeout=0.1)
+                    now = time.monotonic()
+                    wait = min(.1, environment.wait_seconds(now)) if environment is not None and intervention is None else .1
+                    if intervention is None:
+                        wait = min(wait, max(0, timeout_seconds - (now - started)))
+                    line = events.get(timeout=wait)
                 except queue.Empty:
+                    pump_tools()
                     continue
+                if intervention is None and time.monotonic() - started >= timeout_seconds:
+                    stop("timeout")
                 if line is None:
                     try:
                         process.wait(timeout=1)
@@ -180,26 +198,34 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                 try:
                     event = parse_json(line)
                     require(isinstance(event, dict) and event.get("type") in
-                            ("launched", "selection", "request-route", "streaming", "closed", "tool-request", "bridge-error"), "Invalid adapter event")
+                            ("launched", "selection", "request-route", "streaming", "closed", "tool-request", "tool-cancel", "bridge-error"), "Invalid adapter event")
                     if event["type"] == "bridge-error":
                         raise ValueError("Tool bridge infrastructure failed")
                     if environment is not None and event["type"] == "selection":
                         environment.bind(event.get("sessionId"))
                     if event["type"] == "tool-request":
                         require(environment is not None and intervention is None, "Tool request outside active environment")
-                        response = environment.handle(event)
-                        outgoing.put(response)
+                        for response in environment.submit(event, time.monotonic()):
+                            outgoing.put(response)
+                    if event["type"] == "tool-cancel":
+                        require(environment is not None, "Tool cancellation outside stateful environment")
+                        environment.cancel(event)
                 except ValueError as error:
                     protocol_error = str(error)
                     stop("shutdown")
                     continue
                 if event.get("type") == "streaming" and cancel_after_stream:
                     stop("cancel")
+                if event.get("type") == "closed" and environment is not None:
+                    environment.cancel_all()
+                pump_tools()
             except KeyboardInterrupt:
                 user_interrupted = True
                 stop("cancel")
         process.wait(timeout=5)
     finally:
+        if environment is not None:
+            environment.cancel_all()
         # Preserve an already-issued timeout/cancel even if the OS refuses cleanup.
         report.update(intervention=intervention, forceStopAttempted=forced,
                       protocolError=protocol_error, adapterExitCode=process.poll(), userInterrupted=user_interrupted)
@@ -265,6 +291,7 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
     user_interrupted = False
     stage = "workspace"
     execution = None
+    environment = None
     started = time.monotonic()
     try:
         prepare_workspace(directory, case)
@@ -282,7 +309,7 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
                 adapter_started = False
                 raise
             adapter_started = True
-            environment = StatefulEnvironment(case["environment"], case_run_id) if "stateful" in case["environment"] else None
+            environment = StatefulEnvironment(case["environment"], case_run_id, case["budget"]) if "stateful" in case["environment"] else None
             supervise(process, case["budget"]["timeoutSeconds"], cancel_after_stream, event_log, supervisor, environment)
         host = load_json(directory / "host-result.json")
         execution = classify_execution(host, supervisor)
@@ -316,11 +343,19 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
                 "execution": execution, "runtimeReport": "runtime.json"}
     if batch_id is not None:
         evidence["batchId"] = batch_id
+    snapshot = None
+    if environment is not None:
+        snapshot = environment.snapshot(case, manifest.get("runId"), execution["status"] == "completed"
+                                        and host.get("childClosed") is True and supervisor.get("intervention") is None)
+        environment.cancel_all()
+        evidence["environmentSnapshotSha256"] = snapshot_digest(snapshot)
+        evidence["budgetEnforcement"]["toolTimeouts"] = True
     save_json(directory / "runtime.json", {"runtimeFormatVersion": 1, "caseRunId": case_run_id, "stage": stage,
                                           "host": host, "supervisor": supervisor, "error": error_info,
                                           "preparation": preparation, "adapterProcessStarted": adapter_started,
                                           "userInterrupted": user_interrupted or supervisor.get("userInterrupted", False),
-                                          "elapsedSeconds": time.monotonic() - started})
+                                          "elapsedSeconds": time.monotonic() - started,
+                                          **({"environmentSnapshot": snapshot} if snapshot is not None else {})})
     save_json(directory / "evidence.json", evidence)
     result = evaluate(case_snapshot, directory / "evidence.json")
     save_json(directory / "evaluation.json", result)

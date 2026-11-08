@@ -11,6 +11,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from .evaluate import evaluate
+from .diagnostics import diagnostic_sample, diagnostic_summary
 from .experiment import _plan_fingerprint, _order_metadata, _check_order, _sample_plan
 from .formats import fields, load_json, nonempty, parse_json, require, validate_case, validate_experiment
 from .metrics import METRICS, empty_metrics, number, summarize
@@ -34,6 +35,7 @@ def _path(directory, value):
 
 def _summary(rows):
     result = summarize(rows)
+    result["diagnosticSummary"] = diagnostic_summary(rows)
     for key in METRICS:
         values = [(row.get("metrics") or {}).get(key) for row in rows]
         observed = [value for value in values if number(value)]
@@ -208,7 +210,7 @@ def _recheck(sample, expected, directory, batch_id):
                executionStatus=None, recordingOutcome=None, assertionOutcome=None,
                outcome=None if sample["status"] == "skipped" else "unevaluable", metrics=empty_metrics(),
                verification="skipped" if sample["status"] == "skipped" else "unavailable", reasons=[],
-               sourceEvidencePath=None, evaluationPath=None,
+               sourceEvidencePath=None, evaluationPath=None, diagnosticSummary=None,
                saved={key: sample.get(key) for key in ("source", "configuration", "configurationMatch", "executionStatus",
                                                        "recordingOutcome", "assertionOutcome", "outcome", "metrics")})
     fresh = None
@@ -237,7 +239,7 @@ def _recheck(sample, expected, directory, batch_id):
             row.update(verification="verified", source=fresh["source"], configuration=fresh["configuration"],
                        configurationMatch=match, configurationReason=reason, executionStatus=fresh["execution"]["status"],
                        recordingOutcome=fresh["recording"]["outcome"], assertionOutcome=fresh["assertions"]["outcome"],
-                       outcome=fresh["outcome"], metrics=fresh["metrics"])
+                       outcome=fresh["outcome"], metrics=fresh["metrics"], diagnosticSummary=diagnostic_sample(fresh))
         except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
             row.update(verification="unavailable" if sample["status"] == "error" else "rejected", reasons=[str(error)])
             fresh = None
@@ -368,6 +370,32 @@ def render_markdown(report):
     lines.extend(["", "配置引用：", ""])
     for config in report["configurations"]:
         lines.append(f"- {_cell(config['configurationId'])}：{_cell(json.dumps(config['configRef'], ensure_ascii=False))}")
+    if "diagnosticSummary" in report["summary"]:
+        diagnostic = report["summary"]["diagnosticSummary"]
+        lines.extend(["", "## 诊断项覆盖与结果", "",
+                      f"已复验样本 {diagnostic['observedSamples']}，缺少复验 {diagnostic['missingSamples']}。"
+                      f"含诊断项样本 {diagnostic['samplesWithDiagnostics']}；"
+                      f"任务通过且存在诊断失败的样本 {diagnostic['passedSamplesWithFailures']}。", "",
+                      "以下统计诊断项的逐项结果；任务通过率仍由必需项决定。", "",
+                      "| 配置 / 用例 | 已复验 / 缺失 | 含诊断 / 含失败样本 | 任务通过且诊断失败 | 诊断通过 / 失败 / 证据不足 / 未执行 |",
+                      "| --- | --- | --- | --- | --- |"])
+        for group in report["groups"]:
+            value = group["summary"]["diagnosticSummary"]
+            counts = value["assertionCounts"]
+            lines.append(f"| {_cell(group['configurationId'])} / {_cell(group['caseEntryId'])} | "
+                         f"{value['observedSamples']} / {value['missingSamples']} | "
+                         f"{value['samplesWithDiagnostics']} / {value['samplesWithFailures']} | "
+                         f"{value['passedSamplesWithFailures']} | "
+                         f"{counts['passed']} / {counts['failed']} / {counts['insufficient_evidence']} / {counts['not_run']} |")
+        lines.extend(["", "| 样本 | 诊断失败 ID | 证据不足 ID | 未执行 ID | 逐项复验 |",
+                      "| --- | --- | --- | --- | --- |"])
+        for row in report["samples"]:
+            value = row.get("diagnosticSummary")
+            if value is not None and value["declaredAssertions"] > 0:
+                link = f"[查看]({quote(row['evaluationPath'], safe='/')})" if row.get("evaluationPath") else "缺失"
+                lines.append(f"| {_cell(row['sampleId'])} | {_cell(', '.join(value['failedAssertionIds']))} | "
+                             f"{_cell(', '.join(value['insufficientAssertionIds']))} | "
+                             f"{_cell(', '.join(value['notRunAssertionIds']))} | {link} |")
     if report.get("resumeVerification"):
         if report.get("resumeChain"):
             lines.extend(["", "## 连续续跑来源", "", "| 轮次 | 续跑 ID | 保存结果 |", "| --- | --- | --- |"])

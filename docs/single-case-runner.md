@@ -4,6 +4,8 @@
 
 ## 运行与结果
 
+2026 年 11 月 2 日：[095 写入与工具超时真实验收](changes/2026-11-02-095-live-write-timeout-acceptance.md) 用公开 write-retry 用例与 DeepSeek Flash 完成一个真实任务。首次写入超时后重试成功，读回及最终文件映射七断言通过；独立 CLI 复验一致。仅当前虚拟工具与单任务范围，真实取消及其他状态操作未扩大验证。
+
 2026 年 11 月 1 日新增 [Windows 输出根预检](output-paths.md)：用例与配置校验后、分配新身份和创建输出前，检查完整宿主安装目录。路径过深时返回既有输入错误 JSON / 退出 2，不创建执行产物；可改用更短的绝对 `--runs-root` 重试。该检查不证明未来宿主或模型可用，历史运行与验证结果保留。
 
 2026 年 10 月 26 日增加可选 [modelProviders 路由声明](evaluation-format.md#可选外部模型路由两个用例版本通用)：准备阶段在隔离 headless profile 配置 llm-pi-ai，并将声明保存在 setup.json。密钥仍从原凭据库 / 启动环境按 apiKeyEnv 引用，不导入原用户 profile。可先执行 `npm.cmd run check:model-providers -- <case.json>`；该命令使用已安装的真实宿主组件检查本地注册与凭据存在性，缺凭据返回 2，完整本地准备返回 0，均不调用模型，也不证明远端认证或任务成功。
@@ -18,7 +20,7 @@ python -m dsh_eval --case 'fixtures/evaluation/live-read.case.json' --run
 
 录制限制由用例顶层可选 `recorder: { maxEventBytes, maxPendingBytes }` 声明，各自省略默认 1 MiB / 16 MiB；例如 `"recorder": { "maxEventBytes": 4194304 }` 将单条上限调为 4 MiB，队列仍为 16 MiB。它不属于 configRef，不继承用户原 profile，不增加 CLI 覆盖；只接受正安全整数。完整用例原样冻结，隔离 profile 的 eval-lab config 与 setup.json.recorder 保存解析后的有效值，实际值也保存在 traces 下的 run.json。详见 [用例格式](evaluation-format.md) 与 [资源边界](recorder-resources.md)。
 
-Python 生成新 caseRunId，保存用例快照、在独立 workspace 写入初始文件，校验 Windows 保留文件名、大小写和文件目录冲突，再调用 Node 准备及运行。宿主使用 read-only 策略，测试用例要求实际 read，参数键为该版本的 `file_path`。不注入答案，不重写 Agent 循环；任意其他工具名 / 参数仍须由相应用例正确声明。
+Python 生成新 caseRunId 并保存用例快照。普通文件用例先校验全部初始路径，包括 Windows 保留名、禁用字符、大小写和文件目录冲突，再创建 workspace 并写入初始文件。文件名或目录名含 U+0001 至 U+001F（例如制表符）时，运行在 workspace 阶段报错，保留诊断归档。NUL 已由用例格式校验拒绝。声明 `environment.stateful` 的用例创建空 workspace，虚拟文件按用例原名交给内存工具环境。随后 runner 调用 Node 准备及运行。普通读取用例使用宿主的 read-only 策略和实际 read，参数键为该版本的 `file_path`。其他工具名和参数由相应用例声明。
 
 默认输出为 `runs/evaluation/<caseRunId>/`，可用 `--runs-root <父目录>` 改变父目录；运行内部只创建新的 UUID 子目录，不复用工作区或覆盖旧结果。
 
@@ -86,7 +88,7 @@ M3.2 验证了一条受控真实文件任务及上述异常路径。M3.2 当时�
 
 ## M3.3 状态化扩展（2026 年 10 月 18 日）
 
-单用例入口现支持版本 2 状态化用例。Python 在监督循环内即时处理工具请求，Node 转发专用 IPC；状态化环境的文件不写入 workspace。路径、错误、取消和复现命令见 [状态化工具与桥接](stateful-tools.md)。原有 M3.2 历史验证范围保留。
+单用例入口现支持版本 2 状态化用例。Python 在监督循环内调度并推进工具请求（094 支持受控写入、工具期限与最终状态断言），Node 转发专用 IPC；状态化环境的文件不写入 workspace。路径、错误、取消和复现命令见 [状态化工具与桥接](stateful-tools.md)。原有 M3.2 历史验证范围保留。
 
 ## M3.4 顺序调度复用
 

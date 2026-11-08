@@ -1,6 +1,6 @@
 # 用例、证据与评测结果格式
 
-更新：2026 年 11 月 1 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束；082 新增 tool_forbidden / tool_call_count，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
+更新：2026 年 11 月 2 日，Asia/Shanghai。M3.1 已实现 Python 标准库离线评测；M3.2 新增真实单用例运行及版本 2 证据 / 结果。M3.3 增加兼容版本 1 的版本 2 状态化用例；M6.2 修复增加可选 recorder 配置；M6.3 审查修复增加工具结果的可选 after / textEquals 约束；082 新增 tool_forbidden / tool_call_count，两个用例版本均可使用。插件仍为 `0.1.2`，格式编号及既有录制格式不变。在仓库根目录运行；实测 Python 3.12.0 / Node.js v24.14.0。
 
 ## 运行入口
 
@@ -14,6 +14,18 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 
 退出码：`0` 为任务 passed，`1` 为普通断言 failed，`2` 为 unevaluable、输入格式错误或结果文件写入错误。参数用法错误也返回 `2`。格式无效时输出带 error 的简短 JSON，不能据此建立可信的用例关联。
 
+## 同轨迹断言对照
+
+```powershell
+python -m dsh_eval --compare-assertions '<任务目录>/evidence.json' --candidate '<候选用例>.json' --output '<归档外的新文件>.json'
+```
+
+命令从证据旁的 `case.json` 读取原规则。候选是完整用例，只允许 `assertions` 有变化；输入提示、初始文件、模型配置、预算、caseId 和格式版本都参与核对。两边分别重新 inspect 和 evaluate 同一份录制。没有相邻冻结用例的旧归档不能使用此入口。新生成的 `npm.cmd run demo:eval` 合成示例会一并保存录制时的用例。
+
+报告版本为 `assertionComparisonFormatVersion: 1`。`baseline` 和 `candidate` 各自保存任务结论、执行与录制状态、断言汇总及用例与规则的对象 SHA-256。`summary.taskOutcomeChanged` 表示任务结论是否变化，`summary.changedAssertionIds` 列出定义、位置或结果明细发生变化的断言。按 ID 查看 `assertions` 中的两侧定义、从 1 开始的位置与保存的结果，可区分规则改动、单项结论变化、证据变化和顺序变化。新增或删除的 ID 在缺失侧为 null。规则顺序会影响 `after`，因此纳入对照。
+
+两侧均可评时状态为 `compared`，退出 0，即使新旧判定都是 failed。某一侧无法评测时返回 `inconclusive`，退出 2；输入无效、源文件发生可检测变化或输出冲突也退出 2。省略 `--output` 时只打印 JSON，指定文件须为源任务目录外的新文件。该命令无模型调用。请使用停止写入的归档；关键文件摘要的前后比对无法提供文件系统级原子快照。
+
 ## 用例：caseFormatVersion 1
 
 参考 [读取用例](../fixtures/evaluation/read-project.case.json) 与 [缺失文件用例](../fixtures/evaluation/missing-file.case.json)。下表中 modelProviders / recorder 可选，其余字段必需；未知字段、未知版本 / 断言、重复断言 ID、重复 JSON 键和非有限数字会被拒绝。
@@ -22,22 +34,24 @@ demo 输出两组明确的 casePath / evidencePath，第二组为 missing-file�
 | --- | --- |
 | caseFormatVersion / caseId | 整数 1 / 非空用例标识；标识不是文件路径 |
 | input | 非空任务文本，与 user/message 的文本块拼接结果精确相等 |
-| environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象；拒绝绝对路径、冒号、反斜杠、空 / 点 / 上级分量和文件目录冲突；离线仅保留声明，M3.2 实际写入独立 workspace 并补查 Windows 名称 / 大小写冲突 |
+| environment.files | 相对 POSIX 文件路径到文本内容的映射，允许空对象。拒绝绝对路径、冒号、反斜杠、NUL、整体为空白的文件名、空 / 点 / 上级分量，以及文件与父目录冲突。stateful 用例在内存中按大小写区分文件。需要写入独立 workspace 的用例另查 Windows 名称与大小写冲突 |
 | configRef | provider / model / profile / pluginVersion 四个非空字符串；不得内嵌凭据 |
 | modelProviders | 可选外部模型路由字典；端点、模型容量和凭据名称随用例冻结，密钥值不得内嵌，见下节 |
 | recorder | 可选对象，仅允许 maxEventBytes / maxPendingBytes 两个独立正安全整数，范围 1～9007199254740991；不属于模型路由配置，详见下节 |
 | budget.timeoutSeconds | 正整数，声明预算；离线评测不会实施它，不支持 token / 步骤上限 |
-| assertions | 非空数组，每条有唯一 id 和已支持的 type；所有断言均为必需 |
+| budget.toolTimeoutMs / toolTimeoutsMs | 版本 2 stateful 可选：默认工具期限及按启用工具覆盖，单位毫秒；1～3600000 整数，默认 5000；由 runner 实施 |
+| assertions | 非空数组，每条有唯一 id 和已支持的 type。版本 1 全部为必需项，版本 2 允许显式诊断项 |
 
-五种断言：
+六种断言（environment_files 仅适用于版本 2 stateful）：
 
 | type | 必需参数与行为 |
 | --- | --- |
-| final_text | equals；最后一个非空 assistant/message 的文本块拼接后 strip，再精确比较 equals |
+| final_text | 最后一个非空 assistant/message 的文本块拼接后 strip，默认与 equals 精确比较。版本 2 可在单词确认语上启用下述确认词匹配 |
 | tool_result | tool、arguments、result；工具名精确匹配，arguments 为非空对象，按顶层键比较所声明参数（允许额外实际参数）；嵌套值完整比较且区分布尔和数字。result.isError 必须是布尔值，可择一添加非空 textContains 或字符串 textEquals；可选 after 引用前面的工具结果断言 |
 | turn_end | reason 对象，含非空 kind；与实际结束原因完整比较 |
 | tool_forbidden | tool；可选 arguments 参数筛选，匹配调用必须为零 |
 | tool_call_count | tool，以及至少一个 min / max；可选 arguments 参数筛选，匹配调用次数须处于含端点的范围 |
+| environment_files | equals 为完整最终虚拟文件映射；仅版本 2 stateful，必须有与执行关联且完整的状态快照 |
 
 tool_result 表达“至少存在一组匹配证据”：同一任务内的调用按 callId 与 toolCallId 关联，调用先于结果，结果先于最终答案，答案先于结束。工具名称、参数键和值由用例声明，不硬编码 read_file，也不做路径 basename 或斜杠归一化。多个匹配调用中有一个结果满足即可；声明 after 时还必须满足下节的先后关系。它本身不限制额外调用；需要禁止或限制次数时显式添加下述行为断言。
 
@@ -45,9 +59,54 @@ tool_result 表达“至少存在一组匹配证据”：同一任务内的调�
 
 ## 用例扩展：caseFormatVersion 2
 
+### 确认词匹配
+
+面向人阅读的单词确认语可以显式使用 `match: "confirmation_token"`。例如，以下必需断言允许模型用加粗的单词回复：
+
+```json
+{"id":"answer","type":"final_text","equals":"done","match":"confirmation_token"}
+```
+
+`equals` 须由一个或多个 ASCII 字母组成。去掉回复首尾空白后，整条文本必须是同一个单词，忽略 ASCII 大小写；可用一对 `**` 或 `__` 包裹整个单词，并可有一个英文句号（可在加粗内或外）。
+
+| 回复原文 | 按上例判定 |
+| --- | --- |
+| `done`、`Done.`、`**Done.**`、`__DONE__.` | passed |
+| `not done`、`**done** but failed`、`**done.**.`、`[done](#answer)` | failed |
+
+结果行仍保存已经 strip 的实际文本，原始大小写、标点和星号可逐项核对。只写 `equals` 时仍用精确匹配。工具返回、文件正文及路径也保留原有匹配方式。设计新用例时应把任务提示与评分规则写一致，例如“只回复一个完成确认词，大小写、加粗和一个句号均可”。
+
+### 断言角色
+
+版本 2 的每条断言都可以声明 `role`。省略或填写 `"required"` 表示必需，填写 `"diagnostic"` 表示诊断。至少须有一条必需断言。角色只决定单项结果如何计入任务结论；计算实际值、匹配内容和定位证据均沿用原断言规则。
+
+```json
+{"id":"answer","type":"final_text","equals":"done","role":"diagnostic"}
+```
+
+例如，若重命名、读回和最终文件映射是必需项，回复格式是上述诊断项，实际回复 `Done.` 或 `**done**` 都会保留一条 `failed` 诊断。其余必需项全部通过时，任务判定为 `passed`。`match` 决定单项怎样比较，`role` 决定该项是否计入总判定。对固定输出协议可保留默认的精确比较与必需角色。
+
+必需项内沿用原优先级：有 `insufficient_evidence` 时任务为 `unevaluable`；其余情况下有 `failed` 时任务为 `failed`。诊断项自身证据不足会保留在明细中。执行状态、录制完整性、运行身份、快照和路由等全局证据检查仍先执行。必需的工具结果不能通过 `after` 依赖诊断项；诊断的工具结果可依赖更早的必需或诊断工具结果。
+
+显式角色随用例和断言结果保存。已有用例省略该字段时保持原判定和结果行结构。版本 1 不接受 `role`；含新字段的版本 2 用例需要支持该扩展的读取器。改变已冻结用例的角色会改变评测标准。对同一轨迹的这种对照应使用独立用例副本和输出文件，保留原始判定。
+
 版本 2 保留版本 1 的必需字段和断言，允许 environment 增加 stateful 对象，其唯一必需字段 transientReadFailures 为“已有文件路径 → 非负整数次数”的映射，拒绝布尔值。没有 stateful 时仍使用实际文件环境；声明 stateful 后 files 只保存在 Python 内存，workspace 不写入这些文件。版本 1 不接受 stateful。证据和结果仍为版本 2，录制格式不变。示例见 [路径过时](../fixtures/evaluation/stale-path.case.json)、[失败恢复](../fixtures/evaluation/retry-read.case.json)；协议和取消语义见 [状态化工具](stateful-tools.md)。
 
 版本 2 允许 tool_result 的 `arguments` 为 `{}`，表示不限制调用参数值，仍必须有正确工具名、合法对象形式的实际参数、按 callId 关联的结果、预期 isError / 文本约束和正确的任务顺序。非空对象仍逐键精确匹配；版本 1 继续要求非空对象。路径过时用例的发现断言使用空对象，并要求 eval_list 成功返回包含 docs/current.md 的列表，因此根目录 `.` 和 `docs` 都可通过，旧路径失败、读取新文件及答案断言保持原要求。此兼容扩展不增加新版本编号；旧快照中的非空参数约束仍按原语义检查。修复依据见 [记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。
+
+## 状态化写入与最终文件断言（094）
+
+2026 年 11 月 2 日新增状态化扩展：stateful.tools 显式选择 eval_read / eval_list / eval_write，096 另支持 eval_delete / eval_edit；省略时仍为 read / list。toolDelaysMs 按启用工具的新请求顺序声明延迟序列，toolTimeoutsMs 可为这五种工具分别配置期限。environment_files 断言形如 `{"id":"state","type":"environment_files","equals":{"result.txt":"done\n"}}`，精确比较最终全部虚拟文件，只适用于版本 2 stateful。它不接受 after，不可作为工具结果顺序约束的前置断言。
+
+eval_delete 的 arguments 为 `{path}`；eval_edit 为 `{path,oldText,newText}`，编辑字符串按原样匹配，要求唯一且非空 oldText（重叠也计入歧义），允许 newText 为空。普通工具错误通过 tool_result 的 isError / textEquals 断言；删除后的缺失由 environment_files 全映射确认，不从成功文本推断。完整语义和三个公开示例见 [状态化工具](stateful-tools.md) 与 [096](changes/2026-11-02-096-stateful-delete-edit.md)。
+
+097 修正错误呈现边界：当前宿主把工具体 Error.message 包装为 `Error: <message>` 保存到 tool/result 的文本内容中，textEquals 必须匹配完整呈现文本，不能直接复制 Python 桥接 response.text。用例修正和首轮失败分别保留，见 [真实验收记录](changes/2026-11-02-097-mutation-live-acceptance.md)；评测器不做异常前缀归一化。
+
+新执行的 runtime.json 可保存独立版本 1 的 environmentSnapshot；evidence 版本 2 可选 environmentSnapshotSha256，budgetEnforcement 可选布尔 toolTimeouts。声明快照须有 runtimeReport；离线核对快照摘要、身份、初始环境、工具预算和 complete，旧证据不补值。工具预算只声明未验证执行时不能据此通过。文件格式版本保持兼容，新增字段会被不支持它们的旧严格读取器拒绝。完整协议和取消边界见 [状态化工具](stateful-tools.md#写入工具超时与最终状态094)。
+
+归档快照的 `files` 必须是相对文件路径到文本的映射。路径不能整体为空白或包含 NUL，同一映射中的文件不能同时作为另一文件的父目录。例如 `{"a":"x","a/b":"y"}` 即使摘要匹配，离线复验也返回 `unevaluable`，断言标记为 `insufficient_evidence`。合法映射与预期内容不符仍按断言失败处理。
+
+108 增加第六个可显式启用的工具 `eval_rename`，参数为 `{path, destination}`，默认工具仍是 read / list。可在工具期限和延迟映射中使用已启用的工具名。验证目标冲突、工具结果顺序和最终文件集合的示例见[禁止覆盖的改名用例](../fixtures/evaluation/rename-no-overwrite.case.json)。
 
 ## 可选工具结果约束：两个用例版本通用
 
@@ -176,14 +235,14 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 1. 严格加载用例和证据清单，再直接调用 `node scripts/inspect.js --run <runDir>`，检查 JSON 报告与退出码一致。不可用、超时或协议异常归为录制 unverified，不读取旧成功报告替代。
 2. 没有明确录制路径时为 unverified，不猜测目录；其他情况重新 inspect。录制不为 complete 时跳过断言。为 complete 时复核 runId、单会话 sessionId 和已知插件版本；关联不符降为 unverified，保留原始 inspection。读取停止写入后的日志或稳定副本；未实现在线一致快照。
 3. completed 需要唯一 completed 结束事件，且退出码为 0 或缺失、无信号。正常任务要求唯一真实用户输入、唯一结束、最终文本；消息和工具事件不能越过任务边界。任务范围内出现序号缺口、已知事件结构错误、重复调用 / 返回、孤立或倒序返回时报告证据不足。未知事件类型保留并跳过，不猜测含义。
-4. 仅执行正常、录制可验证、输入与配置匹配时运行必需断言。
+4. 执行正常、录制可验证、输入与配置匹配后，按声明顺序计算必需项与诊断项。
 
 | 维度 | 值与含义 |
 | --- | --- |
 | execution | 保留 reportedStatus、适配器退出事实及实际 turnEndReason；status 表示对冲突进行保守处理后的执行状态 |
 | recording | complete / invalid / unverified，含原因与本次 Node inspection；complete 只说明片段一致性 |
-| assertions | passed / failed / insufficient_evidence / not_run；results 逐条保留 id、type、结论、实际值或原因及证据序号 / callId |
-| outcome | 只有执行 completed 且录制 complete，全部断言 passed 才 passed；证据充分且有明确不符为 failed；其余 unevaluable |
+| assertions | 必需项的汇总结论，可为 passed / failed / insufficient_evidence / not_run。results 逐项保留 id、type、显式声明的 role、单项结论、实际值或原因及证据序号 / callId |
+| outcome | 执行 completed、录制 complete、全局证据通过核验且全部必需断言通过时为 passed。必需项证据充分且有明确不符时为 failed，其余为 unevaluable |
 
 输出保留 evaluatedAt（UTC）、完整版本化用例快照（含输入、环境、期望配置和预算）、实际配置声明、预算实施标记、source、caseRunId、caseId、可选 batchId，以及关联的 runId / sessionId / 明确路径。文件缺失与检查错误也保留分类；M4.1 开始增加可选 metrics，历史文件缺少指标仍兼容，见文末扩展。
 

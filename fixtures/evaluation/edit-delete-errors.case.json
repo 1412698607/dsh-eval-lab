@@ -1,0 +1,90 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "edit-delete-errors",
+  "input": "Use only eval_delete and eval_edit. Try deleting missing.txt exactly once. Then try editing settings.txt by replacing oldText flag=off with newText flag=on exactly once. Both operations are expected to fail. Do not retry, refine the match, or change any files. Return only rejected.",
+  "environment": {
+    "files": {
+      "settings.txt": "flag=off\nflag=off\nowner=评测\n",
+      "guard.txt": "keep\n"
+    },
+    "stateful": {
+      "transientReadFailures": {},
+      "tools": [
+        "eval_edit",
+        "eval_delete"
+      ]
+    }
+  },
+  "configRef": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "profile": "headless",
+    "pluginVersion": "0.1.2"
+  },
+  "budget": {
+    "timeoutSeconds": 120
+  },
+  "assertions": [
+    {
+      "id": "missing",
+      "type": "tool_result",
+      "tool": "eval_delete",
+      "arguments": {
+        "path": "missing.txt"
+      },
+      "result": {
+        "isError": true,
+        "textEquals": "Error: NOT_FOUND: missing.txt"
+      }
+    },
+    {
+      "id": "ambiguous",
+      "type": "tool_result",
+      "tool": "eval_edit",
+      "arguments": {
+        "path": "settings.txt",
+        "oldText": "flag=off",
+        "newText": "flag=on"
+      },
+      "result": {
+        "isError": true,
+        "textEquals": "Error: AMBIGUOUS_MATCH: settings.txt"
+      },
+      "after": "missing"
+    },
+    {
+      "id": "eval_edit-count",
+      "type": "tool_call_count",
+      "tool": "eval_edit",
+      "min": 1,
+      "max": 1
+    },
+    {
+      "id": "eval_delete-count",
+      "type": "tool_call_count",
+      "tool": "eval_delete",
+      "min": 1,
+      "max": 1
+    },
+    {
+      "id": "state",
+      "type": "environment_files",
+      "equals": {
+        "settings.txt": "flag=off\nflag=off\nowner=评测\n",
+        "guard.txt": "keep\n"
+      }
+    },
+    {
+      "id": "answer",
+      "type": "final_text",
+      "equals": "rejected"
+    },
+    {
+      "id": "end",
+      "type": "turn_end",
+      "reason": {
+        "kind": "completed"
+      }
+    }
+  ]
+}

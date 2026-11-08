@@ -1,0 +1,24 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "write-retry",
+  "input": "Use only eval_write and eval_read. Write exactly done followed by one newline to result.txt. If a tool times out, retry the write once. Read result.txt to verify it. Preserve guard.txt. Return only done.",
+  "environment": {
+    "files": {"guard.txt": "keep\n", "result.txt": "old\n"},
+    "stateful": {
+      "transientReadFailures": {},
+      "tools": ["eval_read", "eval_write"],
+      "toolDelaysMs": {"eval_write": [1500, 0]}
+    }
+  },
+  "configRef": {"provider": "deepseek-official", "model": "deepseek-flash", "profile": "headless", "pluginVersion": "0.1.2"},
+  "budget": {"timeoutSeconds": 120, "toolTimeoutMs": 5000, "toolTimeoutsMs": {"eval_write": 1000}},
+  "assertions": [
+    {"id": "timeout", "type": "tool_result", "tool": "eval_write", "arguments": {"path": "result.txt", "content": "done\n"}, "result": {"isError": true, "textContains": "TOOL_TIMEOUT"}},
+    {"id": "retry", "type": "tool_result", "tool": "eval_write", "arguments": {"path": "result.txt", "content": "done\n"}, "result": {"isError": false, "textEquals": "WROTE: result.txt"}, "after": "timeout"},
+    {"id": "readback", "type": "tool_result", "tool": "eval_read", "arguments": {"path": "result.txt"}, "result": {"isError": false, "textEquals": "done\n"}, "after": "retry"},
+    {"id": "writes", "type": "tool_call_count", "tool": "eval_write", "min": 2, "max": 2},
+    {"id": "state", "type": "environment_files", "equals": {"guard.txt": "keep\n", "result.txt": "done\n"}},
+    {"id": "answer", "type": "final_text", "equals": "done"},
+    {"id": "end", "type": "turn_end", "reason": {"kind": "completed"}}
+  ]
+}

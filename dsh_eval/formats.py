@@ -48,6 +48,21 @@ def nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
 
+def valid_relative_path(path, *, directory=False):
+    return (isinstance(path, str) and (directory or bool(path.strip()))
+            and "\0" not in path and "\\" not in path and ":" not in path
+            and all(part not in ("", ".", "..") for part in path.split("/")))
+
+
+def validate_file_map(files, label):
+    require(isinstance(files, dict), f"{label} must be an object")
+    for path, content in files.items():
+        require(valid_relative_path(path), f"{label} keys must be relative POSIX file paths")
+        require(isinstance(content, str), f"{label} content must be text")
+    require(not any(str(parent) in files for path in files for parent in PurePosixPath(path).parents),
+            f"{label} file/directory collision")
+
+
 def configuration(value):
     fields(value, ("provider", "model", "profile", "pluginVersion"))
     require(all(nonempty(item) for item in value.values()), "Configuration values must be nonempty strings")
@@ -134,17 +149,19 @@ def validate_case(case):
     require(nonempty(case["caseId"]) and nonempty(case["input"]), "caseId and input must be nonempty strings")
     fields(case["environment"], ("files",), ("stateful",) if case["caseFormatVersion"] == 2 else ())
     files = case["environment"]["files"]
-    require(isinstance(files, dict), "environment.files must be an object")
-    for path, content in files.items():
-        require(nonempty(path) and "\\" not in path and ":" not in path and not path.startswith("/")
-                and all(part not in ("", ".", "..") for part in path.split("/"))
-                and not PurePosixPath(path).is_absolute(), "Fixture paths must be relative POSIX file paths")
-        require(isinstance(content, str), "Fixture content must be text")
-    require(not any(str(parent) in files for path in files for parent in PurePosixPath(path).parents),
-            "Fixture file/directory collision")
+    validate_file_map(files, "environment.files")
     if "stateful" in case["environment"]:
         stateful = case["environment"]["stateful"]
-        fields(stateful, ("transientReadFailures",))
+        fields(stateful, ("transientReadFailures",), ("tools", "toolDelaysMs"))
+        tools = stateful.get("tools", ["eval_read", "eval_list"])
+        require(isinstance(tools, list) and tools and all(isinstance(tool, str) and tool in
+                ("eval_read", "eval_list", "eval_write", "eval_delete", "eval_edit", "eval_rename") for tool in tools) and len(set(tools)) == len(tools),
+                "stateful.tools must name distinct supported tools")
+        delays = stateful.get("toolDelaysMs", {})
+        require(isinstance(delays, dict), "toolDelaysMs must be an object")
+        for tool, values in delays.items():
+            require(tool in tools and isinstance(values, list) and all(type(value) is int and
+                    0 <= value <= 3600000 for value in values), "Tool delays must be enabled-tool millisecond sequences (0..3600000)")
         failures = stateful["transientReadFailures"]
         require(isinstance(failures, dict), "transientReadFailures must be an object")
         require(all(path in files and type(count) is int and count >= 0 for path, count in failures.items()),
@@ -157,25 +174,46 @@ def validate_case(case):
         for name, value in case["recorder"].items():
             require(type(value) is int and 0 < value <= 9007199254740991,
                     f"recorder.{name} must be a positive safe integer (UTF-8 bytes)")
-    fields(case["budget"], ("timeoutSeconds",))
+    fields(case["budget"], ("timeoutSeconds",), ("toolTimeoutMs", "toolTimeoutsMs"))
     require(type(case["budget"]["timeoutSeconds"]) is int and case["budget"]["timeoutSeconds"] > 0,
             "timeoutSeconds must be a positive integer")
+    if any(key in case["budget"] for key in ("toolTimeoutMs", "toolTimeoutsMs")):
+        require("stateful" in case["environment"], "Tool deadlines require the controlled stateful environment")
+        overrides = case["budget"].get("toolTimeoutsMs", {})
+        require(isinstance(overrides, dict) and all(tool in tools for tool in overrides),
+                "toolTimeoutsMs must name enabled tools")
+        require(all(type(value) is int and 0 < value <= 3600000 for value in
+                    [case["budget"].get("toolTimeoutMs", 5000), *overrides.values()]),
+                "Tool deadlines must be integer milliseconds (1..3600000)")
     assertions = case["assertions"]
     require(isinstance(assertions, list) and assertions, "At least one assertion is required")
     ids = set()
-    tool_ids = set()
+    tool_roles = {}
+    role_field = ("role",) if case["caseFormatVersion"] == 2 else ()
     for assertion in assertions:
         require(isinstance(assertion, dict), "Assertion must be an object")
+        role = assertion.get("role", "required")
+        require(role in ("required", "diagnostic"), "Assertion role must be required or diagnostic")
         kind = assertion.get("type")
         if kind == "final_text":
-            fields(assertion, ("id", "type", "equals"))
+            fields(assertion, ("id", "type", "equals"), ("role", "match") if case["caseFormatVersion"] == 2 else ())
             require(nonempty(assertion["equals"]), "Final text must be nonempty")
+            if "match" in assertion:
+                require(assertion["match"] == "confirmation_token", "Unsupported final_text match")
+                require(re.fullmatch(r"[A-Za-z]+", assertion["equals"]) is not None,
+                        "confirmation_token requires a single ASCII word in equals")
+        elif kind == "environment_files":
+            fields(assertion, ("id", "type", "equals"), role_field)
+            require("stateful" in case["environment"], "environment_files requires stateful execution")
+            validate_file_map(assertion["equals"], "Expected files")
         elif kind == "tool_result":
-            fields(assertion, ("id", "type", "tool", "arguments", "result"), ("after",))
+            fields(assertion, ("id", "type", "tool", "arguments", "result"), role_field + ("after",))
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
             if "after" in assertion:
-                require(nonempty(assertion["after"]) and assertion["after"] in tool_ids,
+                require(nonempty(assertion["after"]) and assertion["after"] in tool_roles,
                         "after must name an earlier tool_result assertion")
+                require(role == "diagnostic" or tool_roles[assertion["after"]] == "required",
+                        "Required tool_result cannot depend on a diagnostic assertion")
             require(isinstance(assertion["arguments"], dict)
                     and (case["caseFormatVersion"] == 2 or assertion["arguments"]),
                     "Expected tool arguments must be an object (nonempty in case version 1)")
@@ -188,8 +226,8 @@ def validate_case(case):
             if "textEquals" in assertion["result"]:
                 require(isinstance(assertion["result"]["textEquals"], str), "textEquals must be text")
         elif kind in ("tool_forbidden", "tool_call_count"):
-            fields(assertion, ("id", "type", "tool"),
-                   ("arguments", "min", "max") if kind == "tool_call_count" else ("arguments",))
+            bounds = ("min", "max") if kind == "tool_call_count" else ()
+            fields(assertion, ("id", "type", "tool"), role_field + ("arguments",) + bounds)
             require(nonempty(assertion["tool"]), "Tool name must be nonempty")
             require(isinstance(assertion.get("arguments", {}), dict), "Expected tool arguments must be an object")
             if kind == "tool_call_count":
@@ -201,20 +239,23 @@ def validate_case(case):
                 require(assertion.get("min", 0) <= assertion.get("max", 9007199254740991),
                         "Tool call count min must not exceed max")
         elif kind == "turn_end":
-            fields(assertion, ("id", "type", "reason"))
+            fields(assertion, ("id", "type", "reason"), role_field)
             require(isinstance(assertion["reason"], dict) and nonempty(assertion["reason"].get("kind")), "Expected end reason is required")
         else:
             raise ValueError(f"Unsupported assertion type: {kind}")
         require(nonempty(assertion["id"]) and assertion["id"] not in ids, "Assertion IDs must be nonempty and unique")
         ids.add(assertion["id"])
         if kind == "tool_result":
-            tool_ids.add(assertion["id"])
+            tool_roles[assertion["id"]] = role
+    require(any(item.get("role", "required") == "required" for item in assertions),
+            "At least one assertion must have the required role")
     return case
 
 
 def validate_evidence(evidence, case):
     fields(evidence, ("evidenceFormatVersion", "caseRunId", "caseId", "runId", "sessionId", "runDir",
-                      "source", "configuration", "budgetEnforcement", "execution"), ("batchId", "runtimeReport"))
+                      "source", "configuration", "budgetEnforcement", "execution"),
+           ("batchId", "runtimeReport", "environmentSnapshotSha256"))
     version = evidence["evidenceFormatVersion"]
     require(type(version) is int and version in (1, 2), "Unsupported evidence format")
     require(version == 2 or "runtimeReport" not in evidence, "runtimeReport requires evidence version 2")
@@ -231,7 +272,13 @@ def validate_evidence(evidence, case):
         configuration(evidence["configuration"])
     if "runtimeReport" in evidence:
         require(nonempty(evidence["runtimeReport"]), "runtimeReport must be a path")
-    fields(evidence["budgetEnforcement"], ("timeoutSeconds",))
+    if "environmentSnapshotSha256" in evidence:
+        digest = evidence["environmentSnapshotSha256"]
+        require(version == 2 and "runtimeReport" in evidence and isinstance(digest, str)
+                and len(digest) == 64 and all(char in "0123456789abcdef" for char in digest), "Invalid environment snapshot digest")
+    fields(evidence["budgetEnforcement"], ("timeoutSeconds",), ("toolTimeouts",))
+    require("toolTimeouts" not in evidence["budgetEnforcement"] or type(evidence["budgetEnforcement"]["toolTimeouts"]) is bool,
+            "Tool timeout enforcement must be boolean")
     require(type(evidence["budgetEnforcement"]["timeoutSeconds"]) is bool, "Budget enforcement must be boolean")
     execution = evidence["execution"]
     fields(execution, ("status",), ("reason", "exitCode", "signal"))

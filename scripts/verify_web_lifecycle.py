@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 from uuid import UUID
 
-from dsh_eval.evaluate import check_assertions, inspect_recording, task_view, text_of
+from dsh_eval.evaluate import assertion_outcome, check_assertions, inspect_recording, task_view, text_of
 from dsh_eval.formats import fields, load_json, nonempty, parse_json, require, validate_case
 
 SCENARIOS = {"page-cancel", "normal-exit", "process-interrupt"}
@@ -48,8 +48,7 @@ def check_events(events, case, scenario, after_seq, *, allow_unconfirmed_tail=Fa
     require(reason == {"kind": "completed"} and after_seq >= end["seq"],
             "Normal exit did not follow task completion")
     rows = check_assertions(case["assertions"], task_view(events, case["input"]))
-    outcomes = {row["outcome"] for row in rows}
-    assertions = "insufficient_evidence" if "insufficient_evidence" in outcomes else "failed" if "failed" in outcomes else "passed"
+    assertions = assertion_outcome(rows)
     return {"execution": {"status": "completed", "turnEndReason": reason},
             "assertions": {"outcome": assertions, "results": rows},
             "outcome": "unevaluable" if assertions == "insufficient_evidence" else assertions}

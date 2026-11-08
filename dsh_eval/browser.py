@@ -23,13 +23,14 @@ BLOCKED = {"home", "workspace", "node_modules", "private-notes", "secrets", "cre
 FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_manifest", (1,)),
            "experimentFormatVersion": ("experiment_manifest", (1,)), "batchResultFormatVersion": ("batch", (1,)),
            "experimentResultFormatVersion": ("experiment", (1,)), "comparisonReportFormatVersion": ("report", (1, 2, 3)),
+           "assertionComparisonFormatVersion": ("assertion_comparison", (1,)),
            "experimentResumeResultFormatVersion": ("experiment_resume", (1, 2)),
            "batchResumeResultFormatVersion": ("batch_resume", (1,)),
            "evaluationFormatVersion": ("evaluation", (1, 2)), "evidenceFormatVersion": ("evidence", (1, 2)),
            "runtimeFormatVersion": ("runtime", (1,)), "formatVersion": ("recording", (1, 2)),
            "statusFormatVersion": ("recording", (1,))}
 RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "evaluation.json",
-                "resume-result.json", "experiment-resume-result.json"}
+                "resume-result.json", "experiment-resume-result.json", "assertion-comparison.json"}
 TRACE_NAME = re.compile(r"[0-9a-f]{64}\.jsonl\Z")
 
 
@@ -182,6 +183,11 @@ class ArtifactBrowser:
                         item["outcomes"] = summary.get("outcomes") if isinstance(summary, dict) else None
                         if kind == "evaluation" and isinstance(data.get("execution"), dict):
                             item["status"] = data["execution"].get("status")
+                        if kind == "assertion_comparison":
+                            for key in ("baseline", "candidate"):
+                                side = data.get(key)
+                                item[key + "Outcome"] = side.get("outcome") if isinstance(side, dict) else None
+                            item["outcome"] = item["candidateOutcome"]
                         rows = data.get("samples") or data.get("entries") or []
                         require(isinstance(rows, list), "Artifact samples/entries must be an array")
                         item["sources"] = sorted({row["source"] if isinstance(row.get("source"), str) and row["source"] else "unknown"
@@ -234,6 +240,9 @@ class ArtifactBrowser:
             add("batchBinding / resultPath", binding.get("resultPath"))
         collect(data.get("association"), "association / ")
         collect(data.get("resumeVerification"), "resumeVerification / ")
+        if "assertionComparisonFormatVersion" in data:
+            collect(data.get("baseline"), "baseline / ")
+            collect(data.get("candidate"), "candidate / ")
         for index, value in enumerate(data.get("batchResultPaths", []) if isinstance(data.get("batchResultPaths"), list) else [], 1):
             add(f"批次 {index} / batchResultPath", value)
         for index, row in enumerate(data.get("resumeChain", []) if isinstance(data.get("resumeChain"), list) else [], 1):
@@ -247,6 +256,31 @@ class ArtifactBrowser:
         if "comparisonReportFormatVersion" in data:
             add("Markdown", "report.md")
         return links
+
+    def _comparison_trace(self, data, directory):
+        value = data.get("evidencePath")
+        if not isinstance(value, str) or not value:
+            return None
+        identifier = self.reference(directory / value.replace("\\", "/"))
+        if identifier is None:
+            return None
+        try:
+            evidence_path = self.path(identifier)
+            kind, evidence = self._json(evidence_path)
+            if kind != "evidence" or any(not isinstance(data.get(key), str) or not data[key]
+                                         or evidence.get(key) != data[key]
+                                         for key in ("caseRunId", "runId", "sessionId")):
+                return None
+            run_id, session_id, run_dir = evidence.get("runId"), evidence.get("sessionId"), evidence.get("runDir")
+            if not all(isinstance(value, str) and value for value in (run_id, session_id, run_dir)):
+                return None
+            name = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".jsonl"
+            trace = self.reference(evidence_path.parent / run_dir.replace("\\", "/") / name)
+            if trace:
+                return {"id": trace, "runId": run_id, "sessionId": session_id}
+        except (OSError, ValueError):
+            return None
+        return None
 
     def _trace_focus(self, path, seq, run_id, session_id):
         require(type(seq) is int and 0 <= seq <= 9007199254740991
@@ -326,6 +360,10 @@ class ArtifactBrowser:
         kind, data = self._json(path)
         links = self._links(data, path.parent)
         result = {"id": identifier, "kind": kind, "data": data, "links": links}
+        if kind == "assertion_comparison":
+            trace = self._comparison_trace(data, path.parent)
+            if trace:
+                result["assertionTrace"] = trace
         association = data.get("association")
         if kind == "evaluation" and isinstance(association, dict):
             run_id, session_id = association.get("runId"), association.get("sessionId")

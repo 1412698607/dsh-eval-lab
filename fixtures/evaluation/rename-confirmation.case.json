@@ -1,0 +1,21 @@
+{
+  "caseFormatVersion": 2,
+  "caseId": "rename-confirmation",
+  "input": "Use only eval_rename and eval_read. First try to move draft.txt to guard.txt with eval_rename. This attempt is expected to fail because guard.txt exists. After that failure, move draft.txt to archive/final.txt with eval_rename. Read archive/final.txt to verify its contents. Preserve guard.txt. Reply with only the confirmation word done. Any ASCII letter case, optional Markdown bold using ** or __, and one optional English period are allowed. Do not add an explanation.",
+  "environment": {
+    "files": {"draft.txt": "评测\r\n", "guard.txt": "keep\n"},
+    "stateful": {"transientReadFailures": {}, "tools": ["eval_rename", "eval_read"]}
+  },
+  "configRef": {"provider": "deepseek-official", "model": "deepseek-flash", "profile": "headless", "pluginVersion": "0.1.2"},
+  "budget": {"timeoutSeconds": 120},
+  "assertions": [
+    {"id": "occupied", "type": "tool_result", "tool": "eval_rename", "arguments": {"path": "draft.txt", "destination": "guard.txt"}, "result": {"isError": true, "textEquals": "Error: TARGET_EXISTS: guard.txt"}},
+    {"id": "move", "type": "tool_result", "tool": "eval_rename", "arguments": {"path": "draft.txt", "destination": "archive/final.txt"}, "result": {"isError": false, "textEquals": "RENAMED: draft.txt -> archive/final.txt"}, "after": "occupied"},
+    {"id": "verify", "type": "tool_result", "tool": "eval_read", "arguments": {"path": "archive/final.txt"}, "result": {"isError": false, "textEquals": "评测\r\n"}, "after": "move"},
+    {"id": "moves", "type": "tool_call_count", "tool": "eval_rename", "min": 2, "max": 2},
+    {"id": "state", "type": "environment_files", "equals": {"archive/final.txt": "评测\r\n", "guard.txt": "keep\n"}},
+    {"id": "answer", "type": "final_text", "equals": "done", "match": "confirmation_token"},
+    {"id": "answer-exact", "type": "final_text", "equals": "done", "role": "diagnostic"},
+    {"id": "end", "type": "turn_end", "reason": {"kind": "completed"}}
+  ]
+}
