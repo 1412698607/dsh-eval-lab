@@ -17,6 +17,7 @@ const scenarios = {
   "rename-confirmation": renameConfirmation,
   "rename-timeout-retry": [rename, ["read", { path: "draft.txt" }],
     ["read", { path: "archive/final.txt" }], rename, ["read", { path: "archive/final.txt" }]],
+  "rename-timeout-skip-readbacks": [rename, rename, ["read", { path: "archive/final.txt" }]],
   "rename-no-overwrite": [["rename", { path: "draft.txt", destination: "guard.txt" }],
     ["rename", { path: "draft.txt", destination: "archive/final.txt" }], ["read", { path: "archive/final.txt" }]],
   "edit-delete": [edit, remove, read],

@@ -19,6 +19,17 @@ FIXTURES = ROOT / "fixtures/evaluation"
 NAMES = ("rename-confirmation", "rename-timeout-retry")
 
 
+def run_synthetic_case(*args, **kwargs):
+    result = run_case(*args, **kwargs)
+    evidence_path = Path(result["association"]["evidencePath"])
+    evidence = load_json(evidence_path)
+    evidence["source"] = "synthetic"
+    evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+    result = evaluate(result["association"]["casePath"], evidence_path)
+    evidence_path.with_name("evaluation.json").write_text(json.dumps(result), encoding="utf-8")
+    return result
+
+
 class RenameConfirmationMatrixTests(unittest.TestCase):
     def test_public_matrix_has_four_predeclared_tasks_and_separate_answer_roles(self):
         path = FIXTURES / "rename-confirmation.experiment.json"
@@ -74,13 +85,7 @@ class RenameConfirmationMatrixTests(unittest.TestCase):
             plan = plan_experiment(path, max_samples=4)
 
             def execute(*args, **kwargs):
-                result = run_case(*args, **kwargs)
-                evidence_path = Path(result["association"]["evidencePath"])
-                evidence = load_json(evidence_path)
-                evidence["source"] = "synthetic"
-                evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
-                result = evaluate(result["association"]["casePath"], evidence_path)
-                evidence_path.with_name("evaluation.json").write_text(json.dumps(result), encoding="utf-8")
+                result = run_synthetic_case(*args, **kwargs)
                 rows = {row["id"]: row for row in result["assertions"]["results"]}
                 self.assertEqual(result["outcome"], "passed", result)
                 self.assertEqual((rows["answer"]["outcome"], rows["answer-exact"]["outcome"]), ("passed", "failed"))
@@ -98,6 +103,49 @@ class RenameConfirmationMatrixTests(unittest.TestCase):
             report = generate_report(Path(result["experimentDirectory"]) / "experiment-result.json", root / "reports")
             self.assertEqual(report["verificationCounts"], {"verified": 4})
             self.assertTrue(all(row["source"] == "synthetic" and row["outcome"] == "passed" for row in report["samples"]))
+
+    def test_retry_without_intermediate_reads_cannot_pass_with_correct_final_state(self):
+        case = load_json(FIXTURES / "rename-timeout-retry.case.json")
+        case["caseId"] = "rename-timeout-skip-readbacks"
+        case["configRef"].update(provider="synthetic", model="none")
+        with tempfile.TemporaryDirectory(prefix="dsh-skip-reads-") as temp:
+            root = Path(temp)
+            case_path = root / "input.json"
+            case_path.write_text(json.dumps(case), encoding="utf-8")
+            with patch("dsh_eval.runner._prepare"), patch("dsh_eval.output_paths.check_output_root"), \
+                    patch("dsh_eval.runner.ADAPTER", ROOT / "scripts/fixtures/mutation-adapter.js"):
+                result = run_synthetic_case(case_path, root / "runs")
+            run_dir = Path(result["association"]["runDir"])
+            trace, = run_dir.glob("*.jsonl")
+            events = [json.loads(line)["event"] for line in trace.read_text(encoding="utf-8").splitlines()]
+            calls = [e for e in events if e["type"] == "tool/call"]
+            replies = [e for e in events if e["type"] == "tool/result"]
+            self.assertEqual([e["data"]["name"] for e in calls], ["eval_rename", "eval_rename", "eval_read"])
+            self.assertEqual([json.loads(e["data"]["arguments"]) for e in calls],
+                             [{"path": "draft.txt", "destination": "archive/final.txt"}] * 2
+                             + [{"path": "archive/final.txt"}])
+            messages = [r["data"]["message"] for r in replies]
+            self.assertEqual([m["toolCallId"] for m in messages], [c["data"]["callId"] for c in calls])
+            self.assertEqual([m["isError"] for m in messages], [True, False, False])
+            self.assertEqual([m["content"][0]["text"] for m in messages],
+                             ["Error: TOOL_TIMEOUT: draft.txt", "RENAMED: draft.txt -> archive/final.txt", "评测\r\n"])
+            self.assertEqual([e["type"] for e in events if e["type"] in ("tool/call", "tool/result")],
+                             ["tool/call", "tool/result"] * 3)
+
+            self.assertEqual((result["source"], result["execution"]["status"], result["recording"]["outcome"]),
+                             ("synthetic", "completed", "complete"))
+            rows = {row["id"]: row for row in result["assertions"]["results"]}
+            for key in ("timeout", "moves", "state", "answer", "answer-exact", "end"):
+                self.assertEqual(rows[key]["outcome"], "passed", key)
+            self.assertEqual(rows["state"]["actual"], {"archive/final.txt": "评测\r\n", "guard.txt": "keep\n"})
+            for key in ("source-still-present", "target-still-missing", "retry", "verify"):
+                self.assertEqual(rows[key]["outcome"], "insufficient_evidence", key)
+            self.assertIn("No matching call/result", rows["source-still-present"]["reason"])
+            for key, predecessor in (("target-still-missing", "source-still-present"),
+                                     ("retry", "target-still-missing"), ("verify", "retry")):
+                self.assertIn(predecessor, rows[key]["reason"])
+            self.assertEqual((result["assertions"]["outcome"], result["outcome"]),
+                             ("insufficient_evidence", "unevaluable"))
 
 
 if __name__ == "__main__":

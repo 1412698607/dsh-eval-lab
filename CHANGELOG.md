@@ -1,5 +1,13 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月9日 重命名超时后的漏步反例
+
+- [121](docs/changes/2026-11-09-121-rename-skip-readbacks.md) 重现超时后跳过两次读回、直接重试的合成轨迹。最终文件正确，评测仍能定位第一条缺失证据的必需步骤。
+
+## 2026年11月9日 实验规则预览交付
+
+- [120](docs/changes/2026-11-09-120-experiment-rule-preview-delivery-ci.md) 核实 118、119 的共同提交和首次 Windows 无模型 CI。
+
 ## 2026年11月9日 整份实验的规则影响预览
 
 - [119](docs/changes/2026-11-09-119-experiment-assertion-preview.md) 对已完成实验逐样本预览候选断言的影响，并在 117 原归档上比较宽松确认词与必需的精确回复。
