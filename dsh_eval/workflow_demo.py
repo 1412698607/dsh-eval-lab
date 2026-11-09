@@ -107,6 +107,13 @@ def generate_workflow(output_dir=None):
             and all(row["source"] == "synthetic" and row["configurationMatch"] == "matched"
                     and row["outcome"] == "passed" for row in report["samples"]),
             "Independent experiment report did not verify all four scripted samples")
+    causes = report["summary"]["assertionCauseSummary"]
+    require((causes["plannedSamples"], causes["availableSamples"], causes["missingSamples"]) == (4, 4, 0)
+            and causes["byRole"]["required"]["rootAffectedSamples"] == 0
+            and causes["byRole"]["required"]["blockedAffectedSamples"] == 0
+            and causes["byRole"]["diagnostic"]["rootReasons"] == [
+                {"reasonCode": "final_text_mismatch", "affectedSamples": 1, "sampleIds": ["sample-000002"]}],
+            "Experiment cause summary did not preserve the one diagnostic format deviation")
     preview = preview_experiment_assertions(experiment_path, rule_map_path)
     require(preview["summary"] == {"plannedSamples": 4, "comparedSamples": 4, "passToFail": 1,
                                   "failToPass": 0, "unchangedPassed": 3, "unchangedFailed": 0, "inconclusive": 0},

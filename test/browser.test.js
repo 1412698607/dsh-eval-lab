@@ -879,6 +879,194 @@ test("old reports omit diagnostic panels and partial summaries show missing coun
   assert.match(panel.textContent, /缺失 \/ 缺失 \/ 缺失 \/ 缺失/);
 });
 
+function causeSample(required = {}, diagnostic = {}) {
+  const role = (value) => ({ declaredAssertions: 1, rootIssues: [], blockedAssertions: [], globalGates: [], ...value });
+  return { assertionCausesFormatVersion: 1, status: "available", byRole: { required: role(required), diagnostic: role(diagnostic) } };
+}
+
+function causeAggregate(planned, available, required = {}, diagnostic = {}, missingReasons = {}) {
+  const role = (value) => ({ declaredSamples: available, rootAffectedSamples: 0, blockedAffectedSamples: 0,
+    globalGateAffectedSamples: 0, rootIssueCount: 0, blockedAssertionCount: 0,
+    rootReasons: [], globalGateReasons: [], blockedSampleIds: [], ...value });
+  return { assertionCauseSummaryFormatVersion: 1, plannedSamples: planned, availableSamples: available,
+    missingSamples: planned - available, missingReasons, byRole: { required: role(required), diagnostic: role(diagnostic) } };
+}
+
+function causeReport() {
+  const artifact = resumedReport();
+  const root = { rootAffectedSamples: 1, rootIssueCount: 1, blockedAffectedSamples: 1, blockedAssertionCount: 3,
+    rootReasons: [{ reasonCode: "tool_evidence_missing", affectedSamples: 1, sampleIds: ["missing-chain"] }],
+    blockedSampleIds: ["missing-chain"] };
+  const gate = { globalGateAffectedSamples: 1,
+    globalGateReasons: [{ reasonCode: "evaluation_evidence_invalid", affectedSamples: 1, sampleIds: ["global"] }] };
+  const format = { declaredSamples: 2, rootAffectedSamples: 1, rootIssueCount: 1,
+    rootReasons: [{ reasonCode: "final_text_mismatch", affectedSamples: 1, sampleIds: ["format"] }] };
+  artifact.data.summary.assertionCauseSummary = causeAggregate(5, 4, { ...root, ...gate }, format, { not_evaluated: 1 });
+  artifact.data.samples = [
+    { sampleId: "missing-chain", caseEntryId: "retry-entry", configurationId: "baseline", source: "synthetic", outcome: "unevaluable",
+      assertionCauses: causeSample({ declaredAssertions: 5, rootIssues: [{ id: "source", reasonCode: "tool_evidence_missing" }],
+        blockedAssertions: [{ id: "target", blockedBy: ["source"] }, { id: "retry", blockedBy: ["target"] }, { id: "verify", blockedBy: ["retry"] }] }) },
+    { sampleId: "format", caseEntryId: "rename-entry", configurationId: "baseline", source: "live", outcome: "passed",
+      assertionCauses: causeSample({ declaredAssertions: 7 }, { rootIssues: [{ id: "answer-exact", reasonCode: "final_text_mismatch" }] }) },
+    { sampleId: "global", caseEntryId: "retry-entry", configurationId: "baseline", source: "synthetic", outcome: "unevaluable",
+      assertionCauses: causeSample({ globalGates: [{ id: "read", reasonCode: "evaluation_evidence_invalid" }] }, { declaredAssertions: 0 }) },
+    { sampleId: "clean", caseEntryId: "retry-entry", configurationId: "baseline", source: "synthetic", outcome: "passed",
+      assertionCauses: causeSample({}, { declaredAssertions: 0 }) },
+    { sampleId: "unread", caseEntryId: "retry-entry", configurationId: "baseline", source: null, outcome: "unevaluable",
+      assertionCauses: { assertionCausesFormatVersion: 1, status: "unavailable", reasonCode: "not_evaluated" } },
+  ];
+  artifact.data.groups = [
+    { caseEntryId: "retry-entry", configurationId: "baseline", bySource: {
+      synthetic: { assertionCauseSummary: causeAggregate(3, 3, { ...root, ...gate }, { declaredSamples: 1 }) },
+      unknown: { assertionCauseSummary: causeAggregate(1, 0, {}, {}, { not_evaluated: 1 }) },
+    } },
+    { caseEntryId: "rename-entry", configurationId: "baseline", bySource: {
+      live: { assertionCauseSummary: causeAggregate(1, 1, {}, { ...format, declaredSamples: 1 }) },
+    } },
+  ];
+  artifact.links.push({ label: "1 / evaluationPath", id: "runs:recheck-root/evaluation.json" });
+  return artifact;
+}
+
+function causeTable(panel, heading) {
+  return descendants(panel, "table").find((item) => item.children[0].textContent.includes(heading));
+}
+
+test("structured cause reports separate roots, successors, global gates, roles and source coverage", async () => {
+  const artifact = causeReport(), before = structuredClone(artifact);
+  const get = await openReport(artifact), panel = section(get, "结构化原因汇总");
+  assert.match(panel.textContent, /原计划样本 5/);
+  assert.match(panel.textContent, /原因可用样本 4/);
+  assert.match(panel.textContent, /原因缺失样本 1/);
+  assert.match(panel.textContent, /一个源头和三个后继阻断分别统计/);
+  const roleRows = causeTable(panel, "声明该角色 / 原因可用样本").children[1].children;
+  assert.deepEqual(roleRows[0].children.map((cell) => cell.textContent), ["必需项", "4 / 4", "1", "1", "1", "1", "3"]);
+  assert.deepEqual(roleRows[1].children.map((cell) => cell.textContent), ["诊断项", "2 / 4", "1", "0", "0", "1", "0"]);
+  const grouped = causeTable(panel, "用例 / 配置 / 来源 / 筛选");
+  assert.match(grouped.textContent, /retry-entry \/ baseline \/ 合成声明/);
+  assert.match(grouped.textContent, /rename-entry \/ baseline \/ 真实运行声明/);
+  assert.match(grouped.textContent, /retry-entry \/ baseline \/ 未知/);
+  assert.match(grouped.textContent, /0 \/ 1 \/ 1/);
+  const samples = causeTable(panel, "样本 / 逐项复验");
+  assert.match(samples.textContent, /源头：source；阻断：target、retry、verify；门禁：无/);
+  assert.match(samples.textContent, /未声明该角色断言/);
+  assert.match(samples.textContent, /未取得复验结果/);
+  assert.equal(artifact.data.samples[1].outcome, "passed");
+  assert.deepEqual(artifact, before);
+});
+
+test("cause reason filters locally select affected samples then use approved evaluation links", async () => {
+  const artifact = causeReport(), requests = [];
+  const get = await openReport((path) => path.includes("recheck-root") ? diagnosticResult() : artifact, requests);
+  const panel = section(get, "结构化原因汇总"), requestCount = requests.length;
+  findButton(panel, "必需项 · 独立源头 · 缺少匹配的工具调用与返回（tool_evidence_missing）").trigger("click");
+  let rows = causeTable(panel, "样本 / 逐项复验").children[1].children;
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].textContent, /missing-chain/);
+  assert.equal(requests.length, requestCount);
+  findButton(panel, "显示全部原因样本").trigger("click");
+  assert.equal(causeTable(panel, "样本 / 逐项复验").children[1].children.length, 5);
+  findButton(panel, "retry-entry / baseline / 合成声明").trigger("click");
+  rows = causeTable(panel, "样本 / 逐项复验").children[1].children;
+  assert.equal(rows.length, 3);
+  assert.ok(rows.every((row) => !row.textContent.includes("format") && !row.textContent.includes("unread")));
+  findButton(panel, "missing-chain").trigger("click");
+  await new Promise(setImmediate);
+  assert.ok(requests.at(-1).includes("id=runs%3Arecheck-root%2Fevaluation.json"));
+  assert.equal(get("title").textContent, "strict-answer");
+});
+
+test("cause report filters retain separate diagnostic and global gate samples without requiring links", async () => {
+  const artifact = causeReport(), get = await openReport(artifact), panel = section(get, "结构化原因汇总");
+  findButton(panel, "诊断项 · 独立源头 · 最终回复不符（final_text_mismatch）").trigger("click");
+  let rows = causeTable(panel, "样本 / 逐项复验").children[1].children;
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].textContent, /format/);
+  assert.match(rows[0].textContent, /通过/);
+  assert.match(rows[0].textContent, /复验文件缺失或超出浏览目录/);
+  findButton(panel, "必需项 · 全局门禁 · 评测证据无效（evaluation_evidence_invalid）").trigger("click");
+  rows = causeTable(panel, "样本 / 逐项复验").children[1].children;
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].textContent, /global/);
+  assert.match(rows[0].textContent, /源头：无；阻断：无；门禁：read/);
+  findButton(panel, "必需项 · 后继阻断 · 前置断言未通过（dependency_not_passed）").trigger("click");
+  assert.equal(causeTable(panel, "样本 / 逐项复验").children[1].children.length, 1);
+});
+
+test("legacy, unknown and incomplete cause summaries never invent zero issue coverage", async () => {
+  const old = await openReport(resumedReport());
+  assert.match(section(old, "结构化原因汇总").textContent, /未保存结构化原因汇总/);
+  assert.match(section(old, "结构化原因汇总").textContent, /缺失不代表没有问题/);
+  const future = causeReport();
+  future.data.summary.assertionCauseSummary.assertionCauseSummaryFormatVersion = 2;
+  const futureView = await openReport(future);
+  assert.match(section(futureView, "结构化原因汇总").textContent, /版本不支持/);
+  assert.equal(descendants(section(futureView, "结构化原因汇总"), "table").length, 0);
+  const partial = resumedReport();
+  partial.data.summary.assertionCauseSummary = { assertionCauseSummaryFormatVersion: 1, availableSamples: 0 };
+  const partialView = await openReport(partial), panel = section(partialView, "结构化原因汇总");
+  assert.match(panel.textContent, /原计划样本 缺失/);
+  assert.match(panel.textContent, /原因缺失样本 缺失/);
+  assert.match(panel.textContent, /原因列表不完整，不能推断零问题/);
+});
+
+test("cause report reason labels and sample IDs remain literal text without unapproved navigation", async () => {
+  const artifact = causeReport(), html = "<img src=x onerror=bad()>";
+  artifact.data.samples[0].sampleId = html;
+  artifact.data.summary.assertionCauseSummary.byRole.required.rootReasons[0] = { reasonCode: html, affectedSamples: 1, sampleIds: [html] };
+  artifact.links = [];
+  const get = await openReport(artifact), panel = section(get, "结构化原因汇总");
+  assert.ok(literalText(panel).includes(html));
+  assert.equal(descendants(panel, "img").length, 0);
+  assert.equal(findButton(panel, html), null);
+  assert.match(panel.textContent, /复验文件缺失或超出浏览目录/);
+});
+
+test("empty cause lists require explicit zero counts before claiming no issues", async () => {
+  const noIssues = "可用诊断中没有独立源头、后继阻断或全局门禁。";
+  for (const role of ["required", "diagnostic"]) {
+    for (const change of [
+      (value) => Object.assign(value, { rootAffectedSamples: 1, rootIssueCount: 1 }),
+      (value) => Object.assign(value, { blockedAffectedSamples: 1, blockedAssertionCount: 3 }),
+      (value) => Object.assign(value, { globalGateAffectedSamples: 1 }),
+      (value) => { delete value.rootIssueCount; },
+    ]) {
+      const artifact = causeReport(), value = causeAggregate(1, 1);
+      change(value.byRole[role]);
+      artifact.data.summary.assertionCauseSummary = value;
+      const panel = section(await openReport(artifact), "结构化原因汇总");
+      assert.match(panel.textContent, /原因列表与计数不一致或缺失，不能推断零问题/);
+      assert.ok(!panel.textContent.includes(noIssues));
+    }
+  }
+  const valid = causeReport();
+  valid.data.summary.assertionCauseSummary = causeAggregate(1, 1, {}, { declaredSamples: 0 });
+  assert.ok(section(await openReport(valid), "结构化原因汇总").textContent.includes(noIssues));
+  valid.data.summary.assertionCauseSummary = causeAggregate(1, 0);
+  const missing = section(await openReport(valid), "结构化原因汇总");
+  assert.match(missing.textContent, /没有可用诊断，不能推断零问题/);
+  assert.ok(!missing.textContent.includes(noIssues));
+});
+
+test("partial sample cause details stay unavailable instead of inventing empty issue lists", async () => {
+  for (const change of [
+    (value) => { delete value.byRole.diagnostic; },
+    (value) => { delete value.byRole.required.declaredAssertions; },
+    (value) => { delete value.byRole.required.rootIssues; },
+    (value) => { value.byRole.required.declaredAssertions = 0; },
+  ]) {
+    const artifact = causeReport();
+    change(artifact.data.samples[0].assertionCauses);
+    const get = await openReport(artifact), panel = section(get, "结构化原因汇总");
+    const row = causeTable(panel, "样本 / 逐项复验").children[1].children[0];
+    assert.equal(row.children[3].textContent, "原因明细不完整");
+    assert.equal(row.children[4].textContent, "缺失");
+    assert.equal(row.children[5].textContent, "缺失");
+    assert.doesNotMatch(row.textContent, /源头：无；阻断：无；门禁：无/);
+    assert.match(panel.textContent, /原因可用样本 4/); // The stored aggregate is displayed independently.
+  }
+});
+
 test("version two shows both batches, execution origins and separate historical and new usage", async () => {
   const requests = [], get = await openReport(resumedReport(), requests);
   const binding = section(get, "续跑来源与保存的关联复核");

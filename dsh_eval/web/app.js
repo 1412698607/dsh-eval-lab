@@ -500,6 +500,116 @@ function diagnosticSummary(data, links) {
   body.append(table(["样本 / 逐项复验", "任务结论", "诊断失败 ID", "证据不足 ID", "未执行 ID"], rows));
   return panel("诊断项覆盖与结果", body);
 }
+function assertionCauseSummary(data, links) {
+  const saved = data.summary?.assertionCauseSummary, body = node("div");
+  const unavailable = "本报告未保存结构化原因汇总；缺失不代表没有问题，原任务结论保持显示。";
+  if (!saved || typeof saved !== "object") return panel("结构化原因汇总", node("p", unavailable, "subtext"));
+  if (saved.assertionCauseSummaryFormatVersion !== 1) {
+    return panel("结构化原因汇总", node("p", "结构化原因汇总版本不支持；不推断覆盖或问题数量。", "notice"));
+  }
+  const roles = [["required", "必需项"], ["diagnostic", "诊断项"]];
+  const missingNames = { missing_metadata: "未保存诊断", unsupported_version: "不支持的诊断版本",
+    invalid_metadata: "诊断数据无效", not_evaluated: "未取得复验结果" };
+  const missingName = (code) => Object.hasOwn(missingNames, code) ? missingNames[code] : String(code ?? "原因缺失");
+  body.append(node("p", "读取保存的结构化原因汇总，不重评任务。原因影响样本数按样本去重；一个源头和三个后继阻断分别统计。角色与分类可能重叠，不能相加作为任务数或通过率。", "subtext"),
+    cards([["原计划样本", number(saved.plannedSamples)], ["原因可用样本", number(saved.availableSamples)],
+      ["原因缺失样本", number(saved.missingSamples)]]),
+    table(["角色", "声明该角色 / 原因可用样本", "独立源头影响样本", "后继阻断影响样本", "全局门禁影响样本", "独立问题条数", "阻断断言条数"],
+      roles.map(([role, title]) => {
+        const value = saved.byRole?.[role];
+        return [title, `${number(value?.declaredSamples)} / ${number(saved.availableSamples)}`,
+        ...["rootAffectedSamples", "blockedAffectedSamples", "globalGateAffectedSamples", "rootIssueCount", "blockedAssertionCount"]
+          .map((key) => number(value?.[key]))];
+      })));
+  const missing = saved.missingReasons;
+  if (missing && typeof missing === "object" && Object.keys(missing).length) body.append(table(["缺失原因", "样本数"],
+    Object.entries(missing).map(([code, count]) => [missingName(code), number(count)])));
+  const samples = Array.isArray(data.samples) ? data.samples : [], list = node("div");
+  let selected = null;
+  const choose = (label, predicate) => { selected = { label, predicate }; renderSamples(); };
+  const filterLabel = node("p", "当前筛选：全部原计划样本", "subtext");
+  const reasonRows = [];
+  for (const [role, title] of roles) {
+    const value = saved.byRole?.[role];
+    for (const [key, kind] of [["rootReasons", "独立源头"], ["globalGateReasons", "全局门禁"]]) {
+      for (const row of Array.isArray(value?.[key]) ? value[key] : []) {
+        if (!row || typeof row !== "object") continue;
+        const label = `${title} · ${kind} · ${diagnosticReason(row)}`;
+        const ids = Array.isArray(row.sampleIds) ? row.sampleIds : [];
+        reasonRows.push([title, kind, button(label, () => choose(label, (sample) => ids.includes(sample.sampleId))), number(row.affectedSamples)]);
+      }
+    }
+    if (value && Array.isArray(value.blockedSampleIds) && value.blockedSampleIds.length) {
+      const label = `${title} · 后继阻断 · ${diagnosticReason({ reasonCode: "dependency_not_passed" })}`;
+      reasonRows.push([title, "后继阻断", button(label, () => choose(label, (sample) => value.blockedSampleIds.includes(sample.sampleId))),
+        number(value.blockedAffectedSamples)]);
+    }
+  }
+  body.append(node("h3", "原因影响样本（全报告）"));
+  const completeReasons = roles.every(([role]) => ["rootReasons", "globalGateReasons", "blockedSampleIds"]
+    .every((key) => Array.isArray(saved.byRole?.[role]?.[key])));
+  const zeroIssueCounts = roles.every(([role]) => ["rootAffectedSamples", "blockedAffectedSamples", "globalGateAffectedSamples", "rootIssueCount", "blockedAssertionCount"]
+    .every((key) => saved.byRole?.[role]?.[key] === 0));
+  body.append(reasonRows.length ? table(["角色", "分类", "原因 / 筛选受影响样本", "影响样本数"], reasonRows)
+    : node("p", !completeReasons ? "原因列表不完整，不能推断零问题。"
+      : !zeroIssueCounts ? "原因列表与计数不一致或缺失，不能推断零问题。"
+      : saved.availableSamples > 0 ? "可用诊断中没有独立源头、后继阻断或全局门禁。" : "没有可用诊断，不能推断零问题。", "subtext"));
+  const groupRows = [];
+  for (const group of Array.isArray(data.groups) ? data.groups : []) {
+    const sources = group?.bySource;
+    if (!sources || typeof sources !== "object" || Array.isArray(sources)) continue;
+    for (const [source, summary] of Object.entries(sources)) {
+      const value = summary?.assertionCauseSummary;
+      const usable = value?.assertionCauseSummaryFormatVersion === 1;
+      const label = `${group.caseEntryId ?? "用例缺失"} / ${group.configurationId ?? "配置缺失"} / ${display(source)}`;
+      for (const [role, title] of roles) {
+        const counts = usable ? value.byRole?.[role] : null;
+        groupRows.push([button(label, () => choose(label, (sample) => sample.caseEntryId === group.caseEntryId
+          && sample.configurationId === group.configurationId && (sample.source || "unknown") === source)), title,
+        `${number(usable ? value.availableSamples : null)} / ${number(usable ? value.missingSamples : null)} / ${number(usable ? value.plannedSamples : null)}`,
+        number(counts?.declaredSamples),
+        ...["rootAffectedSamples", "blockedAffectedSamples", "globalGateAffectedSamples"].map((key) => number(counts?.[key]))]);
+      }
+    }
+  }
+  body.append(node("h3", "按用例 / 配置 / 来源的原因覆盖"), groupRows.length
+    ? table(["用例 / 配置 / 来源 / 筛选", "角色", "可用 / 缺失 / 原计划", "声明该角色样本", "独立源头样本", "后继阻断样本", "全局门禁样本"], groupRows)
+    : node("p", "未保存分来源原因汇总。", "subtext"));
+  function renderSamples() {
+    filterLabel.textContent = "当前筛选：" + (selected?.label ?? "全部原计划样本");
+    const rows = samples.flatMap((sample, index) => {
+      if (!sample || typeof sample !== "object" || selected && !selected.predicate(sample)) return [];
+      const value = sample.assertionCauses;
+      const complete = roles.every(([role]) => {
+        const item = value?.byRole?.[role];
+        return item && Number.isSafeInteger(item.declaredAssertions) && item.declaredAssertions >= 0
+          && ["rootIssues", "blockedAssertions", "globalGates"].every((key) => Array.isArray(item[key]))
+          && ["rootIssues", "blockedAssertions", "globalGates"].reduce((count, key) => count + item[key].length, 0) <= item.declaredAssertions;
+      });
+      const available = value?.assertionCausesFormatVersion === 1 && value.status === "available" && complete;
+      const status = available ? "可用" : value?.assertionCausesFormatVersion === 1
+        ? value.status === "available" ? "原因明细不完整" : missingName(value.reasonCode)
+        : value ? "不支持的诊断版本" : "未保存原因明细";
+      const link = links.find((item) => item.label === `${index + 1} / evaluationPath` && item.id);
+      const name = sample.sampleId || sample.caseRunId || "样本标识缺失";
+      const details = (role) => {
+        const item = available ? value.byRole?.[role] : null;
+        if (!item) return "缺失";
+        if (item.declaredAssertions === 0) return "未声明该角色断言";
+        const ids = (key) => Array.isArray(item[key]) ? item[key].map((row) => row?.id ?? "ID 缺失").join("、") || "无" : "缺失";
+        return `源头：${ids("rootIssues")}；阻断：${ids("blockedAssertions")}；门禁：${ids("globalGates")}`;
+      };
+      return [[link ? button(name, () => openDocument(link.id)) : append(node("div"), node("span", name), node("p", "复验文件缺失或超出浏览目录", "subtext")),
+        `${sample.caseEntryId ?? "用例缺失"} / ${sample.configurationId ?? "配置缺失"} / ${display(sample.source || "unknown")}`,
+        display(sample.outcome), status, details("required"), details("diagnostic")]];
+    });
+    list.replaceChildren(rows.length ? table(["样本 / 逐项复验", "用例 / 配置 / 来源", "原任务结论", "原因覆盖", "必需项问题 ID", "诊断项问题 ID"], rows)
+      : node("p", "没有匹配的保存样本。", "subtext"));
+  }
+  renderSamples();
+  body.append(node("h3", "原因到样本定位"), button("显示全部原因样本", () => { selected = null; renderSamples(); }, "secondary"), filterLabel, list);
+  return panel("结构化原因汇总", body);
+}
 function experimentAssertionPreview(documentData) {
   const { data } = documentData, saved = data.summary;
   const target = node("div");
@@ -644,6 +754,7 @@ function renderDocument(documentData) {
   if (samples) target.append(samples);
   const diagnostics = diagnosticSummary(data, links);
   if (diagnostics) target.append(diagnostics);
+  if (documentData.kind === "report") target.append(assertionCauseSummary(data, links));
   if (data.summary?.metrics) target.append(panel(resumed ? "全部原计划样本的汇总指标（含历史复用）" : "汇总指标与缺失覆盖", metricsTable(data.summary.metrics, true)));
   if (data.comparisons) {
     target.append(panel("配置比较 · 描述本次实验", table(["配置对 / 用例", "来源声明", "共同配对 / 原计划", "排除", "通过比例差（右 − 左）", "说明"], data.comparisons.map((row) => [

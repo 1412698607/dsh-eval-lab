@@ -11,7 +11,7 @@ from urllib.parse import quote
 from uuid import uuid4
 
 from .evaluate import evaluate
-from .diagnostics import diagnostic_sample, diagnostic_summary
+from .diagnostics import diagnostic_sample, diagnostic_summary, assertion_causes, assertion_cause_summary
 from .experiment import _plan_fingerprint, _order_metadata, _check_order, _sample_plan
 from .formats import fields, load_json, nonempty, parse_json, require, validate_case, validate_experiment
 from .metrics import METRICS, empty_metrics, number, summarize
@@ -36,6 +36,7 @@ def _path(directory, value):
 def _summary(rows):
     result = summarize(rows)
     result["diagnosticSummary"] = diagnostic_summary(rows)
+    result["assertionCauseSummary"] = assertion_cause_summary(rows)
     for key in METRICS:
         values = [(row.get("metrics") or {}).get(key) for row in rows]
         observed = [value for value in values if number(value)]
@@ -211,6 +212,7 @@ def _recheck(sample, expected, directory, batch_id):
                outcome=None if sample["status"] == "skipped" else "unevaluable", metrics=empty_metrics(),
                verification="skipped" if sample["status"] == "skipped" else "unavailable", reasons=[],
                sourceEvidencePath=None, evaluationPath=None, diagnosticSummary=None,
+               assertionCauses={"assertionCausesFormatVersion": 1, "status": "unavailable", "reasonCode": "not_evaluated"},
                saved={key: sample.get(key) for key in ("source", "configuration", "configurationMatch", "executionStatus",
                                                        "recordingOutcome", "assertionOutcome", "outcome", "metrics")})
     fresh = None
@@ -243,6 +245,8 @@ def _recheck(sample, expected, directory, batch_id):
         except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError) as error:
             row.update(verification="unavailable" if sample["status"] == "error" else "rejected", reasons=[str(error)])
             fresh = None
+    if fresh is not None:
+        row["assertionCauses"] = assertion_causes(fresh)
     row["changedFields"] = [key for key, value in row["saved"].items() if not _same(value, row[key])]
     return row, fresh
 
@@ -352,6 +356,70 @@ def _interval_text(interval, proportion=False):
     return _cell(f"{value(interval['estimate'])} [{value(interval['lower'])}, {value(interval['upper'])}]；n={interval['n']}{warnings}")
 
 
+def _assertion_cause_markdown(report):
+    value = report.get("summary", {}).get("assertionCauseSummary")
+    if not isinstance(value, dict) or value.get("assertionCauseSummaryFormatVersion") != 1:
+        return []
+    lines = ["", "## 结构化原因与依赖汇总", "",
+             f"诊断可用 {value['availableSamples']} / 计划 {value['plannedSamples']}；缺失 {value['missingSamples']}。", "",
+             "独立问题、后继阻断和全局门禁分别按受影响样本计数，同一样本可同时出现多个分类或角色，不能相加作为失败任务数。"
+             "同一原因码在同一样本和角色内只计一次；一个缺证源头与三个后继不等于四个独立问题。"
+             "全局门禁表示尚未完成逐项评分，原任务结论与通过率不变。", "",
+             f"诊断缺失原因：{_cell(value['missingReasons'])}。", "",
+             "| 角色 | 声明该角色样本 | 独立问题影响样本 | 后继阻断影响样本 | 全局门禁影响样本 | 独立断言问题 / 阻断断言数 |",
+             "| --- | --- | --- | --- | --- | --- |"]
+    roles = (("required", "必需项"), ("diagnostic", "诊断项"))
+    for role, label in roles:
+        row = value["byRole"][role]
+        lines.append(f"| {label} | {row['declaredSamples']} | {row['rootAffectedSamples']} | {row['blockedAffectedSamples']} | "
+                     f"{row['globalGateAffectedSamples']} | {row['rootIssueCount']} / {row['blockedAssertionCount']} |")
+    lines.extend(["", "| 用例 / 配置 / 来源 | 可用 / 计划 | 缺失 | 角色 | 声明样本 | 独立问题 / 后继阻断 / 全局门禁影响样本 |",
+                  "| --- | --- | --- | --- | --- | --- |"])
+    for group in report.get("groups", []):
+        for source, summary in group.get("bySource", {}).items():
+            counts = summary.get("assertionCauseSummary")
+            if counts is None:
+                continue
+            for role, label in roles:
+                row = counts["byRole"][role]
+                lines.append(f"| {_cell(group['caseEntryId'])} / {_cell(group['configurationId'])} / {_cell(source)} | "
+                             f"{counts['availableSamples']} / {counts['plannedSamples']} | {counts['missingSamples']} | {label} | "
+                             f"{row['declaredSamples']} | {row['rootAffectedSamples']} / {row['blockedAffectedSamples']} / {row['globalGateAffectedSamples']} |")
+    samples = {row["sampleId"]: row for row in report.get("samples", [])}
+
+    def sample_link(sample_id):
+        sample = samples.get(sample_id, {})
+        path = sample.get("evaluationPath")
+        return f"[{_cell(sample_id)}]({quote(path, safe='/')})" if path else _cell(sample_id)
+
+    lines.extend(["", "| 角色 | 分类 | 原因码 | 影响样本 | 逐项复验 |", "| --- | --- | --- | --- | --- |"])
+    for role, label in roles:
+        row = value["byRole"][role]
+        for key, category in (("rootReasons", "独立问题"), ("globalGateReasons", "全局门禁")):
+            for reason in row[key]:
+                links = ", ".join(sample_link(sample_id) for sample_id in reason["sampleIds"])
+                lines.append(f"| {label} | {category} | {_cell(reason['reasonCode'])} | {reason['affectedSamples']} | {links} |")
+        if row["blockedSampleIds"]:
+            links = ", ".join(sample_link(sample_id) for sample_id in row["blockedSampleIds"])
+            lines.append(f"| {label} | 后继阻断 | dependency\\_not\\_passed | {row['blockedAffectedSamples']} | {links} |")
+    lines.extend(["", "| 样本 / 来源 | 角色 / 诊断状态 | 独立问题断言 | 后继阻断断言 | 全局门禁断言 | 逐项复验 |",
+                  "| --- | --- | --- | --- | --- | --- |"])
+    for sample in report.get("samples", []):
+        causes = sample.get("assertionCauses") or {}
+        if causes.get("status") != "available":
+            lines.append(f"| {_cell(sample['sampleId'])} / {_cell(sample.get('source'))} | 不可用：{_cell(causes.get('reasonCode'))} | — | — | — | "
+                         f"{sample_link(sample['sampleId'])} |")
+            continue
+        for role, label in roles:
+            row = causes["byRole"][role]
+            if not any(row[key] for key in ("rootIssues", "blockedAssertions", "globalGates")):
+                continue
+            ids = lambda key: _cell(", ".join(item["id"] for item in row[key]))
+            lines.append(f"| {_cell(sample['sampleId'])} / {_cell(sample.get('source'))} | {label} | {ids('rootIssues')} | "
+                         f"{ids('blockedAssertions')} | {ids('globalGates')} | {sample_link(sample['sampleId'])} |")
+    return lines
+
+
 def render_markdown(report):
     local_time = datetime.fromisoformat(report["generatedAt"]).astimezone(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
     plan = report["planVerification"]
@@ -396,6 +464,7 @@ def render_markdown(report):
                 lines.append(f"| {_cell(row['sampleId'])} | {_cell(', '.join(value['failedAssertionIds']))} | "
                              f"{_cell(', '.join(value['insufficientAssertionIds']))} | "
                              f"{_cell(', '.join(value['notRunAssertionIds']))} | {link} |")
+    lines.extend(_assertion_cause_markdown(report))
     if report.get("resumeVerification"):
         if report.get("resumeChain"):
             lines.extend(["", "## 连续续跑来源", "", "| 轮次 | 续跑 ID | 保存结果 |", "| --- | --- | --- |"])

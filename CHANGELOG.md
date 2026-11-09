@@ -1,5 +1,13 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月9日 实验原因汇总复查
+
+- [128](docs/changes/2026-11-09-128-assertion-cause-report-review.md) 修复原因空列表与非零 / 缺计数矛盾时的错误零问题提示，以及声明零断言却含原因条目的错误展示，补齐回归并复查原报告兼容。
+
+## 2026年11月9日 实验级结构化原因汇总
+
+- [127](docs/changes/2026-11-09-127-experiment-assertion-causes.md) 将独立源头、后继阻断和全局门禁接入实验 JSON / Markdown / 浏览，区分角色、来源与缺失覆盖；复用历史真实归档验证评分与源文件保持。
+
 ## 2026年11月9日 工作流与诊断交付验收
 
 - [126](docs/changes/2026-11-09-126-workflow-diagnostics-delivery-ci.md) 核实 122–125 的共同提交推送为 `4ef9d8f`，对应 Windows 无模型 push CI 首次运行、作业和全部 14 个步骤成功。

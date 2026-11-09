@@ -1,5 +1,7 @@
 # dsh-eval-lab 架构与技术取舍
 
+127 的实验原因汇总由 Python diagnostics 模块消费当前复验产生的 assertionDiagnostics，严格关联原断言身份、角色、结论与直接依赖；可用性和独立问题 / 后继阻断 / 全局门禁分开保存。report 在原核心复验之后派生 samples[].assertionCauses，再通过共享 _summary 生成独立 assertionCauseSummary；原诊断角色汇总和评分字段不改。现有用例 / 配置 / 来源、匹配子集与续跑分区复用同一聚合器，不新增调度或读取原归档的写入路径。Markdown 与浏览页只展示派生摘要，并复用 evaluationPath 定位单样本。[格式与分母](configuration-reports.md#结构化原因汇总127)
+
 125 复查修复合成适配器的录制配置传递：createRecorder 应用冻结用例 recorder 的容量限制，并在其后固定任务输出目录。诊断视图将已验证的元数据按保存断言的唯一 ID 位置排列，避免元数据重排改变“首个缺证”及独立源头顺序；评分与持久化格式不变。[复查依据](changes/2026-11-09-125-workflow-diagnostics-review.md)
 
 124 在实际单项评分分支记录稳定原因码，在评测顶层保存独立的 assertionDiagnostics 版本 1。旧 assertions、reason、evidence 与聚合输出保持原语义，历史续跑仍逐字段核对核心结果；报告和两类规则预览不把可选诊断当成规则变化。依赖阻断可以附带忽略前置顺序的 observedMatches，仅用于定位实际匹配事件，不加入本项评分 evidence。浏览层从已保存结构化字段展示独立源头和直接依赖，核对元数据与断言身份、结论及关系一致性；全局证据门禁失败不标为步骤缺证。[字段与兼容方式](evaluation-format.md#结构化原因与依赖诊断124)

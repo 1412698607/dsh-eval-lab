@@ -327,6 +327,8 @@ python -m dsh_eval --case <冻结任务目录>/case.json --evidence <冻结任�
 
 新元数据没有改变 passed / failed / insufficient_evidence / not_run 或任务聚合。续跑仍完整核对原 assertions 和其他核心字段；忽略可选诊断扩展不等于允许修改任务判分。单轨迹与实验规则预览继续比较两侧原有定义和断言结果，不把新增原因元数据当成规则效果。
 
+127 的[实验级原因汇总](configuration-reports.md#结构化原因汇总127)进一步在新报告中派生 assertionCauses 与 assertionCauseSummary。它保留完整、未知与缺失覆盖，按角色及来源统计独立问题、后继阻断和全局门禁；不改变上述评测格式、原断言结果或任务聚合。
+
 ## 当前限制与下一步
 
 M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。M6.1 新运行已增加 [会话清单](run-manifest.md)，旧格式仍缺少运行级成员覆盖；清单 / 日志 / 摘要同时重写等限制沿用 [架构](architecture.md)。

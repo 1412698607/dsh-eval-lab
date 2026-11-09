@@ -76,3 +76,5 @@ python -m dsh_eval --compare-experiment-assertions <实验目录>/experiment-res
 2026 年 11 月 9 日批次 B 已增加[结构化原因与依赖](evaluation-format.md#结构化原因与依赖诊断124)。重新生成的任务含独立 assertionDiagnostics，页面在断言卡片之前显示首个缺证步骤和直接依赖链。漏步场景的 source-still-present 是原始缺证，target-still-missing、retry、verify 分别受前一项阻断。retry / verify 还可定位实际成功结果；明确保留前置未满足的警示及原 insufficient_evidence 结论。完整步骤展示通过链。生成器和独立复验同时核对这些诊断与原结论，不改变四样本规则影响。
 
 批次 A 已有产物保持原样，缺少诊断时浏览器显示诊断不可用。需要新诊断可重新生成工作流，或使用冻结用例与证据离线评测到新文件；不能将浏览旧文件说成重新评分。实现与兼容验证见[124](changes/2026-11-09-124-structured-assertion-diagnostics.md)。
+
+127 继续完善实验报告：从索引的 reportPath 打开配置报告，可以查看[实验级结构化原因汇总](configuration-reports.md#结构化原因汇总127)。四份合成样本的必需项没有独立问题，唯一加粗回复只贡献一个诊断角色的 final_text_mismatch 源头；任务仍四项通过。生成器同时核对该分母、角色和唯一样本，原规则影响场景保持。

@@ -124,6 +124,18 @@ class WorkflowDemoTests(unittest.TestCase):
             self.assertEqual(scores[key]["outcome"], "insufficient_evidence")
             self.assertNotIn("evidence", scores[key])
 
+    def test_experiment_cause_report_separates_the_diagnostic_deviation_from_passed_tasks(self):
+        report = load_json(self.index["reportPath"])
+        value = report["summary"]["assertionCauseSummary"]
+        self.assertEqual((value["plannedSamples"], value["availableSamples"], value["missingSamples"]), (4, 4, 0))
+        self.assertEqual(value["byRole"]["required"]["rootAffectedSamples"], 0)
+        self.assertEqual(value["byRole"]["diagnostic"]["rootReasons"],
+                         [{"reasonCode": "final_text_mismatch", "affectedSamples": 1, "sampleIds": ["sample-000002"]}])
+        self.assertTrue(all(sample["outcome"] == "passed" for sample in report["samples"]))
+        groups = {row["caseEntryId"]: row["bySource"]["synthetic"]["assertionCauseSummary"] for row in report["groups"]}
+        self.assertEqual(groups["confirmation"]["byRole"]["diagnostic"]["rootAffectedSamples"], 0)
+        self.assertEqual(groups["timeout-retry"]["byRole"]["diagnostic"]["rootAffectedSamples"], 1)
+
     def test_index_and_preview_are_browsable_with_bound_source_traces(self):
         browser = ArtifactBrowser(self.directory / "inputs", self.directory)
         items = browser.catalog()["items"]

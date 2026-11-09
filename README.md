@@ -16,6 +16,8 @@ npm.cmd run demo:workflow -- --generate-only
 
 ## 当前功能
 
+- [实验级结构化原因汇总](docs/configuration-reports.md#结构化原因汇总127)：独立统计源头、后继阻断与全局门禁，区分必需 / 诊断角色和来源覆盖；在报告页按原因筛选样本，再打开已有的逐项评测与事件证据。原任务判分保持。
+
 - [新规则四任务验收](docs/changes/2026-11-04-117-live-confirmation-matrix.md) 验证目标占用和超时后重试。一次真实回复 `**done**` 通过确认词必需项，同时保留精确回复诊断失败；新报告和浏览器可定位该样本。
 
 - 对只要求回复一个确认词的任务，版本 2 支持[确认词匹配](docs/evaluation-format.md#确认词匹配)。用例可接受 `done`、`Done.` 或 `**Done.**`，同时拒绝否定和附加说明。旧用例继续精确比较。

@@ -1,5 +1,7 @@
 # M4.2 离线配置比较报告
 
+127 新增[实验级结构化原因汇总](#结构化原因汇总127)。已有逐样本诊断可以汇总为独立问题、后继阻断与全局门禁，再按原因或用例 / 配置 / 来源定位样本，沿原 evaluationPath 查看完整证据链。原诊断角色统计与任务判分保持。
+
 新生成的报告在 `summary.diagnosticSummary` 中保存诊断覆盖及四类单项结果计数，并在 `samples[].diagnosticSummary` 中保留失败、证据不足及未运行的断言 ID。可以从样本的 `evaluationPath` 查看完整独立评测。统计还显示任务通过但存在诊断失败的样本数，详见[记录 115](changes/2026-11-04-115-diagnostic-report-summary.md)。
 
 跨实验的旧基线 / 新候选判定使用 [基线回归比较](baseline-regression.md) 的独立 `--compare-baseline ... --candidate ...` 入口，重新复验后列出逐项变化，并提供 0 / 1 / 2 门禁退出码。本页 `--report` 保留描述性报告语义，不因普通样本失败返回回归失败码。
@@ -37,6 +39,46 @@ evaluations/000001.json            本次重新 inspect 和断言的结果
 每次新建 UUID 目录，文件以排他创建方式写入；不覆盖原实验、旧 evaluation 或已有报告。stdout 输出报告 JSON，包含 reportDirectory。写入错误可能留下未完成的新报告目录，不支持原子发布、断电保证或续写。整个目录仍在忽略的 runs 内，包含私人任务与本机证据路径，不作为公开夹具。
 
 命令行 JSON stdout 固定 UTF-8，重定向时不随 Windows 系统代码页改变。JSON 的 generatedAt 保存 UTC，Markdown 显示 Asia/Shanghai 时间。Markdown 将缺失数值显示为“缺失”、浮点数显示六位有效数字；完整原数值在 JSON 中保留，不参与重新舍入后的统计。
+
+## 结构化原因汇总（127）
+
+新生成的报告版本 1 / 2 / 3 增加独立的可选字段，不需要新命令或格式升级。继续使用 `python -m dsh_eval --report …`，从原冻结输入重新评测，生成新的 report.json、report.md 和逐样本评测。旧报告不会因打开浏览页而增加新统计。
+
+| 位置或字段 | 含义 |
+| --- | --- |
+| samples[].assertionCauses | assertionCausesFormatVersion=1；保存诊断可用性、不可用原因及两个角色的分类明细 |
+| summary.assertionCauseSummary | assertionCauseSummaryFormatVersion=1；全计划样本的原因覆盖及影响计数 |
+| groups[].summary / matchedSummary / bySource | 沿用原分组，分别增加原因汇总；bySource 提供用例 / 配置 / 来源覆盖 |
+| reusedSummary / newlyExecutedSummary | 续跑报告分别统计历史复用与本轮新增，继续保留原矩阵分母 |
+
+逐样本 available 时，byRole.required 和 byRole.diagnostic 各保存 declaredAssertions、rootIssues（id / reasonCode）、blockedAssertions（id / blockedBy）和 globalGates（id / reasonCode）。所有原因都来自[评分分支的版本 1 诊断](evaluation-format.md#结构化原因与依赖诊断124)，不解析自由文本。独立问题排除前置阻断和全局门禁；后继仅保存直接阻断，不重复当成独立源头。
+
+汇总保留 plannedSamples、availableSamples、missingSamples、missingReasons。availableSamples 仅表示结构化诊断支持且完整，不能当作任务可评测或通过数量；例如全局证据门禁未通过时，已知的未评分原因仍可汇总。两个角色分别提供：
+
+| 字段 | 计数口径 |
+| --- | --- |
+| declaredSamples | 在诊断可用子集中，声明过该角色断言的样本数 |
+| rootAffectedSamples | 至少存在一个独立问题的样本数 |
+| blockedAffectedSamples | 至少存在一个后继阻断的样本数 |
+| globalGateAffectedSamples | 存在全局录制 / 执行 / 证据门禁原因的样本数 |
+| rootIssueCount / blockedAssertionCount | 独立问题断言条数 / 受阻断断言条数，与样本数分开 |
+| rootReasons / globalGateReasons | 每个原因码的 affectedSamples 及 sampleIds；同一码在同一样本和角色内只计一次 |
+| blockedSampleIds | 后继阻断影响到的样本，供报告定位 |
+
+例如一份任务缺少 source-still-present，导致 target-still-missing、retry、verify 三项阻断：必需角色的 rootAffectedSamples=1、blockedAffectedSamples=1、rootIssueCount=1、blockedAssertionCount=3。它不是四个独立问题，也不是四个失败任务。一个样本可能同时涉及不同分类或两个角色，不能相加作为新任务分母。诊断角色的独立问题也不自动改变任务结论。
+
+诊断不可用单列，保留在计划分母内，不补成“零问题”：
+
+| reasonCode | 含义 |
+| --- | --- |
+| missing_metadata | 没有可用的结构化诊断字段 |
+| unsupported_version | 诊断或原因明细版本不支持 |
+| invalid_metadata | 身份、角色、原因、结论或依赖关系不完整 / 矛盾 |
+| not_evaluated | 报告未取得本次逐项复验结果，例如跳过、缺少证据或冻结输入被拒绝 |
+
+源归档的旧 evaluation.json 没有新字段时，报告仍可从原 case / evidence 重新评测并获得新诊断，不覆写旧文件。旧报告缺少汇总、未知版本或不完整明细时，浏览明确显示缺失，保留原结果。正常报告 JSON 和 Markdown 都可按原因找到受影响 sampleId；页面支持原因、用例 / 配置 / 来源的本地筛选，再通过已经核对目录范围的 evaluationPath 打开单样本的原因、依赖与原事件入口。
+
+原 summary.diagnosticSummary 继续统计 role=diagnostic 的四类单项结果；新 assertionCauseSummary 同时描述两个角色的结构化原因，不能混用两者的分母。原评分、通过率、changedFields、置信区间、续跑复核与规则预览比较均不由新统计改变。来源仍是 live / synthetic 声明，不是签名或总体模型表现结论。
 
 ## 重复试验结果分布
 
