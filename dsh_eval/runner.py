@@ -15,6 +15,9 @@ from .environment import StatefulEnvironment, snapshot_digest
 from . import output_paths
 
 ADAPTER = ROOT / "scripts" / "case-host.js"
+SYNTHETIC_ADAPTER = ROOT / "scripts" / "fixtures" / "mutation-adapter.js"
+SYNTHETIC_SCENARIOS = frozenset(("rename-confirmation", "rename-timeout-retry", "rename-timeout-skip-readbacks",
+                                 "rename-no-overwrite", "edit-delete", "edit-delete-timeout", "edit-delete-errors"))
 PREPARE_TIMEOUT = 150
 CLEANUP_TIMEOUT = 15
 
@@ -274,16 +277,38 @@ def validate_live_case(case):
 
 
 def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None, case_run_id=None):
+    return _run_case(case_path, runs_root, modules_dir, cancel_after_stream,
+                     batch_id=batch_id, case_run_id=case_run_id)
+
+
+def run_synthetic_case(case_path, runs_root=None, *, scenario=None, final_text=None, batch_id=None, case_run_id=None):
+    """Execute a fixed script through real pipes, recording and scoring, without a model or Harness install."""
+    case = validate_live_case(load_json(case_path))
+    scenario = case["caseId"] if scenario is None else scenario
+    require(isinstance(scenario, str) and scenario in SYNTHETIC_SCENARIOS, "Unsupported synthetic mutation scenario")
+    require(final_text is None or isinstance(final_text, str), "Synthetic final_text must be a string")
+    require("stateful" in case["environment"], "Synthetic mutation scenarios require a stateful environment")
+    options = {"syntheticFormatVersion": 1, "source": "synthetic", "modelCalled": False, "scenario": scenario}
+    if final_text is not None:
+        options["finalText"] = final_text
+    return _run_case(case_path, runs_root, batch_id=batch_id, case_run_id=case_run_id, synthetic=options)
+
+
+def _run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None,
+              case_run_id=None, synthetic=None):
     case = validate_live_case(load_json(case_path))
     case_run_id = str(UUID(case_run_id)) if case_run_id is not None else None
     if batch_id is not None:
         require(isinstance(batch_id, str) and bool(batch_id.strip()), "batchId must be nonempty")
-    output_paths.check_output_root(runs_root or ROOT / "runs" / "evaluation", kind="case")
+    if synthetic is None:
+        output_paths.check_output_root(runs_root or ROOT / "runs" / "evaluation", kind="case")
     case_run_id = case_run_id or str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "evaluation").resolve() / case_run_id
     directory.mkdir(parents=True, exist_ok=False)
     case_snapshot = directory / "case.json"
     save_json(case_snapshot, case)
+    if synthetic is not None:
+        save_json(directory / "synthetic.json", synthetic)
     host, supervisor = {}, {}
     error_info = None
     preparation = {"processStarted": False, "processExited": True}
@@ -295,14 +320,16 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
     started = time.monotonic()
     try:
         prepare_workspace(directory, case)
-        stage = "prepare"
-        _prepare(directory, modules_dir, preparation)
+        if synthetic is None:
+            stage = "prepare"
+            _prepare(directory, modules_dir, preparation)
         stage = "run"
         with (directory / "adapter.stderr.log").open("x", encoding="utf-8") as stderr, \
                 (directory / "adapter.stdout.jsonl").open("x", encoding="utf-8") as event_log:
             adapter_started = None  # Interrupted creation may leave the start unknown.
             try:
-                process = subprocess.Popen(["node", str(ADAPTER), "run", str(directory)], cwd=ROOT,
+                adapter = ADAPTER if synthetic is None else SYNTHETIC_ADAPTER
+                process = subprocess.Popen(["node", str(adapter), "run", str(directory)], cwd=ROOT,
                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr,
                                            text=True, encoding="utf-8", **_process_options())
             except OSError:
@@ -338,7 +365,8 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
         execution.update(status="runtime_error", reason="No unique actual request route was observed")
     evidence = {"evidenceFormatVersion": 2, "caseRunId": case_run_id, "caseId": case["caseId"],
                 "runId": manifest.get("runId"), "sessionId": host.get("sessionId"),
-                "runDir": str(run_dir.relative_to(directory)) if run_dir else None, "source": "live",
+                "runDir": str(run_dir.relative_to(directory)) if run_dir else None,
+                "source": "live" if synthetic is None else "synthetic",
                 "configuration": configuration, "budgetEnforcement": {"timeoutSeconds": stage == "run" and bool(supervisor)},
                 "execution": execution, "runtimeReport": "runtime.json"}
     if batch_id is not None:
@@ -355,6 +383,8 @@ def run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=Fa
                                           "preparation": preparation, "adapterProcessStarted": adapter_started,
                                           "userInterrupted": user_interrupted or supervisor.get("userInterrupted", False),
                                           "elapsedSeconds": time.monotonic() - started,
+                                          **({"source": "synthetic", "modelCalled": False,
+                                              "syntheticOptions": synthetic} if synthetic is not None else {}),
                                           **({"environmentSnapshot": snapshot} if snapshot is not None else {})})
     save_json(directory / "evidence.json", evidence)
     result = evaluate(case_snapshot, directory / "evidence.json")

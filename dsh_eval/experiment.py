@@ -104,7 +104,7 @@ def plan_experiment(experiment_path, *, max_samples=None):
 
 
 def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
-                   expected_plan_sha256=None, stop_after=None, stop_after_tokens=None):
+                   expected_plan_sha256=None, stop_after=None, stop_after_tokens=None, _synthetic_replies=None):
     require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(stop_after_tokens is None or type(stop_after_tokens) is int and stop_after_tokens > 0,
             "stop_after_tokens must be a positive integer")
@@ -116,7 +116,14 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
     fingerprint = _plan_fingerprint(manifest, inputs, max_samples)
     require(expected is None or expected == fingerprint["sha256"],
             f"Experiment plan fingerprint mismatch: expected {expected}, actual {fingerprint['sha256']}")
-    output_paths.check_output_root(runs_root or ROOT / "runs" / "experiments", kind="experiment")
+    if _synthetic_replies is None:
+        output_paths.check_output_root(runs_root or ROOT / "runs" / "experiments", kind="experiment")
+    else:
+        require(isinstance(_synthetic_replies, dict)
+                and _synthetic_replies.keys() == {row["sampleId"] for row in _sample_plan(manifest)}
+                and all(isinstance(reply, str) for reply in _synthetic_replies.values()),
+                "Synthetic replies must cover exactly the experiment sample IDs")
+        require(modules_dir is None and not cancel_after_stream, "Synthetic execution cannot use host controls")
     experiment_id = str(uuid4())
     reserved_batch_id = str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "experiments").resolve() / experiment_id
@@ -150,11 +157,16 @@ def run_experiment(experiment_path, runs_root=None, modules_dir=None, cancel_aft
               **_order_metadata(manifest), "startedAt": datetime.now(timezone.utc).isoformat(),
               "finishedAt": None, "status": "running", "outcome": None, "batchId": None, "batchResultPath": None,
               "samples": samples, "summary": None, "groups": []}
+    if _synthetic_replies is not None:
+        report.pop("resumeSupportVersion")
+        report.pop("batchBinding")
+        report.update(executionMode="synthetic", modelCalled=False)
     _checkpoint(directory, report)
     with ExitStack() as execution_locks:
         result = run_batch(directory / "expanded.batch.json", directory / "batches", modules_dir, cancel_after_stream,
                            batch_id=reserved_batch_id, _lock_stack=execution_locks,
-                           stop_after=stop_after, stop_after_tokens=stop_after_tokens)
+                           stop_after=stop_after, stop_after_tokens=stop_after_tokens,
+                           **({"_synthetic_replies": _synthetic_replies} if _synthetic_replies is not None else {}))
         require(result["batchId"] == reserved_batch_id, "Experiment/reserved batch identity mismatch")
         batch_directory = Path(result["batchDirectory"])
         prefix = batch_directory.relative_to(directory)

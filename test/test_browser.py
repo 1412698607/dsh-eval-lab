@@ -107,6 +107,94 @@ class BrowserTests(unittest.TestCase):
         self.write(path, {**report, "assertionComparisonFormatVersion": True})
         self.assertIn("error", next(row for row in self.browser.catalog()["items"] if row["path"] == item["path"]))
 
+    def preview(self):
+        comparison, _, trace_id = self.comparison()
+        experiment = self.write(self.runs / "experiment/experiment-result.json", {"experimentResultFormatVersion": 1})
+        rules = self.write(self.runs / "preview/rules.json", {"assertionRuleMapFormatVersion": 1, "cases": {}})
+        row = {key: comparison[key] for key in ("caseRunId", "runId", "sessionId", "source", "evidencePath")}
+        row.update(sampleId="sample-1", baselineOutcome="passed", candidateOutcome="failed", transition="passToFail")
+        preview = {"experimentAssertionPreviewFormatVersion": 1, "experimentId": "experiment-1", "status": "compared",
+                   "modelCalled": False, "experimentPath": str(experiment), "ruleMapPath": str(rules),
+                   "summary": {"plannedSamples": 1, "comparedSamples": 1, "passToFail": 1, "failToPass": 0,
+                               "unchangedPassed": 0, "unchangedFailed": 0, "inconclusive": 0}, "samples": [row]}
+        path = self.write(self.runs / "preview/experiment-assertion-preview.json", preview)
+        return preview, path, trace_id
+
+    def test_experiment_preview_catalog_and_evidence_are_saved_read_only_views(self):
+        preview, _, trace_id = self.preview()
+        before = self.digest()
+        with (patch("dsh_eval.evaluate.evaluate", side_effect=AssertionError("must not evaluate")),
+              patch("dsh_eval.runner.run_case", side_effect=AssertionError("must not run"))):
+            item = next(row for row in self.browser.catalog()["items"] if row["kind"] == "experiment_assertion_preview")
+            self.assertEqual(item["previewSummary"], preview["summary"])
+            self.assertEqual(item["sources"], ["live"])
+            self.assertEqual(item["outcomes"], {"passed": 0, "failed": 1, "unevaluable": 0})
+            document = self.browser.document(item["id"])
+            self.assertEqual(document["data"], preview)
+            self.assertEqual(document["sampleEvidence"], [{"index": 1, "id": "runs:one/evidence.json", "assertionTrace": {
+                "id": trace_id, "runId": "recording", "sessionId": "diagnostic-session"}}])
+            self.assertEqual({row["label"]: row["id"] for row in document["links"]}, {
+                "experimentPath": "runs:experiment/experiment-result.json", "ruleMapPath": "runs:preview/rules.json"})
+            self.assertEqual(self.browser.document("runs:preview/rules.json")["kind"], "assertion_rule_map")
+        self.assertEqual(self.digest(), before)
+
+    def test_preview_source_links_require_matching_identity_and_in_scope_evidence(self):
+        preview, path, _ = self.preview()
+        row = preview["samples"][0]
+        for update in ({"caseRunId": "other"}, {"runId": "other"}, {"sessionId": "other"},
+                       {"caseRunId": None}, {"evidencePath": "../../outside/evidence.json"},
+                       {"evidencePath": "../home/evidence.json"}, {"evidencePath": "../candidate.case.json"},
+                       {"evidencePath": "../missing/evidence.json"}):
+            with self.subTest(update=update):
+                self.write(path, {**preview, "samples": [{**row, **update}]})
+                result = self.browser.document("runs:preview/experiment-assertion-preview.json")
+                self.assertEqual(result["sampleEvidence"], [])
+                self.assertFalse(any(link["label"].endswith("evidencePath") for link in result["links"]))
+        for key in ("caseRunId", "runId", "sessionId"):
+            self.write(path, {**preview, "samples": [{k: v for k, v in row.items() if k != key}]})
+            self.assertEqual(self.browser.document("runs:preview/experiment-assertion-preview.json")["sampleEvidence"], [])
+
+    def test_preview_version_and_unavailable_rows_remain_visible_without_execution(self):
+        preview, path, _ = self.preview()
+        preview.update(status="inconclusive", samples=[{"sampleId": "missing", "transition": "inconclusive"}])
+        self.write(path, preview)
+        self.server()
+        before = self.digest()
+        status, _, body = self.request("/api/document?id=runs:preview/experiment-assertion-preview.json")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["sampleEvidence"], [])
+        self.assertEqual(self.digest(), before)
+        for version in (True, 1.0, 2):
+            with self.subTest(version=version):
+                self.write(path, {**preview, "experimentAssertionPreviewFormatVersion": version})
+                with self.assertRaises(ValueError):
+                    self.browser.document("runs:preview/experiment-assertion-preview.json")
+
+    def test_workflow_index_keeps_ordered_result_links_inside_configured_roots(self):
+        preview, preview_path, _ = self.preview()
+        workflow = {"workflowDemoFormatVersion": 1, "source": "synthetic", "modelCalled": False, "status": "completed",
+                    "workflowName": "可重复合成工作流演示", "workflowId": "workflow-1", "reportPath": "../report/report.json",
+                    "experimentPath": preview["experimentPath"], "scenarios": [
+                        {"id": "complete", "evaluationPath": "../one/evaluation.json"},
+                        {"id": "skip-readbacks", "evaluationPath": "../../outside/evaluation.json"},
+                        {"id": "rule-impact", "previewPath": str(preview_path)}]}
+        self.write(self.runs / "workflow/workflow-index.json", workflow)
+        self.write(self.runs / "report/report.json", {"comparisonReportFormatVersion": 1})
+        before = self.digest()
+        item = next(row for row in self.browser.catalog()["items"] if row["kind"] == "workflow_demo")
+        self.assertEqual(item["sources"], ["synthetic"])
+        self.assertEqual(item["title"], "可重复合成工作流演示")
+        document = self.browser.document(item["id"])
+        self.assertEqual(document["data"], workflow)
+        self.assertEqual({row["label"]: row["id"] for row in document["links"]}, {
+            "experimentPath": "runs:experiment/experiment-result.json", "reportPath": "runs:report/report.json",
+            "场景 1 / evaluationPath": "runs:one/evaluation.json",
+            "场景 2 / evaluationPath": None, "场景 3 / previewPath": "runs:preview/experiment-assertion-preview.json"})
+        self.assertEqual(self.digest(), before)
+        self.write(self.runs / "workflow/workflow-index.json", {key: value for key, value in workflow.items() if key != "workflowName"})
+        item = next(row for row in self.browser.catalog()["items"] if row["kind"] == "workflow_demo")
+        self.assertEqual(item["title"], "workflow-1")
+
     def test_assertion_trace_uses_associated_session_and_existing_allowed_file(self):
         path, identifier, session = self.diagnostic_trace()
         self.write(path.with_name("a" * 64 + ".jsonl"), {})

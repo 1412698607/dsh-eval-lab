@@ -7,6 +7,10 @@ import { summarizeProtocol } from "../case-host.js";
 
 const directory = process.argv[3];
 const task = JSON.parse(await readFile(join(directory, "case.json"), "utf8"));
+let options = {};
+try { options = JSON.parse(await readFile(join(directory, "synthetic.json"), "utf8")); }
+catch (error) { if (error.code !== "ENOENT") throw error; }
+const scenario = options.scenario ?? task.caseId;
 const edit = ["edit", { path: "settings.txt", oldText: "mode=draft", newText: "mode=ready" }];
 const remove = ["delete", { path: "obsolete.txt" }];
 const read = ["read", { path: "settings.txt" }];
@@ -25,9 +29,9 @@ const scenarios = {
   "edit-delete-errors": [["delete", { path: "missing.txt" }],
     ["edit", { path: "settings.txt", oldText: "flag=off", newText: "flag=on" }]],
 };
-if (!Object.hasOwn(scenarios, task.caseId)) throw new Error("Unsupported synthetic mutation case");
+if (!Object.hasOwn(scenarios, scenario)) throw new Error("Unsupported synthetic mutation case");
 const sessionId = `synthetic-${basename(directory)}`;
-const recorder = createRecorder({ outputDir: join(directory, "traces") });
+const recorder = createRecorder({ ...task.recorder, outputDir: join(directory, "traces") });
 const input = createInterface({ input: process.stdin });
 const iterator = input[Symbol.asyncIterator]();
 let seq = 0, index = 0;
@@ -38,7 +42,7 @@ emit({ type: "selection", sessionId });
 emit({ type: "request-route", ...route });
 record("user/message", { source: { kind: "user" }, content: [{ type: "text", text: task.input }] });
 record("request/header", { header: { config: task.configRef } });
-for (const [operation, args] of scenarios[task.caseId]) {
+for (const [operation, args] of scenarios[scenario]) {
   const requestId = `call-${index++}`;
   record("tool/call", { callId: requestId, name: `eval_${operation}`, arguments: JSON.stringify(args) });
   emit({ type: "tool-request", bridgeVersion: 1, requestId, caseRunId: basename(directory), sessionId, operation, arguments: args });
@@ -48,10 +52,14 @@ for (const [operation, args] of scenarios[task.caseId]) {
   record("tool/result", { message: { toolCallId: requestId, isError: response.isError,
     content: [{ type: "text", text: response.isError ? `Error: ${response.text}` : response.text }] } });
 }
-const decoratedConfirmation = ["rename-confirmation", "rename-timeout-retry"].includes(task.caseId);
+const decoratedConfirmation = ["rename-confirmation", "rename-timeout-retry"].includes(scenario);
 let answer = "done";
-if (task.caseId === "edit-delete-errors") answer = "rejected";
+if (scenario === "edit-delete-errors") answer = "rejected";
 else if (decoratedConfirmation) answer = "**Done.**";
+if (Object.hasOwn(options, "finalText")) {
+  if (typeof options.finalText !== "string") throw new Error("Synthetic finalText must be a string");
+  answer = options.finalText;
+}
 const reason = { kind: "completed" };
 record("assistant/message", { message: { content: [{ type: "text", text: answer }] } });
 record("turn/end", { reason });

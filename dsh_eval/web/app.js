@@ -2,8 +2,10 @@
 
 const $ = (id) => document.getElementById(id);
 const categories = [
+  ["workflow_demo", "工作流演示", "▷"],
   ["experiment", "实验", "◫"], ["experiment_resume", "实验续跑", "↻"], ["report", "配置报告", "▤"],
   ["assertion_comparison", "断言对照", "⇄"],
+  ["experiment_assertion_preview", "实验规则预览", "◈"],
   ["batch", "批次", "☷"], ["batch_resume", "批次续跑", "↻"],
   ["evaluation", "逐次结果", "◷"], ["case", "用例库", "◇"],
 ];
@@ -12,7 +14,8 @@ const words = { passed: "通过", failed: "未通过", unevaluable: "无法评�
   complete: "完整", invalid: "无效", unverified: "未核验", not_run: "未执行", insufficient_evidence: "证据不足",
   timed_out: "超时", cancelled: "已取消", runtime_error: "运行错误", unknown: "未知", live: "真实运行声明",
   synthetic: "合成声明", matched: "匹配", mismatched: "不匹配", verified: "复验已处理", rejected: "关联被拒绝", unavailable: "不可用",
-  reused: "历史复用", new: "本次新增", compared: "已对照", inconclusive: "无法完成对照" };
+  reused: "历史复用", new: "本次新增", compared: "已对照", inconclusive: "无法完成对照",
+  passToFail: "通过转未通过", failToPass: "未通过转通过", unchangedPassed: "仍通过", unchangedFailed: "仍未通过" };
 const metricNames = { modelCalls: "已结算模型调用", toolCalls: "工具调用", inputTokens: "输入 token", outputTokens: "输出 token",
   totalTokens: "总 token", elapsedSeconds: "运行耗时（秒）", cost: "费用" };
 let token = new URLSearchParams(location.hash.slice(1)).get("token");
@@ -107,6 +110,7 @@ function renderCatalog() {
   $("catalog").replaceChildren(table(["名称 / 标识", "任务结论", "状态", "来源声明", "保存时间"], items.map((item) => [
     append(node("div"), button(item.title || item.path, () => openDocument(item.id)), node("div", item.path, "subtext"), ...(item.error ? [node("div", item.error, "error")] : [])),
     item.kind === "assertion_comparison" ? node("span", `${display(item.baselineOutcome)} → ${display(item.candidateOutcome)}`)
+      : item.kind === "experiment_assertion_preview" ? node("span", `可对照 ${number(item.previewSummary?.comparedSamples)} / ${number(item.previewSummary?.plannedSamples)} · 无法对照 ${number(item.previewSummary?.inconclusive)}`)
       : item.kind === "report" && item.outcomes ? node("span", `通过 ${item.outcomes.passed ?? "缺失"} · 未通过 ${item.outcomes.failed ?? "缺失"} · 无法评测 ${item.outcomes.unevaluable ?? "缺失"}`)
       : item.kind === "case" ? node("span", "用例定义", "subtext") : badge(item.outcome),
     item.kind === "case" ? "—" : badge(item.status), item.kind === "case" ? "—" : item.sources?.length ? item.sources.map(display).join("、") : "缺失", item.kind === "case" ? "—" : date(item.time),
@@ -187,10 +191,11 @@ function continuation(data, kind) {
         number(all?.observedTotal), `${number(all?.observedSamples)} / ${number(all?.missingSamples)}`];
     })))];
 }
-function metricsTable(metrics, aggregate = false) {
+function metricsTable(metrics, aggregate = false, synthetic = false) {
   if (!metrics) return node("p", "指标缺失");
   return table(aggregate ? ["观测指标", "已观测总和", "已观测均值", "观测 / 缺失样本", "观测范围"] : ["观测指标", "已观测值"],
     Object.entries(metricNames).map(([key, label]) => {
+      if (synthetic && key === "modelCalls") label = "合成模型事件";
       const value = metrics[key];
       if (!aggregate) return [label, number(value)];
       return [append(node("div"), node("span", label), ...(value?.reason ? [node("div", value.reason, "subtext")] : [])),
@@ -273,6 +278,98 @@ function assertionEvidence(row, assertionTrace) {
     ? "匹配调用为 0，没有对应调用事件。" : "未保存可定位的事件序号。", "subtext"));
   return jumps;
 }
+const assertionReasonNames = {
+  matched: "匹配通过", environment_snapshot_missing: "缺少环境快照", environment_files_mismatch: "最终文件集合不符",
+  final_text_mismatch: "最终回复不符", turn_end_mismatch: "结束原因不符", forbidden_tool_observed: "发现禁止的工具调用",
+  tool_call_count_out_of_bounds: "工具调用次数超出范围", dependency_not_passed: "前置断言未通过",
+  tool_evidence_missing: "缺少匹配的工具调用与返回", tool_result_mismatch: "工具返回不符", tool_order_mismatch: "工具顺序不符",
+  tool_result_and_order_mismatch: "候选证据分别存在返回或顺序不符", recording_not_complete: "录制未通过完整性检查",
+  execution_not_completed: "执行未正常完成", evaluation_evidence_invalid: "评测证据无效",
+};
+const assertionGlobalGateCodes = ["recording_not_complete", "execution_not_completed", "evaluation_evidence_invalid"];
+function structuredAssertionDiagnostics(data) {
+  const saved = data.assertionDiagnostics;
+  if (saved === undefined || saved === null) return { rows: [], unavailable: "本结果未保存结构化断言诊断；不从原因文字推断依赖。" };
+  if (saved.assertionDiagnosticsFormatVersion !== 1) return { rows: [], unavailable: "结构化断言诊断版本不支持；原判定与证据保持显示。" };
+  if (!Array.isArray(saved.results)) return { rows: [], unavailable: "结构化断言诊断明细不可用；原判定与证据保持显示。" };
+  const results = Array.isArray(data.assertions?.results) ? data.assertions.results : [];
+  let rows = saved.results.filter((row) => row && typeof row === "object" && typeof row.id === "string" && typeof row.type === "string"
+    && typeof row.reasonCode === "string" && (!Object.hasOwn(row, "after") || typeof row.after === "string")
+    && (!Object.hasOwn(row, "blockedBy") || Array.isArray(row.blockedBy) && row.blockedBy.every((id) => typeof id === "string"))
+    && (!Object.hasOwn(row, "observedMatches") || Array.isArray(row.observedMatches))
+    && saved.results.filter((item) => item?.id === row.id).length === 1
+    && results.filter((item) => item?.id === row.id).length === 1
+    && results.some((item) => item?.id === row.id && item?.type === row.type && item?.outcome === row.outcome));
+  const positions = new Map(results.map((row, index) => [row?.id, index]));
+  rows.sort((left, right) => positions.get(left.id) - positions.get(right.id));
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  rows = rows.map((row) => {
+    let current = row;
+    const seen = new Set();
+    let invalid = false;
+    while (current && !invalid) {
+      const blockers = current.blockedBy ?? [];
+      if (current.reasonCode === "dependency_not_passed") {
+        const predecessor = blockers.length === 1 ? byId.get(blockers[0]) : null;
+        if (blockers.length !== 1 || blockers[0] !== current.after || !predecessor || predecessor.outcome === "passed"
+          || current.outcome !== (predecessor.outcome === "failed" ? "failed" : "insufficient_evidence")) invalid = true;
+      } else if (blockers.length) invalid = true;
+      if (!current.after) break;
+      if (seen.has(current.id) || !byId.has(current.after)) invalid = true;
+      seen.add(current.id);
+      current = byId.get(current.after);
+    }
+    return { ...row, ...(invalid ? { relationshipUnavailable: true } : {}) };
+  });
+  return { rows, ...(rows.length === saved.results.length && rows.length === results.length ? {} : { warning: "结构化诊断不完整，或部分诊断无法唯一关联保存的断言结果；未补全缺失原因与依赖。" }),
+    ...(rows.some((row) => !Object.hasOwn(assertionReasonNames, row.reasonCode)) ? { reasonWarning: "未知原因码只显示保存原值，不据此识别问题源头。" } : {}),
+    ...(rows.some((row) => row.relationshipUnavailable) ? { relationshipWarning: "依赖结构存在缺失引用、环、非直接阻断或与保存判定矛盾的阻断；相关项只展示保存字段，不据此识别问题源头。" } : {}) };
+}
+function diagnosticReason(row) {
+  if (row.relationshipUnavailable && row.reasonCode === "dependency_not_passed") return "保存原因码 dependency_not_passed（依赖关系不可用）";
+  return `${Object.hasOwn(assertionReasonNames, row.reasonCode) ? assertionReasonNames[row.reasonCode] : "未识别的原因码"}（${row.reasonCode}）`;
+}
+function independentAssertionProblems(rows) {
+  return rows.filter((row) => ["failed", "insufficient_evidence"].includes(row.outcome)
+    && !row.blockedBy?.length && Object.hasOwn(assertionReasonNames, row.reasonCode)
+    && !["matched", "dependency_not_passed", ...assertionGlobalGateCodes].includes(row.reasonCode) && !row.relationshipUnavailable);
+}
+function observedAssertionMatches(row, assertionTrace) {
+  if (row.relationshipUnavailable || row.reasonCode !== "dependency_not_passed" || !row.blockedBy?.length || !Array.isArray(row.observedMatches)) return null;
+  const body = append(node("div"), node("p", "实际发生的匹配事件仅供查看：前置断言未通过，这些事件未计为本项通过证据。", "notice"));
+  body.append(row.observedMatches.length ? assertionEvidence({ evidence: row.observedMatches }, assertionTrace)
+    : node("p", "未观察到符合本项工具与返回要求的事件。", "subtext"));
+  return body;
+}
+function assertionDependencies(documentData) {
+  const { data, assertionTrace } = documentData, saved = structuredAssertionDiagnostics(data);
+  const body = node("div");
+  if (saved.unavailable) return panel("断言原因与依赖", node("p", saved.unavailable, "subtext"));
+  body.append(node("p", "原因来自评分分支保存的结构化字段。前置与阻断只显示直接关系；事件定位不会改变保存的判定。问题列表包括必需项与诊断项，诊断失败不会单独使任务失败。", "subtext"));
+  if (saved.warning) body.append(node("p", saved.warning, "notice"));
+  if (saved.reasonWarning) body.append(node("p", saved.reasonWarning, "notice"));
+  if (saved.relationshipWarning) body.append(node("p", saved.relationshipWarning, "notice"));
+  const gates = [...new Set(saved.rows.filter((row) => assertionGlobalGateCodes.includes(row.reasonCode)).map((row) => row.reasonCode))];
+  if (gates.length) body.append(node("p", "全局门禁未通过，相关断言未执行逐项评分；这些原因不作为独立步骤缺证源头。 · "
+    + gates.map((code) => diagnosticReason({ reasonCode: code })).join("；"), "notice"));
+  const roots = independentAssertionProblems(saved.rows), first = roots.find((row) => row.outcome === "insufficient_evidence");
+  const results = Array.isArray(data.assertions?.results) ? data.assertions.results : [];
+  const roleName = (row) => {
+    const role = results.find((item) => item?.id === row.id && item?.type === row.type)?.role ?? "required";
+    return role === "diagnostic" ? "诊断项" : role === "required" ? "必需项" : "未知角色";
+  };
+  body.append(node("p", "独立问题源头（按保存的断言顺序） · " + (roots.map((row) => `${row.id}（${roleName(row)}）`).join("、") || "无")));
+  if (first) body.append(append(node("p", null, "notice"), node("strong", "首个缺证步骤 · " + first.id), node("span", " · " + diagnosticReason(first))));
+  body.append(table(["断言 / 角色", "保存判定", "结构化原因", "声明的直接前置", "阻断前置", "已评分证据 / 实际观察"], saved.rows.map((row) => {
+    const legacy = results.find((item) => item?.id === row.id && item?.type === row.type);
+    const observed = observedAssertionMatches(row, assertionTrace);
+    return [append(node("div"), node("span", row.id), node("p", roleName(row), "subtext")), badge(row.outcome), diagnosticReason(row),
+      append(node("div"), node("span", row.after ?? "无"), ...(row.relationshipUnavailable ? [node("p", "依赖关系不可用", "subtext")] : [])), row.blockedBy?.join("、") || "无",
+      observed || assertionEvidence(legacy || {}, assertionTrace)];
+  })));
+  if (!saved.rows.length) body.append(node("p", "没有可关联的结构化诊断明细。", "subtext"));
+  return panel("断言原因与依赖", body);
+}
 function assertionCards(documentData) {
   const { data, assertionTrace } = documentData;
   const results = Array.isArray(data.assertions?.results) ? data.assertions.results : [];
@@ -280,6 +377,8 @@ function assertionCards(documentData) {
   const body = node("div", null, "assertion-list");
   body.append(node("p", "显示保存的断言结论与本结果内嵌的用例快照。浏览不会重新评测；定位到事件也不代表证据已经复验。", "subtext"));
   const hasRoles = results.some((row) => row && Object.hasOwn(row, "role"));
+  const diagnosticRows = structuredAssertionDiagnostics(data).rows;
+  const firstMissing = independentAssertionProblems(diagnosticRows).find((row) => row.outcome === "insufficient_evidence");
   if (hasRoles) body.append(node("p", "断言汇总只计入必需项。诊断项单独记录，诊断失败仍显示在这里。", "subtext"));
   if (data.assertions?.reason) body.append(node("p", data.assertions.reason, "error"));
   if (!results.length) body.append(node("p", "没有保存逐条断言结果。", "subtext"));
@@ -305,6 +404,16 @@ function assertionCards(documentData) {
       heading.append(node("span", label, "badge"));
     }
     card.append(heading);
+    const diagnostic = diagnosticRows.find((item) => item.id === row.id && item.type === row.type);
+    if (diagnostic) {
+      if (diagnostic.id === firstMissing?.id) card.append(node("p", "首个缺证步骤（按保存的断言顺序）", "notice"));
+      card.append(node("p", "结构化原因 · " + diagnosticReason(diagnostic), "subtext"));
+      if (diagnostic.relationshipUnavailable) card.append(node("p", "依赖关系不可用；只展示保存的前置与阻断字段。", "notice"));
+      if (diagnostic.after) card.append(node("p", "声明的直接前置 · " + diagnostic.after, "subtext"));
+      if (diagnostic.blockedBy?.length) card.append(node("p", (diagnostic.relationshipUnavailable ? "保存的阻断字段（关系不可用） · " : "依赖阻断 · ") + diagnostic.blockedBy.join("、"), "notice"));
+      const observed = observedAssertionMatches(diagnostic, assertionTrace);
+      if (observed) card.append(observed);
+    }
     if (row.reason) card.append(node("p", row.reason));
     if (confirmationToken) card.append(node("p", "确认词匹配只接受一个由 A–Z 或 a–z 组成的词，忽略大小写。整词可以用 ** 或 __ 加粗，末尾允许一个英文句号，句号可放在加粗标记内或外。", "subtext"));
     if (behavior) card.append(node("p", "实际值为任务范围内匹配的工具调用次数，包括失败、未返回及最终答案后的调用；这是保存的离线评测结果，不是运行时拦截。", "subtext"));
@@ -391,6 +500,45 @@ function diagnosticSummary(data, links) {
   body.append(table(["样本 / 逐项复验", "任务结论", "诊断失败 ID", "证据不足 ID", "未执行 ID"], rows));
   return panel("诊断项覆盖与结果", body);
 }
+function experimentAssertionPreview(documentData) {
+  const { data } = documentData, saved = data.summary;
+  const target = node("div");
+  target.append(cards([["原计划样本", number(saved?.plannedSamples)], ["可对照样本", number(saved?.comparedSamples)],
+    ["无法对照样本", number(saved?.inconclusive)], ["预览状态", display(data.status)]]));
+  target.append(panel("实验规则影响", append(node("div"),
+    node("p", "读取保存的离线规则预览，浏览不会重评或调用模型。任务结论筛选使用候选侧结论；无法对照样本不纳入四类转移。", "subtext"),
+    table(["通过 → 未通过", "未通过 → 通过", "仍通过", "仍未通过", "无法对照"],
+      [["passToFail", "failToPass", "unchangedPassed", "unchangedFailed", "inconclusive"].map((key) => number(saved?.[key]))]),
+    node("p", `实验 ${data.experimentId ?? "缺失"} · 模型调用 ${data.modelCalled === false ? "否" : "未知"}`, "subtext"))));
+  const rows = Array.isArray(data.samples) ? data.samples : [];
+  const list = node("div", null, "assertion-list");
+  rows.forEach((row, index) => {
+    if (!row || typeof row !== "object") return;
+    const link = (Array.isArray(documentData.sampleEvidence) ? documentData.sampleEvidence : []).find((item) => item.index === index + 1);
+    const card = append(node("article", null, "assertion-card"), node("h3", row.sampleId ?? "样本标识缺失"),
+      node("p", `${row.caseEntryId ?? "用例缺失"} · ${row.configurationId ?? "配置缺失"} · 第 ${row.repeatIndex ?? "缺失"} 轮 · ${display(row.source)}`, "subtext"),
+      node("p", `${display(row.baselineOutcome)} → ${display(row.candidateOutcome)} · ${display(row.transition)}`),
+      node("p", `复验 ${display(row.verification)} · 配置 ${display(row.configurationMatch)}`, "subtext"));
+    card.append(link?.id ? button("查看源证据", () => openDocument(link.id)) : node("p", "源证据缺失、身份不匹配或超出浏览目录", "subtext"));
+    for (const reason of Array.isArray(row.reasons) ? row.reasons : []) card.append(node("p", reason, "error"));
+    const changes = Array.isArray(row.changes) ? row.changes : [];
+    card.append(node("p", "变化断言 · " + (Array.isArray(row.changedAssertionIds) ? row.changedAssertionIds.join("、") || "无" : "缺失")));
+    for (const change of changes) {
+      if (!change || typeof change !== "object") continue;
+      const sides = ["baseline", "candidate"].map((key) => {
+        const value = change[key];
+        return append(node("div"), node("h3", key === "baseline" ? "原规则" : "候选规则"),
+          value ? json(value) : node("p", "此侧无该断言", "subtext"),
+          ...(value ? [assertionEvidence(value.result || {}, link?.assertionTrace)] : []));
+      });
+      card.append(append(node("details"), node("summary", change.id ?? "断言 ID 缺失"), append(node("div", null, "two-columns"), ...sides)));
+    }
+    list.append(card);
+  });
+  if (!list.children.length) list.append(node("p", "没有保存样本明细。", "subtext"));
+  target.append(panel("样本结论与变化断言", list));
+  return target;
+}
 function renderDocument(documentData) {
   const target = $("detail"), data = documentData.data, links = documentData.links;
   target.replaceChildren();
@@ -418,6 +566,27 @@ function renderDocument(documentData) {
     return;
   }
   if (documentData.kind === "markdown") { target.append(panel("报告文本", node("pre", documentData.text))); return; }
+  if (documentData.kind === "workflow_demo") {
+    target.append(cards([["生成状态", display(data.status)], ["来源声明", display(data.source)],
+      ["模型调用", data.modelCalled === false ? "否" : "未知"]]));
+    target.append(panel("按顺序浏览三个场景", table(["顺序", "场景", "任务 / 对照结论", "说明"],
+      (Array.isArray(data.scenarios) ? data.scenarios : []).map((row, index) => {
+        const link = links.find((item) => item.id && (item.label === `场景 ${index + 1} / evaluationPath` || item.label === `场景 ${index + 1} / previewPath`));
+        return [index + 1, link ? button(row.title || row.id || "场景", () => openDocument(link.id)) : node("span", row.title || row.id || "场景"),
+          display(row.outcome), append(node("div"), node("p", row.description), ...(!link ? [node("p", "结果缺失或超出浏览目录", "subtext")] : []))];
+      }))));
+    const files = evidence(links);
+    if (files) target.append(files);
+    target.append(append(node("details", null, "panel padded"), node("summary", "查看保存的完整 JSON"), json(data)));
+    return;
+  }
+  if (documentData.kind === "experiment_assertion_preview") {
+    target.append(...experimentAssertionPreview(documentData).children);
+    const files = evidence(links);
+    if (files) target.append(files);
+    target.append(append(node("details", null, "panel padded"), node("summary", "查看保存的完整 JSON"), json(data)));
+    return;
+  }
   if (documentData.kind === "assertion_comparison") {
     target.append(...assertionComparison(documentData).children);
     const files = evidence(links);
@@ -465,10 +634,11 @@ function renderDocument(documentData) {
   if (documentData.kind === "evaluation") {
     target.append(cards([["任务结论", display(data.outcome)], ["执行状态", display(data.execution?.status)],
       ["录制状态", display(data.recording?.outcome)], ["断言汇总", display(data.assertions?.outcome)]]));
-    target.append(assertionCards(documentData));
+    target.append(assertionDependencies(documentData), assertionCards(documentData));
     target.append(append(node("div", null, "two-columns"), panel("请求配置、实际配置与来源声明", json({ requestedConfiguration: data.case?.configRef,
       configuration: data.configuration, source: data.source, caseRunId: data.caseRunId, budgetEnforcement: data.budgetEnforcement })),
-      panel("断言明细", json(data.assertions))), panel("观测指标", metricsTable(data.metrics)));
+      panel("断言明细", json(data.assertions))), panel("观测指标", append(node("div"), metricsTable(data.metrics, false, data.source === "synthetic"),
+        ...(data.source === "synthetic" ? [node("p", "合成事件计数不代表真实模型调用。", "subtext")] : []))));
   }
   const samples = sampleTable(data, links);
   if (samples) target.append(samples);
@@ -546,7 +716,7 @@ async function openDocument(id, offset = 0, remember = true, focus = null) {
     $("catalog-view").hidden = true;
     $("detail-view").hidden = false;
     $("document-path").textContent = id;
-    $("title").textContent = result.data?.experimentName || result.data?.batchName || result.data?.caseId || result.data?.resumeId || "证据详情";
+    $("title").textContent = result.data?.workflowName || result.data?.experimentName || result.data?.batchName || result.data?.caseId || result.data?.resumeId || "证据详情";
     renderDocument(result);
     message("");
     window.scrollTo(0, 0);

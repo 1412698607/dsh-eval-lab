@@ -36,3 +36,5 @@ jobs:
         run: python -m compileall -q dsh_eval scripts test
       - name: Generate synthetic evaluation examples
         run: npm.cmd run demo:eval
+      - name: Generate and recheck synthetic workflow
+        run: npm.cmd run demo:workflow -- --generate-only

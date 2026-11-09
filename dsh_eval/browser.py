@@ -24,13 +24,17 @@ FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_
            "experimentFormatVersion": ("experiment_manifest", (1,)), "batchResultFormatVersion": ("batch", (1,)),
            "experimentResultFormatVersion": ("experiment", (1,)), "comparisonReportFormatVersion": ("report", (1, 2, 3)),
            "assertionComparisonFormatVersion": ("assertion_comparison", (1,)),
+           "experimentAssertionPreviewFormatVersion": ("experiment_assertion_preview", (1,)),
+           "assertionRuleMapFormatVersion": ("assertion_rule_map", (1,)),
+           "workflowDemoFormatVersion": ("workflow_demo", (1,)),
            "experimentResumeResultFormatVersion": ("experiment_resume", (1, 2)),
            "batchResumeResultFormatVersion": ("batch_resume", (1,)),
            "evaluationFormatVersion": ("evaluation", (1, 2)), "evidenceFormatVersion": ("evidence", (1, 2)),
            "runtimeFormatVersion": ("runtime", (1,)), "formatVersion": ("recording", (1, 2)),
            "statusFormatVersion": ("recording", (1,))}
 RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "evaluation.json",
-                "resume-result.json", "experiment-resume-result.json", "assertion-comparison.json"}
+                "resume-result.json", "experiment-resume-result.json", "assertion-comparison.json",
+                "experiment-assertion-preview.json", "workflow-index.json"}
 TRACE_NAME = re.compile(r"[0-9a-f]{64}\.jsonl\Z")
 
 
@@ -175,8 +179,8 @@ class ArtifactBrowser:
                     item = {"id": identifier, "path": identifier.split(":", 1)[1], "kind": "unknown"}
                     try:
                         kind, data = self._json(self.path(identifier))
-                        item.update(kind=kind, title=data.get("experimentName") or data.get("batchName")
-                                    or data.get("caseId") or data.get("reportId") or data.get("resumeId") or name,
+                        item.update(kind=kind, title=data.get("workflowName") or data.get("experimentName") or data.get("batchName")
+                                    or data.get("caseId") or data.get("reportId") or data.get("resumeId") or data.get("workflowId") or data.get("experimentId") or name,
                                     outcome=data.get("outcome"), status=data.get("status"), source=data.get("source"),
                                     time=data.get("generatedAt") or data.get("finishedAt") or data.get("evaluatedAt") or data.get("startedAt"))
                         summary = data.get("summary")
@@ -190,6 +194,10 @@ class ArtifactBrowser:
                             item["outcome"] = item["candidateOutcome"]
                         rows = data.get("samples") or data.get("entries") or []
                         require(isinstance(rows, list), "Artifact samples/entries must be an array")
+                        if kind == "experiment_assertion_preview":
+                            item["previewSummary"] = summary
+                            item["outcomes"] = {outcome: sum(row.get("candidateOutcome") == outcome for row in rows if isinstance(row, dict))
+                                                for outcome in ("passed", "failed", "unevaluable")}
                         item["sources"] = sorted({row["source"] if isinstance(row.get("source"), str) and row["source"] else "unknown"
                                                   for row in rows if isinstance(row, dict)})
                         if kind in ("batch_resume", "experiment_resume"):
@@ -234,6 +242,16 @@ class ArtifactBrowser:
                 add(prefix + key, value.get(key))
             add(prefix + "runDir", value.get("runDir"), True)
         collect(data)
+        if "experimentAssertionPreviewFormatVersion" in data or "workflowDemoFormatVersion" in data:
+            add("experimentPath", data.get("experimentPath"))
+        if "experimentAssertionPreviewFormatVersion" in data:
+            add("ruleMapPath", data.get("ruleMapPath"))
+        if "workflowDemoFormatVersion" in data:
+            add("reportPath", data.get("reportPath"))
+            for index, row in enumerate(data.get("scenarios", []) if isinstance(data.get("scenarios"), list) else [], 1):
+                if isinstance(row, dict):
+                    add(f"场景 {index} / evaluationPath", row.get("evaluationPath"))
+                    add(f"场景 {index} / previewPath", row.get("previewPath"))
         binding = data.get("batchBinding")
         result_path = data.get("batchResultPath")
         if (result_path is None or result_path == "") and isinstance(binding, dict):
@@ -252,9 +270,37 @@ class ArtifactBrowser:
             rows = data.get(key)
             if isinstance(rows, list):
                 for index, row in enumerate(rows, 1):
-                    collect(row, f"{index} / ")
+                    if "experimentAssertionPreviewFormatVersion" not in data:
+                        collect(row, f"{index} / ")
         if "comparisonReportFormatVersion" in data:
             add("Markdown", "report.md")
+        return links
+
+    def _preview_evidence(self, data, directory):
+        """Offer only source evidence whose saved sample identity still matches."""
+        rows = data.get("samples")
+        if not isinstance(rows, list):
+            return []
+        links = []
+        for index, row in enumerate(rows, 1):
+            if not isinstance(row, dict) or not isinstance(row.get("evidencePath"), str) or not row["evidencePath"]:
+                continue
+            identifier = self.reference(directory / row["evidencePath"].replace("\\", "/"))
+            if identifier is None:
+                continue
+            try:
+                kind, evidence = self._json(self.path(identifier))
+                if kind != "evidence" or any(not isinstance(row.get(key), str) or not row[key]
+                                             or evidence.get(key) != row[key]
+                                             for key in ("caseRunId", "runId", "sessionId")):
+                    continue
+                link = {"index": index, "id": identifier}
+                trace = self._comparison_trace(row, directory)
+                if trace:
+                    link["assertionTrace"] = trace
+                links.append(link)
+            except (OSError, ValueError):
+                continue
         return links
 
     def _comparison_trace(self, data, directory):
@@ -360,6 +406,8 @@ class ArtifactBrowser:
         kind, data = self._json(path)
         links = self._links(data, path.parent)
         result = {"id": identifier, "kind": kind, "data": data, "links": links}
+        if kind == "experiment_assertion_preview":
+            result["sampleEvidence"] = self._preview_evidence(data, path.parent)
         if kind == "assertion_comparison":
             trace = self._comparison_trace(data, path.parent)
             if trace:

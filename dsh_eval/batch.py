@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from .batch_lock import batch_lock
 from .formats import load_json, require, validate_batch
 from .metrics import number
-from .runner import ROOT, run_case, save_json, validate_live_case
+from .runner import ROOT, run_case, run_synthetic_case, save_json, validate_live_case
 from . import output_paths
 
 
@@ -61,7 +61,7 @@ def _token_usage(entries):
 
 
 def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, batch_id=None, _lock_stack=None,
-              stop_after=None, stop_after_tokens=None):
+              stop_after=None, stop_after_tokens=None, _synthetic_replies=None):
     require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(stop_after_tokens is None or type(stop_after_tokens) is int and stop_after_tokens > 0,
             "stop_after_tokens must be a positive integer")
@@ -72,7 +72,14 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
     inputs = [(entry, (source.parent / entry["casePath"]).resolve(),
                validate_live_case(load_json(source.parent / entry["casePath"]))) for entry in manifest["cases"]]
     batch_id = str(UUID(batch_id)) if batch_id is not None else None
-    output_paths.check_output_root(runs_root or ROOT / "runs" / "batches", kind="batch")
+    if _synthetic_replies is None:
+        output_paths.check_output_root(runs_root or ROOT / "runs" / "batches", kind="batch")
+    else:
+        require(isinstance(_synthetic_replies, dict)
+                and _synthetic_replies.keys() == {entry["entryId"] for entry in manifest["cases"]}
+                and all(isinstance(reply, str) for reply in _synthetic_replies.values()),
+                "Synthetic replies must cover exactly the batch entry IDs")
+        require(modules_dir is None and not cancel_after_stream, "Synthetic execution cannot use host controls")
     batch_id = batch_id or str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "batches").resolve() / batch_id
     (directory / "inputs").mkdir(parents=True, exist_ok=False)
@@ -99,13 +106,18 @@ def run_batch(batch_path, runs_root=None, modules_dir=None, cancel_after_stream=
         # Experiments retain this same lock through their own final checkpoint.
         lock_owner = _lock_stack if _lock_stack is not None else local_locks
         lock_owner.enter_context(batch_lock(directory, create=True))
-        report["resumeSupportVersion"] = 1
+        if _synthetic_replies is None:
+            report["resumeSupportVersion"] = 1
+        else:
+            # Scripted replies are not part of the live continuation protocol.
+            report.update(executionMode="synthetic", modelCalled=False)
         report["inputFingerprint"] = input_fingerprint(frozen, [case for _entry, _path, case in inputs])
         _checkpoint(directory, report)
-        return _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream)
+        return _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream,
+                              _synthetic_replies=_synthetic_replies)
 
 
-def _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream):
+def _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream, *, _synthetic_replies=None):
     batch_id = report["batchId"]
     active = None
     try:
@@ -115,8 +127,13 @@ def _execute_batch(directory, report, manifest, modules_dir, cancel_after_stream
             _checkpoint(directory, report)
             case_directory = directory / active["caseDirectory"]
             try:
-                returned = run_case(directory / active["casePath"], directory / "cases", modules_dir, cancel_after_stream,
-                                    batch_id=batch_id, case_run_id=active["caseRunId"])
+                if _synthetic_replies is None:
+                    returned = run_case(directory / active["casePath"], directory / "cases", modules_dir, cancel_after_stream,
+                                        batch_id=batch_id, case_run_id=active["caseRunId"])
+                else:
+                    returned = run_synthetic_case(directory / active["casePath"], directory / "cases",
+                                                 final_text=_synthetic_replies[active["entryId"]],
+                                                 batch_id=batch_id, case_run_id=active["caseRunId"])
                 result = load_json(case_directory / "evaluation.json")
                 require(returned == result, "Runner result differs from saved evaluation")
                 evidence = load_json(case_directory / "evidence.json")

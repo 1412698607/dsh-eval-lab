@@ -2,6 +2,18 @@
 
 面向 DeepSeek Harness 的 Agent 行为回归测试项目。第一阶段实现实时会话轨迹记录，为后续测试用例、确定性断言和版本对比提供输入。
 
+在新 checkout 中运行可浏览的合成工作流，需要 Python 3.12+ 和 Node.js 22.8+，无需安装 Harness 或配置模型：
+
+```powershell
+npm.cmd run demo:workflow
+# 自动化检查只生成、复验并退出：
+npm.cmd run demo:workflow -- --generate-only
+```
+
+打开终端输出的完整 `url`，在“工作流演示”中依次查看完整重试、漏步反例、四样本规则影响。前台按 Ctrl+C 停止服务；Windows npm 包装若提示终止批处理，输入 Y。每次运行新建归档，全部为 synthetic / modelCalled=false。输出路径、复验和退出码见[工作流演示说明](docs/workflow-demo.md)。
+
+新评测的[结构化诊断](docs/evaluation-format.md#结构化原因与依赖诊断124)可在页面定位首个缺证步骤和后继阻断关系。漏步场景仍为六项通过、四项缺证；实际成功重试和最终读回可以单独查看，其前置条件未满足时不计为断言通过。旧结果可通过显式离线复验生成新诊断，原文件保留。
+
 ## 当前功能
 
 - [新规则四任务验收](docs/changes/2026-11-04-117-live-confirmation-matrix.md) 验证目标占用和超时后重试。一次真实回复 `**done**` 通过确认词必需项，同时保留精确回复诊断失败；新报告和浏览器可定位该样本。

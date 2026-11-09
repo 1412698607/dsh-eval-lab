@@ -162,6 +162,95 @@ test("comparison event jumps reuse the associated trace identity", async () => {
   assert.match(get("detail").textContent, /已定位 seq 48/);
 });
 
+function previewArtifact() {
+  const change = comparisonArtifact().data.assertions[0];
+  return { kind: "experiment_assertion_preview", links: [], sampleEvidence: [{ index: 1, id: "runs:one/evidence.json",
+    assertionTrace: comparisonArtifact().assertionTrace }], data: {
+    experimentAssertionPreviewFormatVersion: 1, experimentId: "four-samples", modelCalled: false, status: "inconclusive",
+    summary: { plannedSamples: 5, comparedSamples: 4, passToFail: 1, failToPass: 1, unchangedPassed: 1, unchangedFailed: 1, inconclusive: 1 },
+    samples: [{ sampleId: "bold-answer", caseEntryId: "rename", configurationId: "fixture", repeatIndex: 1, source: "synthetic",
+      baselineOutcome: "passed", candidateOutcome: "failed", transition: "passToFail", verification: "verified", configurationMatch: "matched",
+      changedAssertionIds: ["answer"], changes: [change], reasons: [] },
+    { sampleId: "missing", baselineOutcome: null, candidateOutcome: null, transition: "inconclusive", reasons: ["<img src=x onerror=bad()>"], changes: [] }],
+  } };
+}
+
+async function openPreview(artifact = previewArtifact(), requests = []) {
+  const get = await viewer([{ id: "runs:preview/experiment-assertion-preview.json", kind: "experiment_assertion_preview",
+    title: "四样本预览", path: "preview", sources: ["synthetic"], previewSummary: previewArtifact().data.summary }], artifact, requests);
+  get("navigation").children.find((item) => item.children[1].textContent === "实验规则预览").trigger("click");
+  assert.match(get("catalog").textContent, /可对照 4 \/ 5/);
+  findButton(get("catalog"), "四样本预览").trigger("click");
+  await new Promise(setImmediate);
+  return get;
+}
+
+test("experiment rule previews show their denominator, all transitions and literal sample changes", async () => {
+  const get = await openPreview(), detail = get("detail");
+  assert.match(detail.textContent, /原计划样本 5/);
+  assert.match(detail.textContent, /可对照样本 4/);
+  assert.match(detail.textContent, /无法对照样本 1/);
+  assert.match(detail.textContent, /通过 → 未通过/);
+  assert.match(detail.textContent, /未通过 → 通过/);
+  assert.match(detail.textContent, /仍通过/);
+  assert.match(detail.textContent, /仍未通过/);
+  const panel = section(get, "样本结论与变化断言");
+  assert.equal(descendants(panel, "article").length, 2);
+  assert.ok(literalText(panel).includes("**Done.**"));
+  assert.ok(literalText(panel).includes("<img src=x onerror=bad()>"));
+  assert.equal(descendants(panel, "img").length, 0);
+  assert.match(panel.textContent, /源证据缺失、身份不匹配或超出浏览目录/);
+  assert.match(detail.textContent, /模型调用 否/);
+});
+
+test("preview source evidence and event jumps use backend-approved sample associations", async () => {
+  for (const action of ["查看源证据", "最终答案 · seq 48"]) {
+    const artifact = previewArtifact(), requests = [];
+    const get = await openPreview((path) => path.includes("id=runs%3Apreview") ? artifact
+      : { kind: "evidence", links: [], data: { evidenceFormatVersion: 2 } }, requests);
+    findButton(section(get, "样本结论与变化断言"), action).trigger("click");
+    await new Promise(setImmediate);
+    const query = new URLSearchParams(requests.at(-1).split("?")[1]);
+    if (action === "查看源证据") assert.equal(query.get("id"), "runs:one/evidence.json");
+    else {
+      assert.equal(query.get("id"), artifact.sampleEvidence[0].assertionTrace.id);
+      assert.equal(query.get("seq"), "48");
+      assert.equal(query.get("runId"), "run");
+      assert.equal(query.get("sessionId"), "session");
+    }
+  }
+  const artifact = previewArtifact();
+  artifact.sampleEvidence = [];
+  const get = await openPreview(artifact);
+  assert.equal(findButton(section(get, "样本结论与变化断言"), "查看源证据"), null);
+  assert.equal(findButton(section(get, "样本结论与变化断言"), "最终答案 · seq 48"), null);
+});
+
+test("workflow index preserves scenario order and opens allowed result links", async () => {
+  const requests = [], artifact = { kind: "workflow_demo", links: [
+    { label: "场景 1 / evaluationPath", id: "runs:complete/evaluation.json" },
+    { label: "场景 3 / previewPath", id: "runs:preview/experiment-assertion-preview.json" }], data: {
+    workflowDemoFormatVersion: 1, workflowName: "可重复合成工作流演示", source: "synthetic", modelCalled: false, status: "completed", scenarios: [
+      { id: "complete", title: "完整步骤", outcome: "passed", description: "先读回再重试" },
+      { id: "skip-readbacks", title: "漏步", outcome: "unevaluable", description: "缺少前置证据" },
+      { id: "rule-impact", title: "规则影响", outcome: "compared", description: "四个样本" }],
+  } };
+  const get = await viewer([{ id: "runs:demo/workflow-index.json", kind: "workflow_demo", title: "工作流", path: "demo" }], artifact, requests);
+  get("navigation").children.find((item) => item.children[1].textContent === "工作流演示").trigger("click");
+  findButton(get("catalog"), "工作流").trigger("click");
+  await new Promise(setImmediate);
+  const panel = section(get, "按顺序浏览三个场景"), text = panel.textContent;
+  assert.equal(get("title").textContent, "可重复合成工作流演示");
+  assert.match(text, /任务 \/ 对照结论/);
+  assert.ok(text.indexOf("完整步骤") < text.indexOf("漏步"));
+  assert.ok(text.indexOf("漏步") < text.indexOf("规则影响"));
+  assert.match(text, /结果缺失或超出浏览目录/);
+  assert.equal(findButton(panel, "漏步"), null);
+  findButton(panel, "规则影响").trigger("click");
+  await new Promise(setImmediate);
+  assert.equal(new URLSearchParams(requests.at(-1).split("?")[1]).get("id"), "runs:preview/experiment-assertion-preview.json");
+});
+
 test("assertion cards prioritize saved failures, compare frozen expectations and preserve the raw verdict", async () => {
   const get = await openDiagnostic(diagnosticResult());
   const panel = section(get, "断言诊断 · 失败优先"), cards = descendants(panel, "article");
@@ -173,6 +262,248 @@ test("assertion cards prioritize saved failures, compare frozen expectations and
   assert.equal(descendants(cards[0], "mark").find((item) => item.className === "actual-difference").textContent, "**core-current**");
   assert.ok(findButton(cards[0], "最终答案 · seq 109"));
   assert.ok(descendants(get("detail"), "h2").some((item) => item.textContent === "断言明细"));
+});
+
+test("synthetic evaluation metrics label generated model events without claiming real model calls", async () => {
+  for (const source of ["synthetic", "live"]) {
+    const artifact = diagnosticResult();
+    artifact.data.source = source;
+    artifact.data.metrics = { modelCalls: 1, toolCalls: 8 };
+    const get = await openDiagnostic(artifact), panel = section(get, "观测指标");
+    if (source === "synthetic") {
+      assert.match(panel.textContent, /合成模型事件 1/);
+      assert.match(panel.textContent, /合成事件计数不代表真实模型调用。/);
+      assert.doesNotMatch(panel.textContent, /已结算模型调用/);
+    } else {
+      assert.match(panel.textContent, /已结算模型调用 1/);
+      assert.doesNotMatch(panel.textContent, /合成模型事件|合成事件计数/);
+    }
+    assert.equal(artifact.data.metrics.modelCalls, 1);
+  }
+});
+
+function dependencyResult() {
+  const artifact = diagnosticResult();
+  const toolIds = ["timeout", "source-still-present", "target-still-missing", "retry", "verify"];
+  const rows = toolIds.map((id, index) => ({ id, type: "tool_result", outcome: index ? "insufficient_evidence" : "passed",
+    ...(index ? { reason: "Saved missing evidence; this prose does not define dependencies." } : { evidence: { callSeq: 2, resultSeq: 3 } }) }));
+  rows.push(...[["moves", "tool_call_count"], ["state", "environment_files"], ["answer", "final_text"],
+    ["answer-exact", "final_text"], ["end", "turn_end"]].map(([id, type]) => ({ id, type, outcome: "passed",
+      ...(id === "answer-exact" ? { role: "diagnostic" } : {}) })));
+  artifact.data.outcome = "unevaluable";
+  artifact.data.assertions = { outcome: "insufficient_evidence", results: rows };
+  artifact.data.case.assertions = rows.map(({ id, type, role }) => ({ id, type, ...(role ? { role } : {}) }));
+  artifact.data.assertionDiagnostics = { assertionDiagnosticsFormatVersion: 1, results: rows.map((row, index) => ({
+    id: row.id, type: row.type, outcome: row.outcome,
+    reasonCode: index === 1 ? "tool_evidence_missing" : index > 1 && index < 5 ? "dependency_not_passed" : "matched",
+    ...(index > 0 && index < 5 ? { after: toolIds[index - 1] } : {}),
+    ...(index > 1 && index < 5 ? { blockedBy: [toolIds[index - 1]], observedMatches: index === 3 ? [{ callId: "retry", callSeq: 4, resultSeq: 5, answerSeq: 8 }]
+      : index === 4 ? [{ callId: "verify", callSeq: 6, resultSeq: 7, answerSeq: 8 }] : [] } : {}),
+  })) };
+  return artifact;
+}
+
+test("structured diagnostics identify the first missing step and three directly blocked successors", async () => {
+  const artifact = dependencyResult(), before = JSON.stringify(artifact.data);
+  const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+  assert.match(panel.textContent, /首个缺证步骤 · source-still-present/);
+  const roots = descendants(panel, "p").find((item) => item.textContent.startsWith("独立问题源头"));
+  assert.equal(roots.textContent, "独立问题源头（按保存的断言顺序） · source-still-present（必需项）");
+  const rows = descendants(panel, "tbody")[0].children;
+  assert.equal(rows.length, 10);
+  for (const [id, after] of [["target-still-missing", "source-still-present"], ["retry", "target-still-missing"], ["verify", "retry"]]) {
+    const row = rows.find((item) => item.children[0].textContent.startsWith(id + " "));
+    assert.equal(row.children[3].textContent, after);
+    assert.equal(row.children[4].textContent, after);
+    assert.match(row.children[2].textContent, /dependency_not_passed/);
+  }
+  assert.match(panel.textContent, /这些事件未计为本项通过证据/);
+  assert.ok(findButton(panel, "工具返回 · seq 5"));
+  assert.ok(findButton(panel, "工具返回 · seq 7"));
+  const cards = descendants(section(get, "断言诊断 · 失败优先"), "article");
+  assert.match(cards.find((card) => card.textContent.startsWith("source-still-present ")).textContent, /首个缺证步骤/);
+  assert.equal(artifact.data.assertions.results.filter((row) => row.outcome === "passed").length, 6);
+  assert.equal(artifact.data.assertions.results.filter((row) => row.outcome === "insufficient_evidence").length, 4);
+  assert.equal(JSON.stringify(artifact.data), before);
+});
+
+test("diagnostics preserve independent roots and mark diagnostic failures without changing task verdict", async () => {
+  const artifact = dependencyResult();
+  for (const result of artifact.data.assertions.results) {
+    if (["state", "answer-exact"].includes(result.id)) result.outcome = "failed";
+  }
+  for (const result of artifact.data.assertionDiagnostics.results) {
+    if (result.id === "state") Object.assign(result, { outcome: "failed", reasonCode: "environment_files_mismatch" });
+    if (result.id === "answer-exact") Object.assign(result, { outcome: "failed", reasonCode: "final_text_mismatch" });
+  }
+  const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+  const roots = descendants(panel, "p").find((item) => item.textContent.startsWith("独立问题源头"));
+  assert.match(roots.textContent, /source-still-present（必需项）.*state（必需项）.*answer-exact（诊断项）/);
+  assert.match(panel.textContent, /诊断失败不会单独使任务失败/);
+  assert.equal(artifact.data.outcome, "unevaluable");
+});
+
+test("reordered diagnostic metadata keeps the saved assertion order and first missing root", async () => {
+  const artifact = dependencyResult();
+  const extra = { id: "another-missing", type: "tool_result", outcome: "insufficient_evidence" };
+  artifact.data.assertions.results.push({ ...extra });
+  artifact.data.case.assertions.push({ id: extra.id, type: extra.type });
+  artifact.data.assertionDiagnostics.results.push({ ...extra, reasonCode: "tool_evidence_missing" });
+  artifact.data.assertionDiagnostics.results.reverse();
+  const before = JSON.stringify(artifact.data);
+  const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+  const roots = descendants(panel, "p").find((item) => item.textContent.startsWith("独立问题源头"));
+  assert.equal(roots.textContent, "独立问题源头（按保存的断言顺序） · source-still-present（必需项）、another-missing（必需项）");
+  assert.match(panel.textContent, /首个缺证步骤 · source-still-present/);
+  assert.doesNotMatch(panel.textContent, /首个缺证步骤 · another-missing/);
+  const rows = descendants(panel, "tbody")[0].children;
+  assert.deepEqual(rows.map((row) => descendants(row.children[0], "span")[0].textContent),
+    artifact.data.assertions.results.map((row) => row.id));
+  assert.equal(JSON.stringify(artifact.data), before);
+});
+
+test("a failed predecessor remains the root instead of treating its blocked successor as missing", async () => {
+  const artifact = dependencyResult();
+  artifact.data.outcome = artifact.data.assertions.outcome = "failed";
+  artifact.data.assertions.results.slice(0, 5).forEach((row) => { row.outcome = "failed"; });
+  artifact.data.assertionDiagnostics.results.slice(0, 5).forEach((row) => { row.outcome = "failed"; });
+  Object.assign(artifact.data.assertionDiagnostics.results[0], { reasonCode: "tool_result_mismatch" });
+  Object.assign(artifact.data.assertionDiagnostics.results[1], { reasonCode: "dependency_not_passed", blockedBy: ["timeout"],
+    observedMatches: [{ callId: "source-read", callSeq: 60, resultSeq: 61, answerSeq: 70 }] });
+  const before = JSON.stringify(artifact.data);
+  const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+  assert.match(panel.textContent, /独立问题源头（按保存的断言顺序） · timeout（必需项）/);
+  assert.doesNotMatch(panel.textContent, /首个缺证步骤/);
+  assert.doesNotMatch(panel.textContent, /依赖关系不可用|依赖结构存在/);
+  assert.match(panel.textContent, /工具返回不符（tool_result_mismatch）/);
+  assert.match(panel.textContent, /前置断言未通过，这些事件未计为本项通过证据/);
+  assert.ok(findButton(panel, "工具返回 · seq 61"));
+  assert.ok(findButton(panel, "工具返回 · seq 5"));
+  assert.equal(artifact.data.assertions.results[1].outcome, "failed");
+  assert.equal(JSON.stringify(artifact.data), before);
+});
+
+test("complete structured diagnostics show the passed chain and its scored event evidence", async () => {
+  const artifact = dependencyResult();
+  artifact.data.outcome = artifact.data.assertions.outcome = "passed";
+  artifact.data.assertions.results.forEach((row, index) => { row.outcome = "passed"; row.evidence = { callSeq: index * 2 + 2, resultSeq: index * 2 + 3 }; });
+  artifact.data.assertionDiagnostics.results.forEach((row) => {
+    row.outcome = "passed"; row.reasonCode = "matched"; delete row.blockedBy; delete row.observedMatches;
+  });
+  const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+  assert.match(panel.textContent, /独立问题源头（按保存的断言顺序） · 无/);
+  assert.doesNotMatch(panel.textContent, /未计为本项通过证据|首个缺证步骤/);
+  assert.equal(descendants(panel, "tbody")[0].children.length, 10);
+  assert.ok(findButton(panel, "工具返回 · seq 11"));
+  assert.match(panel.textContent, /匹配通过（matched）/);
+});
+
+test("legacy, unsupported and unmatched structured diagnostics do not infer relations from reason prose", async () => {
+  for (const mode of ["legacy", "unsupported", "mismatched", "duplicate"]) {
+    const artifact = dependencyResult();
+    artifact.data.assertions.results[1].reason = "dependency_not_passed blockedBy timeout <script>bad()</script>";
+    if (mode === "legacy") delete artifact.data.assertionDiagnostics;
+    else if (mode === "unsupported") artifact.data.assertionDiagnostics.assertionDiagnosticsFormatVersion = 2;
+    else if (mode === "mismatched") artifact.data.assertionDiagnostics.results.forEach((row) => { row.outcome = "failed"; });
+    else artifact.data.assertionDiagnostics.results.push(...artifact.data.assertionDiagnostics.results.map((row) => ({ ...row })));
+    const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+    assert.doesNotMatch(panel.textContent, /首个缺证步骤|source-still-present（必需项）/);
+    assert.match(panel.textContent, mode === "legacy" ? /未保存结构化断言诊断/ : mode === "unsupported" ? /版本不支持/ : /无法唯一关联/);
+    assert.ok(literalText(section(get, "断言诊断 · 失败优先")).includes("<script>bad()</script>"));
+    assert.equal(descendants(get("detail"), "script").length, 0);
+  }
+});
+
+test("invalid dependency references and cycles remain unavailable while independent roots stay visible", async () => {
+  for (const mode of ["unknown", "cycle", "non-direct"]) {
+    const artifact = dependencyResult(), rows = artifact.data.assertionDiagnostics.results;
+    if (mode === "unknown") rows.find((row) => row.id === "retry").after = "missing-id";
+    if (mode === "cycle") rows.find((row) => row.id === "retry").after = "verify";
+    if (mode === "non-direct") rows.find((row) => row.id === "retry").blockedBy = ["timeout"];
+    const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+    assert.match(panel.textContent, /依赖结构存在缺失引用、环、非直接阻断/);
+    assert.match(panel.textContent, /依赖关系不可用/);
+    assert.match(panel.textContent, /source-still-present（必需项）/);
+    if (mode === "non-direct") {
+      const rows = descendants(panel, "tbody")[0].children;
+      assert.match(rows.find((row) => row.children[0].textContent.startsWith("verify ")).textContent, /依赖关系不可用/);
+    }
+  }
+});
+
+test("contradictory blockers do not claim passed prerequisites failed or trust unscored observed matches", async () => {
+  for (const mode of ["passed-predecessor", "wrong-reason", "missing-blocker", "blocked-passed-row"]) {
+    const artifact = dependencyResult(), metadata = artifact.data.assertionDiagnostics.results;
+    const source = metadata.find((row) => row.id === "source-still-present");
+    Object.assign(source, { reasonCode: "dependency_not_passed", blockedBy: ["timeout"],
+      observedMatches: [{ callId: "observed", callSeq: 60, resultSeq: 61, answerSeq: 70 }] });
+    if (mode === "wrong-reason") source.reasonCode = "tool_evidence_missing";
+    if (mode === "missing-blocker") delete source.blockedBy;
+    if (mode === "blocked-passed-row") {
+      source.outcome = "passed";
+      artifact.data.assertions.results.find((row) => row.id === source.id).outcome = "passed";
+    }
+    const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+    const row = descendants(panel, "tbody")[0].children.find((item) => item.children[0].textContent.startsWith("source-still-present "));
+    assert.match(row.textContent, /依赖关系不可用/);
+    assert.doesNotMatch(row.textContent, /前置断言未通过，这些事件未计为本项通过证据/);
+    assert.equal(findButton(row, "工具返回 · seq 61"), null);
+    assert.doesNotMatch(panel.textContent, /首个缺证步骤 · source-still-present/);
+    const card = descendants(section(get, "断言诊断 · 失败优先"), "article").find((item) => item.textContent.startsWith("source-still-present "));
+    assert.equal(findButton(card, "工具返回 · seq 61"), null);
+    if (source.blockedBy) assert.match(card.textContent, /保存的阻断字段（关系不可用）/);
+  }
+});
+
+test("global evaluation gates preserve unscored reasons without inventing independent missing steps", async () => {
+  for (const reasonCode of ["evaluation_evidence_invalid", "recording_not_complete", "execution_not_completed"]) {
+    const artifact = dependencyResult(), outcome = reasonCode === "evaluation_evidence_invalid" ? "insufficient_evidence" : "not_run";
+    artifact.data.assertions.results.forEach((row) => { row.outcome = outcome; delete row.evidence; });
+    artifact.data.assertionDiagnostics.results.forEach((row) => {
+      row.outcome = outcome; row.reasonCode = reasonCode; delete row.blockedBy; delete row.observedMatches;
+    });
+    const before = JSON.stringify(artifact.data);
+    const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+    assert.match(panel.textContent, /全局门禁未通过，相关断言未执行逐项评分/);
+    assert.match(panel.textContent, /独立问题源头（按保存的断言顺序） · 无/);
+    assert.doesNotMatch(panel.textContent, /首个缺证步骤/);
+    assert.ok(panel.textContent.includes(reasonCode));
+    assert.equal(descendants(panel, "tbody")[0].children.length, 10);
+    assert.equal(JSON.stringify(artifact.data), before);
+  }
+});
+
+test("partial diagnostics and unknown reason codes never fabricate missing roots or complete coverage", async () => {
+  for (const mode of ["partial", "unknown"]) {
+    const artifact = dependencyResult();
+    if (mode === "partial") artifact.data.assertionDiagnostics.results = artifact.data.assertionDiagnostics.results.slice(0, 1);
+    else artifact.data.assertionDiagnostics.results.find((row) => row.id === "source-still-present").reasonCode = "__proto__";
+    const get = await openDiagnostic(artifact), panel = section(get, "断言原因与依赖");
+    assert.match(panel.textContent, /独立问题源头（按保存的断言顺序） · 无/);
+    assert.doesNotMatch(panel.textContent, /首个缺证步骤/);
+    if (mode === "partial") {
+      assert.match(panel.textContent, /结构化诊断不完整/);
+      assert.equal(descendants(panel, "tbody")[0].children.length, 1);
+    } else {
+      assert.match(panel.textContent, /未知原因码只显示保存原值/);
+      assert.match(panel.textContent, /未识别的原因码（__proto__）/);
+    }
+  }
+});
+
+test("observed blocked retry events keep the current trace identity and never replace saved scores", async () => {
+  const artifact = dependencyResult(), requests = [];
+  const get = await openDiagnostic((path) => path.includes("seq=") ? { kind: "trace", links: [], offset: 0, nextOffset: null,
+    focus: { seq: 5, line: 1 }, rows: [{ line: 1, data: { event: { seq: 5, type: "tool/result" } } }] } : artifact, requests);
+  findButton(section(get, "断言原因与依赖"), "工具返回 · seq 5").trigger("click");
+  await new Promise(setImmediate);
+  const query = new URLSearchParams(requests.at(-1).split("?")[1]);
+  assert.equal(query.get("id"), artifact.assertionTrace.id);
+  assert.equal(query.get("seq"), "5");
+  assert.equal(query.get("runId"), "run");
+  assert.equal(query.get("sessionId"), "session");
+  assert.equal(artifact.data.assertions.results.find((row) => row.id === "retry").outcome, "insufficient_evidence");
+  assert.equal(artifact.data.outcome, "unevaluable");
 });
 
 test("diagnostic assertion outcomes stay visible alongside the saved aggregate", async () => {

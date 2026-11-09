@@ -103,23 +103,59 @@ def _matches_final_text(assertion, actual):
     return actual.isascii() and actual.lower() in forms
 
 
-def check_assertion(assertion, view, previous=None):
+def _diagnostic_result(assertion, result, reason_code, **details):
+    return {"id": assertion["id"], "type": assertion["type"], "outcome": result["outcome"],
+            "reasonCode": reason_code, **({"after": assertion["after"]} if "after" in assertion else {}), **details}
+
+
+def _result_matches(expected, message):
+    return (message["isError"] is expected["isError"]
+            and ("textContains" not in expected or expected["textContains"] in text_of(message))
+            and ("textEquals" not in expected or expected["textEquals"] == text_of(message)))
+
+
+def _observed_tool_matches(assertion, view):
+    """Locate matching events for display only; this deliberately does not satisfy after."""
+    matches = []
+    for call_id, (call, arguments) in view["calls"].items():
+        result = view["results"].get(call_id)
+        if (_call_matches(assertion, call, arguments) and result is not None
+                and result["seq"] < view["final"]["seq"]
+                and _result_matches(assertion["result"], result["data"]["message"])):
+            matches.append({"callId": call_id, "callSeq": call["seq"], "resultSeq": result["seq"],
+                            "answerSeq": view["final"]["seq"]})
+    return matches
+
+
+def check_assertion(assertion, view, previous=None, *, diagnostics=None):
+    def finish(result, reason_code, **details):
+        if diagnostics is not None:
+            diagnostics.append(_diagnostic_result(assertion, result, reason_code, **details))
+        return result
+
     base = _assertion_identity(assertion)
     kind = assertion["type"]
     if kind == "environment_files":
         snapshot = view.get("environmentSnapshot")
         if snapshot is None:
-            return {**base, "outcome": "insufficient_evidence", "reason": "No verified complete environment snapshot"}
-        return {**base, "outcome": "passed" if _same(snapshot["files"], assertion["equals"]) else "failed",
-                "actual": snapshot["files"], "evidence": {"environmentSnapshotSha256": snapshot_digest(snapshot)}}
+            return finish({**base, "outcome": "insufficient_evidence", "reason": "No verified complete environment snapshot"},
+                          "environment_snapshot_missing")
+        passed = _same(snapshot["files"], assertion["equals"])
+        return finish({**base, "outcome": "passed" if passed else "failed",
+                       "actual": snapshot["files"], "evidence": {"environmentSnapshotSha256": snapshot_digest(snapshot)}},
+                      "matched" if passed else "environment_files_mismatch")
     if kind == "final_text":
         actual = text_of(view["final"]["data"]["message"]).strip()
-        return {**base, "outcome": "passed" if _matches_final_text(assertion, actual) else "failed",
-                "actual": actual, "evidence": {"answerSeq": view["final"]["seq"]}}
+        passed = _matches_final_text(assertion, actual)
+        return finish({**base, "outcome": "passed" if passed else "failed",
+                       "actual": actual, "evidence": {"answerSeq": view["final"]["seq"]}},
+                      "matched" if passed else "final_text_mismatch")
     if kind == "turn_end":
         actual = view["end"]["data"].get("reason")
-        return {**base, "outcome": "passed" if _same(actual, assertion["reason"]) else "failed",
-                "actual": actual, "evidence": {"endSeq": view["end"]["seq"]}}
+        passed = _same(actual, assertion["reason"])
+        return finish({**base, "outcome": "passed" if passed else "failed",
+                       "actual": actual, "evidence": {"endSeq": view["end"]["seq"]}},
+                      "matched" if passed else "turn_end_mismatch")
     if kind in ("tool_forbidden", "tool_call_count"):
         evidence = []
         # task_view validates the whole task interval, including calls after the final answer.
@@ -133,17 +169,22 @@ def check_assertion(assertion, view, previous=None):
         actual = len(evidence)
         passed = actual == 0 if kind == "tool_forbidden" else (
             actual >= assertion.get("min", 0) and ("max" not in assertion or actual <= assertion["max"]))
-        return {**base, "outcome": "passed" if passed else "failed", "actual": actual, "evidence": evidence,
-                **({} if passed else {"reason": "Forbidden tool call observed" if kind == "tool_forbidden"
-                                      else "Tool call count outside declared bounds"})}
+        return finish({**base, "outcome": "passed" if passed else "failed", "actual": actual, "evidence": evidence,
+                       **({} if passed else {"reason": "Forbidden tool call observed" if kind == "tool_forbidden"
+                                             else "Tool call count outside declared bounds"})},
+                      "matched" if passed else "forbidden_tool_observed" if kind == "tool_forbidden"
+                      else "tool_call_count_out_of_bounds")
     after_seq = None
     if "after" in assertion:
         predecessor = (previous or {}).get(assertion["after"])
         if predecessor is None or predecessor["outcome"] != "passed":
-            return {**base, "outcome": "failed" if predecessor and predecessor["outcome"] == "failed" else "insufficient_evidence",
-                    "reason": f"Required earlier tool result assertion {assertion['after']} did not pass"}
+            return finish({**base, "outcome": "failed" if predecessor and predecessor["outcome"] == "failed" else "insufficient_evidence",
+                           "reason": f"Required earlier tool result assertion {assertion['after']} did not pass"},
+                          "dependency_not_passed", blockedBy=[assertion["after"]],
+                          **({"observedMatches": _observed_tool_matches(assertion, view)} if diagnostics is not None else {}))
         after_seq = predecessor["evidence"]["resultSeq"]
     matches, mismatches = [], []
+    content_mismatch = order_mismatch = False
     for call_id, (call, arguments) in view["calls"].items():
         if not _call_matches(assertion, call, arguments):
             continue
@@ -155,25 +196,30 @@ def check_assertion(assertion, view, previous=None):
         if after_seq is not None:
             evidence["afterResultSeq"] = after_seq
         expected = assertion["result"]
-        if (message["isError"] is expected["isError"]
-                and ("textContains" not in expected or expected["textContains"] in text_of(message))
-                and ("textEquals" not in expected or expected["textEquals"] == text_of(message))
-                and (after_seq is None or call["seq"] > after_seq)):
+        content_matches = _result_matches(expected, message)
+        order_matches = after_seq is None or call["seq"] > after_seq
+        if content_matches and order_matches:
             matches.append(evidence)
         else:
             mismatches.append(evidence)
+            content_mismatch = content_mismatch or not content_matches
+            order_mismatch = order_mismatch or not order_matches
     if matches:
         # Earliest completion leaves every possible successor available, even if calls finish out of order.
-        return {**base, "outcome": "passed", "evidence": min(matches, key=lambda match: match["resultSeq"])}
+        return finish({**base, "outcome": "passed", "evidence": min(matches, key=lambda match: match["resultSeq"])}, "matched")
     if mismatches:
-        return {**base, "outcome": "failed", "reason": "Linked tool results did not match content or required order", "evidence": mismatches}
-    return {**base, "outcome": "insufficient_evidence", "reason": "No matching call/result before final answer"}
+        reason_code = ("tool_result_and_order_mismatch" if content_mismatch and order_mismatch else
+                       "tool_result_mismatch" if content_mismatch else "tool_order_mismatch")
+        return finish({**base, "outcome": "failed", "reason": "Linked tool results did not match content or required order",
+                       "evidence": mismatches}, reason_code)
+    return finish({**base, "outcome": "insufficient_evidence", "reason": "No matching call/result before final answer"},
+                  "tool_evidence_missing")
 
 
-def check_assertions(assertions, view):
+def check_assertions(assertions, view, *, diagnostics=None):
     results = {}
     for assertion in assertions:
-        results[assertion["id"]] = check_assertion(assertion, view, results)
+        results[assertion["id"]] = check_assertion(assertion, view, results, diagnostics=diagnostics)
     return list(results.values())
 
 
@@ -195,6 +241,9 @@ def evaluate(case_path, evidence_path):
     execution = {**evidence["execution"], "reportedStatus": evidence["execution"]["status"]}
     rows = [{**_assertion_identity(item), "outcome": "not_run"} for item in case["assertions"]]
     assertions = {"outcome": "not_run", "results": rows}
+    diagnostics = {"assertionDiagnosticsFormatVersion": 1,
+                   "results": [_diagnostic_result(item, row, "recording_not_complete")
+                               for item, row in zip(case["assertions"], rows)]}
     result = {"evaluationFormatVersion": evidence["evidenceFormatVersion"], "evaluatedAt": datetime.now(timezone.utc).isoformat(),
               "caseRunId": evidence["caseRunId"], "caseId": case["caseId"], "case": case,
               "source": evidence["source"], "configuration": evidence["configuration"],
@@ -202,6 +251,7 @@ def evaluate(case_path, evidence_path):
               "association": {"runId": evidence["runId"], "sessionId": evidence["sessionId"], "runDir": str(run_dir) if run_dir else None,
                               "casePath": str(case_path), "evidencePath": str(evidence_path)},
               "execution": execution, "recording": recording, "assertions": assertions,
+              "assertionDiagnostics": diagnostics,
               "metrics": empty_metrics(), "outcome": "unevaluable"}
     if "batchId" in evidence:
         result["batchId"] = evidence["batchId"]
@@ -246,6 +296,8 @@ def evaluate(case_path, evidence_path):
         if execution["status"] == "cancelled" and end_reason != {"kind": "aborted", "reason": {"kind": "user"}}:
             execution.update(status="unknown", reason="User cancellation lacks matching end evidence")
         if execution["status"] != "completed":
+            diagnostics["results"] = [_diagnostic_result(item, row, "execution_not_completed")
+                                      for item, row in zip(case["assertions"], rows)]
             return result
         # Preserve unknown event types; only interpret the documented task events.
         view = task_view(events, case["input"])
@@ -273,7 +325,8 @@ def evaluate(case_path, evidence_path):
             require(headers and all(header.get("provider") == evidence["configuration"]["provider"]
                                     and header.get("model") == evidence["configuration"]["model"] for header in headers),
                     "Actual request routes do not match the evidence configuration")
-        rows[:] = check_assertions(case["assertions"], view)
+        diagnostics["results"] = []
+        rows[:] = check_assertions(case["assertions"], view, diagnostics=diagnostics["results"])
         assertions["outcome"] = assertion_outcome(rows)
         if assertions["outcome"] in ("passed", "failed"):
             result["outcome"] = assertions["outcome"]
@@ -281,4 +334,6 @@ def evaluate(case_path, evidence_path):
         assertions.update(outcome="insufficient_evidence", reason=str(error))
         for row in rows:
             row.update(outcome="insufficient_evidence", reason=str(error))
+        diagnostics["results"] = [_diagnostic_result(item, row, "evaluation_evidence_invalid")
+                                  for item, row in zip(case["assertions"], rows)]
     return result

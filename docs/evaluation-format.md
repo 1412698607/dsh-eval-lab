@@ -278,6 +278,55 @@ budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execu
 
 输出保留 evaluatedAt（UTC）、完整版本化用例快照（含输入、环境、期望配置和预算）、实际配置声明、预算实施标记、source、caseRunId、caseId、可选 batchId，以及关联的 runId / sessionId / 明确路径。文件缺失与检查错误也保留分类；M4.1 开始增加可选 metrics，历史文件缺少指标仍兼容，见文末扩展。
 
+### 结构化原因与依赖诊断（124）
+
+新生成的版本 1 / 2 评测结果默认增加独立的可选字段 `assertionDiagnostics`，无需额外开关。旧文件可以没有此字段。断言原有 results、reason、evidence 和聚合规则保持不变；新字段不参与任务判分、历史续跑的核心字段核对或同轨迹规则差异计算。
+
+```json
+{
+  "assertionDiagnostics": {
+    "assertionDiagnosticsFormatVersion": 1,
+    "results": [
+      {"id": "source-still-present", "type": "tool_result", "outcome": "insufficient_evidence",
+       "reasonCode": "tool_evidence_missing", "after": "timeout"},
+      {"id": "target-still-missing", "type": "tool_result", "outcome": "insufficient_evidence",
+       "reasonCode": "dependency_not_passed", "after": "source-still-present", "blockedBy": ["source-still-present"],
+       "observedMatches": []}
+    ]
+  }
+}
+```
+
+示例仅列出两行。实际 results 与用例断言一一对应、顺序相同，保留 id、type、outcome 和稳定的 reasonCode；声明了 after 的断言另保存该前置 ID。原因码由实际评分分支产生，不从 reason 文本推断。`blockedBy` 只保存直接未通过的前置项；需要回溯时沿各行的依赖关系逐步查找，不把所有后继都说成独立缺证。
+
+| reasonCode | 含义 |
+| --- | --- |
+| matched | 单项实际检查通过 |
+| environment_snapshot_missing | 没有经核验的完整环境快照 |
+| environment_files_mismatch | 完整文件映射与期望不符 |
+| final_text_mismatch | 最终文本不符合该项匹配规则 |
+| turn_end_mismatch | 结束原因与期望不符 |
+| forbidden_tool_observed | 观察到被禁止的匹配工具调用 |
+| tool_call_count_out_of_bounds | 工具调用次数超出声明范围 |
+| dependency_not_passed | 直接前置断言未通过，当前项沿用原规则判定失败或证据不足 |
+| tool_evidence_missing | 最终回复前未找到符合工具 / 参数选择条件的已关联调用及返回 |
+| tool_result_mismatch | 找到的候选返回内容或错误状态不符 |
+| tool_order_mismatch | 候选调用未晚于前置项的成功返回 |
+| tool_result_and_order_mismatch | 候选集合同时包含结果与顺序不符；不承诺是同一候选的两项错误 |
+| recording_not_complete | 录制门禁未通过，单项尚未评分 |
+| execution_not_completed | 执行门禁未通过，单项尚未评分 |
+| evaluation_evidence_invalid | 任务、关联、配置、快照或其他全局证据核验失败 |
+
+依赖阻断行可以有 `observedMatches`：按本项工具、参数及返回谓词匹配，且返回位于最终回复之前的原始事件位置。此查找不检查 after 前置条件，位置结构复用 callId / callSeq / resultSeq / answerSeq。它只说明观察到了这样的结果，不能替代本项正常 evidence，也不会使该项通过。例如漏步反例中成功重试和最终读回仍可定位，但 retry / verify 保持 insufficient_evidence。
+
+浏览器以匹配保存断言身份与结论的版本 1 诊断展示原始问题、直接前置和依赖源头，区分必需项与诊断项，并保留多个独立源头。旧文件缺少新字段或格式不支持时明确显示诊断不可用，保留原明细；浏览不会重新评分或从英文 reason 拼接依赖图。需要为历史归档生成诊断时显式离线复验，写入一个新文件，不覆盖原结果：
+
+```powershell
+python -m dsh_eval --case <冻结任务目录>/case.json --evidence <冻结任务目录>/evidence.json --output <已创建的新目录>/evaluation.json
+```
+
+新元数据没有改变 passed / failed / insufficient_evidence / not_run 或任务聚合。续跑仍完整核对原 assertions 和其他核心字段；忽略可选诊断扩展不等于允许修改任务判分。单轨迹与实验规则预览继续比较两侧原有定义和断言结果，不把新增原因元数据当成规则效果。
+
 ## 当前限制与下一步
 
 M3.1 离线入口中环境只是声明，合成轨迹不是环境执行、真实工具或模型证据；M3.2 的 --run 才会实际准备环境和驱动任务。日志仍是新增事件片段，不是完整会话备份或重放。SHA-256 不提供签名，sealed 没有 fsync 保证。M6.1 新运行已增加 [会话清单](run-manifest.md)，旧格式仍缺少运行级成员覆盖；清单 / 日志 / 摘要同时重写等限制沿用 [架构](architecture.md)。
