@@ -1,5 +1,9 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月9日 可迁移归档交付验收
+
+- [133](docs/changes/2026-11-09-133-archive-delivery-acceptance.md) 核实归档实现与短路径夹具修正已推送，`3e09527` 的首次 Windows push CI 全部14步成功；登记本地633项Python复验和能力矩阵，保留首次失败与日志未核对的边界。
+
 ## 2026年11月9日 Windows 短临时路径夹具修正
 
 - [132](docs/changes/2026-11-09-132-windows-short-temp-fixture.md) 独立复现并修正NTFS短临时目录别名引发的归档路径夹具比较错误，新增真实短路径子进程回归；原CI失败保留，新提交独立验证。
