@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from .batch import _now, input_fingerprint
 from .batch_lock import batch_lock
+from .archive_paths import archive_context_active, logical_str, physical
 from .formats import load_json, nonempty, require, validate_batch, validate_case
 from .metrics import summarize
 from .resume import CLAIM_NAME, _check_resume_output_root, _digest, _execute_resume, _load_plan as load_batch_plan, _path
@@ -17,8 +18,8 @@ IDENTITY = ("sampleId", "caseEntryId", "configurationId", "repeatIndex", "caseId
 
 
 def _absolute(value):
-    require(nonempty(value) and Path(value).is_absolute(), "Continuation source requires an explicit absolute path")
-    return Path(value).resolve()
+    require(nonempty(value) and (archive_context_active() or Path(value).is_absolute()), "Continuation source requires an explicit absolute path")
+    return physical(value)
 
 
 def _archive_files(paths, batches):
@@ -31,7 +32,7 @@ def _archive_files(paths, batches):
 
 
 def _hashes(files):
-    return {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(files)}
+    return {logical_str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(files)}
 
 
 def _fingerprint(plan):
@@ -41,7 +42,7 @@ def _fingerprint(plan):
 
 
 def _classify(context, batches, plans):
-    lookups = {str(path): ({row["entryId"]: row for row in plan["reusedEntries"]},
+    lookups = {logical_str(path): ({row["entryId"]: row for row in plan["reusedEntries"]},
                           {row["entryId"]: row["reason"] for row in plan["blockedEntries"]}, set(plan["pendingEntryIds"]))
                for path, plan in zip(batches, plans)}
     samples, reused_rows = [], {}
@@ -56,7 +57,7 @@ def _classify(context, batches, plans):
             item.update(disposition="reuse", verification=verified["verification"], caseRunId=verified["caseRunId"],
                         source=verified["source"], outcome=verified["outcome"], recoveredCheckpoint=verified["recoveredCheckpoint"])
             reused_rows[sample_id] = verified
-        elif sample_id in pending and source == str(batches[-1]):
+        elif sample_id in pending and source == logical_str(batches[-1]):
             item.update(disposition="pending", caseRunId=None, source=None, outcome=None)
         else:
             item.update(disposition="blocked", reason=blocked.get(sample_id, "Historical sample cannot become unstarted"))
@@ -86,10 +87,10 @@ def _validate_batch_plans(plan, batches):
     for path, saved in zip(batches, plans):
         require(isinstance(saved, dict) and type(saved.get("batchResumePlanFormatVersion")) is int
                 and saved["batchResumePlanFormatVersion"] == 1 and saved.get("valid") is True
-                and saved["sourceBatchResult"] == str(path), "Invalid continuation batch plan")
+                and saved["sourceBatchResult"] == logical_str(path), "Invalid continuation batch plan")
         batch = load_json(path)
         require(saved["sourceBatchId"] == batch["batchId"], "Continuation batch plan identity mismatch")
-        payload = {"version": 1, "sourceBatchResult": str(path), "sourceFilesSha256": saved["sourceFilesSha256"],
+        payload = {"version": 1, "sourceBatchResult": logical_str(path), "sourceFilesSha256": saved["sourceFilesSha256"],
                    "pendingEntryIds": saved["pendingEntryIds"], "reusedEntryIds": [row["entryId"] for row in saved["reusedEntries"]],
                    "maxSamples": saved["maxSamples"]}
         require(_digest(saved["planFingerprint"]) == _digest({"version": 1, "sha256": _digest(payload)}), "Saved chain batch fingerprint mismatch")
@@ -126,10 +127,10 @@ def _overlay(source, resumed, context, paths, batches, *, allow_unfinished):
             and plan["experimentResumePlanFormatVersion"] == 2 and plan.get("valid") is True
             and plan.get("eligibleForResume") is True and plan.get("executionSupported") is True, "Invalid saved chain plan")
     require(plan.get("maxSamples") is None or type(plan["maxSamples"]) is int and plan["maxSamples"] > 0, "Invalid saved chain task cap")
-    require(plan["sourceResumeResult"] == str(paths[-1]) and plan["sourceResumeId"] == load_json(paths[-1])["resumeId"]
+    require(plan["sourceResumeResult"] == logical_str(paths[-1]) and plan["sourceResumeId"] == load_json(paths[-1])["resumeId"]
             and plan["sourceExperimentResult"] == context[5]["sourceExperimentResult"]
             and plan["sourceExperimentId"] == context[0]["experimentId"]
-            and plan["sourceBatchResult"] == str(batches[-1])
+            and plan["sourceBatchResult"] == logical_str(batches[-1])
             and plan["sourceBatchId"] == load_json(batches[-1])["batchId"], "Continuation chain source mismatch")
     for key in ("sourceResumeResult", "sourceResumeId", "sourceExperimentResult", "sourceExperimentId", "sourceBatchResult",
                 "sourceBatchId", "maxSamples", "counts", "planFingerprint"):
@@ -147,7 +148,7 @@ def _overlay(source, resumed, context, paths, batches, *, allow_unfinished):
     _terminal(child, "batchResumeResultFormatVersion", allow_unfinished=allow_unfinished)
     _identity(child, child_path.parent)
     require(resumed["batchResumeResultPath"] == f"continuations/{child['resumeId']}/resume-result.json", "Unexpected chain child path")
-    require(child["sourceBatchResult"] == str(batches[-1]) and child["sourceBatchId"] == plan["sourceBatchId"]
+    require(child["sourceBatchResult"] == logical_str(batches[-1]) and child["sourceBatchId"] == plan["sourceBatchId"]
             and child["planFingerprint"] == plans[-1]["planFingerprint"]
             and _digest(child["reusedEntries"]) == _digest(plans[-1]["reusedEntries"])
             and _digest(load_json(child_path.parent / "resume-plan.json")) == _digest(plans[-1]), "Chained batch plan binding mismatch")
@@ -170,7 +171,7 @@ def _overlay(source, resumed, context, paths, batches, *, allow_unfinished):
     _terminal(batch, "batchResultFormatVersion", allow_unfinished=allow_unfinished)
     require(batch["batchId"] == binding["batchId"] and _absolute(batch["batchDirectory"]) == new_path.parent
             and batch["mode"] == "sequential" and (child["status"] == "running" or batch["status"] == child["status"])
-            and batch["sourceManifest"] == str(child_path.parent / "remaining.batch.json"), "Chained batch association mismatch")
+            and batch["sourceManifest"] == logical_str(child_path.parent / "remaining.batch.json"), "Chained batch association mismatch")
     remaining = validate_batch(load_json(child_path.parent / "remaining.batch.json"))
     frozen = validate_batch(load_json(_path(new_path.parent, batch["manifestPath"])))
     pending = plans[-1]["pendingEntryIds"]
@@ -188,7 +189,7 @@ def _overlay(source, resumed, context, paths, batches, *, allow_unfinished):
         identity = identities[sample_id]
         expected = {**context[2][identity["caseEntryId"]], "configRef": identity["requestedConfiguration"]}
         require(entry["entryId"] == original["entryId"] == sample_id and row["casePath"] == entry["casePath"]
-                and row["sourceCasePath"] == str(_path(child_path.parent, original["casePath"]))
+                and row["sourceCasePath"] == logical_str(_path(child_path.parent, original["casePath"]))
                 and row["caseId"] == identity["caseId"] and _digest(row["requestedConfiguration"]) == _digest(expected["configRef"]),
                 "Chained case identity/input association mismatch")
         for base, item in ((new_path.parent, entry), (child_path.parent, original)):
@@ -202,7 +203,7 @@ def _overlay(source, resumed, context, paths, batches, *, allow_unfinished):
         identity = {key: item[key] for key in IDENTITY}
         if item["disposition"] == "pending":
             row, base, batch_id, origin = new_rows[sample_id], new_path.parent, batch["batchId"], "new"
-            provenance = {"executionOrigin": origin, "sourceBatchId": batch_id, "sourceBatchResult": str(new_path)}
+            provenance = {"executionOrigin": origin, "sourceBatchId": batch_id, "sourceBatchResult": logical_str(new_path)}
         else:
             prior = prior_by_id[sample_id]
             row, base, batch_id, previous = reused_rows[sample_id], prior[1], prior[2], prior[3]
@@ -217,13 +218,13 @@ def _overlay(source, resumed, context, paths, batches, *, allow_unfinished):
                     row["runDir"] = None
         selected.append(({**row, **identity}, base, batch_id, provenance))
     _check_selected(selected, allow_unfinished)
-    chain = [*context[5].get("resumeChain", [{"resumeId": load_json(paths[0])["resumeId"], "resultPath": str(paths[0])}]),
-             {"resumeId": resumed["resumeId"], "resultPath": str(source)}]
-    metadata = {"comparisonReportFormatVersion": 3, "sourceResumeResult": str(source), "resumeId": resumed["resumeId"],
+    chain = [*context[5].get("resumeChain", [{"resumeId": load_json(paths[0])["resumeId"], "resultPath": logical_str(paths[0])}]),
+             {"resumeId": resumed["resumeId"], "resultPath": logical_str(source)}]
+    metadata = {"comparisonReportFormatVersion": 3, "sourceResumeResult": logical_str(source), "resumeId": resumed["resumeId"],
                 "sourceExperimentResult": context[5]["sourceExperimentResult"], "batchId": None,
-                "batchIds": [*context[5]["batchIds"], batch["batchId"]], "batchResultPaths": [str(path) for path in [*batches, new_path]],
+                "batchIds": [*context[5]["batchIds"], batch["batchId"]], "batchResultPaths": [logical_str(path) for path in [*batches, new_path]],
                 "resumeChain": chain, "resumeVerification": {"status": "verified", "planFingerprint": plan["planFingerprint"],
-                    "batchPlanFingerprint": plans[-1]["planFingerprint"], "batchResumeResult": str(child_path), "chainLength": len(chain)}}
+                    "batchPlanFingerprint": plans[-1]["planFingerprint"], "batchResumeResult": logical_str(child_path), "chainLength": len(chain)}}
     return ({**context[0], "summary": resumed.get("combinedSummary")}, context[1], context[2], context[3], selected, metadata), new_path
 
 
@@ -319,12 +320,14 @@ def _load_plan(source, context, paths, batches, max_samples):
 
 
 def plan_chain(source, *, max_samples=None):
+    require(not archive_context_active(), "Archive relocation is read-only; continuation planning is unsupported")
     with _locked_chain(source) as (context, paths, batches, _locks):
         return _load_plan(source, context, paths, batches, max_samples)[0]
 
 
 def execute_chain(source, runs_root, modules_dir, cancel_after_stream, *, max_samples, expected_plan_sha256,
                   stop_after=None, stop_after_tokens=None):
+    require(not archive_context_active(), "Archive relocation is read-only; continuation execution is unsupported")
     with _locked_chain(source) as (context, paths, batches, locks):
         plan, batch_plan, saved, cases, reused = _load_plan(source, context, paths, batches, max_samples)
         require(plan["eligibleForResume"], "Experiment cannot resume: " + "; ".join(plan["reasons"] +

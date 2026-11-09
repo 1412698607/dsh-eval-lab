@@ -1,5 +1,7 @@
 # M4.2 离线配置比较报告
 
+130 支持从[只读归档包](archive-bundles.md)生成报告：`--report <包目录>/archive-manifest.json --reports-root <包外目录>`。原文件与指纹保持，新关联使用当前包内位置。下文原格式直接搬迁的限制不变；特殊包入口仅做离线分析，不增加搬迁后的续跑执行。
+
 127 新增[实验级结构化原因汇总](#结构化原因汇总127)。已有逐样本诊断可以汇总为独立问题、后继阻断与全局门禁，再按原因或用例 / 配置 / 来源定位样本，沿原 evaluationPath 查看完整证据链。原诊断角色统计与任务判分保持。
 
 新生成的报告在 `summary.diagnosticSummary` 中保存诊断覆盖及四类单项结果计数，并在 `samples[].diagnosticSummary` 中保留失败、证据不足及未运行的断言 ID。可以从样本的 `evaluationPath` 查看完整独立评测。统计还显示任务通过但存在诊断失败的样本数，详见[记录 115](changes/2026-11-04-115-diagnostic-report-summary.md)。

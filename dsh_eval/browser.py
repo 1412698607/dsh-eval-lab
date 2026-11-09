@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import secrets
 from urllib.parse import parse_qs, urlsplit
@@ -27,6 +27,7 @@ FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_
            "experimentAssertionPreviewFormatVersion": ("experiment_assertion_preview", (1,)),
            "assertionRuleMapFormatVersion": ("assertion_rule_map", (1,)),
            "workflowDemoFormatVersion": ("workflow_demo", (1,)),
+           "archiveBundleFormatVersion": ("archive_bundle", (1,)),
            "experimentResumeResultFormatVersion": ("experiment_resume", (1, 2)),
            "batchResumeResultFormatVersion": ("batch_resume", (1,)),
            "evaluationFormatVersion": ("evaluation", (1, 2)), "evidenceFormatVersion": ("evidence", (1, 2)),
@@ -34,7 +35,7 @@ FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_
            "statusFormatVersion": ("recording", (1,))}
 RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "evaluation.json",
                 "resume-result.json", "experiment-resume-result.json", "assertion-comparison.json",
-                "experiment-assertion-preview.json", "workflow-index.json"}
+                "experiment-assertion-preview.json", "workflow-index.json", "archive-manifest.json"}
 TRACE_NAME = re.compile(r"[0-9a-f]{64}\.jsonl\Z")
 
 
@@ -102,8 +103,109 @@ class ArtifactBrowser:
         # Only the explicitly configured spelling and its resolved root are trusted prefixes.
         self._root_prefixes = [(root, self.roots[label]) for label, root in configured.items()]
         self._root_prefixes.extend((root, root) for root in self.roots.values())
+        self._archive = None
+        self._archive_manifest = self.roots["runs"] / "archive-manifest.json"
+        self._archive_files = {}
+        if self._archive_manifest.is_symlink() or self._archive_manifest.exists():
+            from .archive_bundle import load_archive
+            manifest, self._archive = load_archive(self._archive_manifest)
+            content = self._archive_manifest.read_bytes()
+            require(json.dumps(parse_json(content.decode("utf-8")), sort_keys=True) == json.dumps(manifest, sort_keys=True),
+                    "Archive manifest changed during loading")
+            self._archive_manifest_sha256 = hashlib.sha256(content).hexdigest()
+            self._archive_manifest_size = len(content)
+            self._archive_files = {row["path"]: row for row in manifest["files"]}
+
+    def _reference_target(self, value, directory):
+        raw = value.replace("\\", "/")
+        if self._archive is not None and self._archive.recognizes(raw):
+            try:
+                return self._archive.physical(raw)
+            except (OSError, ValueError, RuntimeError):
+                return None
+        path = Path(raw)
+        if self._archive is not None and PureWindowsPath(raw).is_absolute() and not path.is_absolute():
+            return None
+        target = path if path.is_absolute() else directory / path
+        if self._archive is not None and (directory.is_relative_to(self._archive.payload_root)
+                                          or directory == self.roots["runs"]):
+            target = Path(os.path.abspath(target))
+            if not self._archive.recognizes(target):
+                return None
+            try:
+                return self._archive.physical(target)
+            except (OSError, ValueError, RuntimeError):
+                return None
+        return target
+
+    def _verify_archive_manifest(self):
+        require(not self._archive_manifest.is_symlink() and not self._archive_manifest.is_junction(),
+                "Archive manifest became a link")
+        content = self._archive_manifest.read_bytes()
+        require(len(content) == self._archive_manifest_size
+                and hashlib.sha256(content).hexdigest() == self._archive_manifest_sha256,
+                "Archive manifest changed after loading")
+
+    def _verify_archive_digest(self, path, size, digest):
+        if self._archive is None or not path.is_relative_to(self.roots["runs"]):
+            return
+        self._verify_archive_manifest()
+        if path == self._archive_manifest:
+            require(size == self._archive_manifest_size and digest == self._archive_manifest_sha256,
+                    "Archive manifest changed during reading")
+            return
+        expected = self._archive_files.get(path.relative_to(self.roots["runs"]).as_posix())
+        require(expected is not None, "Artifact is not a listed archive member")
+        require(size == expected["size"], "Archive member size changed during reading")
+        require(digest == expected["sha256"], "Archive member digest changed during reading")
+
+    def _verify_archive_content(self, path, content):
+        if self._archive is not None and path.is_relative_to(self.roots["runs"]):
+            self._verify_archive_digest(path, len(content), hashlib.sha256(content).hexdigest())
+
+    def _verify_archive_file(self, path):
+        if self._archive is None or not path.is_relative_to(self.roots["runs"]):
+            return
+        self._verify_archive_manifest()
+        if path == self._archive_manifest:
+            return
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                digest.update(chunk)
+                size += len(chunk)
+        self._verify_archive_digest(path, size, digest.hexdigest())
 
     def _resolve_reference(self, target):
+        if target is None:
+            return None
+        if self._archive is not None:
+            if Path(target) == self._archive_manifest:
+                if self._archive_manifest.is_symlink() or self._archive_manifest.is_junction():
+                    return None
+                target = self._archive_manifest
+            elif self._archive.recognizes(target):
+                try:
+                    target = self._archive.physical(target)
+                except (OSError, ValueError, RuntimeError):
+                    return None
+            elif PureWindowsPath(str(target)).is_absolute() and not Path(target).is_absolute():
+                return None
+            else:
+                target = Path(os.path.abspath(target))
+                for prefix, root in self._root_prefixes:
+                    if target.is_relative_to(prefix):
+                        target = root / target.relative_to(prefix)
+                        break
+                if self._archive.recognizes(target):
+                    try:
+                        target = self._archive.physical(target)
+                    except (OSError, ValueError, RuntimeError):
+                        return None
+                elif target.is_relative_to(self.roots["runs"]):
+                    if target != self._archive_manifest or target.is_symlink() or target.is_junction():
+                        return None
         # abspath normalizes '..' without following links or querying the target's filesystem.
         target = Path(os.path.abspath(target))
         roots = [root for prefix, root in self._root_prefixes
@@ -113,6 +215,8 @@ class ArtifactBrowser:
         try:
             resolved = target.resolve()
         except (OSError, ValueError, RuntimeError):
+            return None
+        if self._archive is not None and target == self._archive_manifest and resolved != self._archive_manifest:
             return None
         return resolved if any(resolved.is_relative_to(root) and _allowed_parts(resolved.relative_to(root).parts)
                                for root in roots) else None
@@ -129,6 +233,7 @@ class ArtifactBrowser:
         require(_allowed_parts(path.relative_to(root).parts), "Resolved artifact path is not allowed")
         require(path.suffix == ".json" or TRACE_NAME.fullmatch(path.name) or path.name == "report.md",
                 "Unsupported artifact file")
+        self._verify_archive_file(path)
         return path
 
     def reference(self, target):
@@ -149,6 +254,7 @@ class ArtifactBrowser:
         with path.open("rb") as stream:
             content = stream.read(MAX_DOCUMENT_BYTES + 1)
         require(len(content) <= MAX_DOCUMENT_BYTES, "JSON exceeds the 8 MiB viewer limit")
+        self._verify_archive_content(path, content)
         data = _viewer_json(content.decode("utf-8"))
         return _kind(data), data
 
@@ -161,17 +267,24 @@ class ArtifactBrowser:
                 continue
             def walk_error(error):
                 warnings.append(str(error))
-            for directory, directories, files in os.walk(root, followlinks=False, onerror=walk_error):
+            inventory = ["archive-manifest.json", *sorted(self._archive_files)] if label == "runs" and self._archive is not None else None
+            entries = ((root / Path(name).parent, [], [Path(name).name]) for name in inventory) if inventory is not None else os.walk(root, followlinks=False, onerror=walk_error)
+            for directory, directories, files in entries:
                 directories[:] = sorted(name for name in directories if not name.startswith(".")
                                          and name.casefold() not in BLOCKED
                                          and not (Path(directory) / name).is_symlink()
                                          and not (Path(directory) / name).is_junction()
                                          and (Path(directory) / name).resolve().is_relative_to(root))
                 for name in sorted(files):
+                    if name == "archive-manifest.json" and (label != "runs" or self._archive is None
+                                                               or Path(directory) / name != self._archive_manifest):
+                        continue
                     if not (name.endswith(".case.json") if label == "cases" else name in RESULT_NAMES):
                         continue
                     identifier = self.reference(Path(directory) / name)
                     if identifier is None:
+                        if inventory is not None:
+                            warnings.append(f"runs:{(Path(directory) / name).relative_to(root).as_posix()}: listed artifact is unavailable or changed")
                         continue
                     if len(items) >= MAX_CATALOG_ITEMS:
                         truncated = True
@@ -180,7 +293,7 @@ class ArtifactBrowser:
                     try:
                         kind, data = self._json(self.path(identifier))
                         item.update(kind=kind, title=data.get("workflowName") or data.get("experimentName") or data.get("batchName")
-                                    or data.get("caseId") or data.get("reportId") or data.get("resumeId") or data.get("workflowId") or data.get("experimentId") or name,
+                                    or data.get("caseId") or data.get("reportId") or data.get("resumeId") or data.get("workflowId") or data.get("experimentId") or data.get("archiveId") or name,
                                     outcome=data.get("outcome"), status=data.get("status"), source=data.get("source"),
                                     time=data.get("generatedAt") or data.get("finishedAt") or data.get("evaluatedAt") or data.get("startedAt"))
                         summary = data.get("summary")
@@ -219,8 +332,7 @@ class ArtifactBrowser:
         def add(label, value, trace_directory=False):
             if not isinstance(value, str) or not value:
                 return
-            path = Path(value.replace("\\", "/"))
-            target = path if path.is_absolute() else directory / path
+            target = self._reference_target(value, directory)
             if trace_directory:
                 resolved = self._resolve_reference(target)
                 if resolved is None:
@@ -242,6 +354,11 @@ class ArtifactBrowser:
                 add(prefix + key, value.get(key))
             add(prefix + "runDir", value.get("runDir"), True)
         collect(data)
+        if "archiveBundleFormatVersion" in data:
+            add("entryPath", data.get("entryPath"))
+            for index, row in enumerate(data.get("artifacts", []) if isinstance(data.get("artifacts"), list) else [], 1):
+                if isinstance(row, dict):
+                    add(f"归档内容 {index} / path", row.get("path"))
         if "experimentAssertionPreviewFormatVersion" in data or "workflowDemoFormatVersion" in data:
             add("experimentPath", data.get("experimentPath"))
         if "experimentAssertionPreviewFormatVersion" in data:
@@ -285,7 +402,7 @@ class ArtifactBrowser:
         for index, row in enumerate(rows, 1):
             if not isinstance(row, dict) or not isinstance(row.get("evidencePath"), str) or not row["evidencePath"]:
                 continue
-            identifier = self.reference(directory / row["evidencePath"].replace("\\", "/"))
+            identifier = self.reference(self._reference_target(row["evidencePath"], directory))
             if identifier is None:
                 continue
             try:
@@ -307,7 +424,7 @@ class ArtifactBrowser:
         value = data.get("evidencePath")
         if not isinstance(value, str) or not value:
             return None
-        identifier = self.reference(directory / value.replace("\\", "/"))
+        identifier = self.reference(self._reference_target(value, directory))
         if identifier is None:
             return None
         try:
@@ -321,7 +438,8 @@ class ArtifactBrowser:
             if not all(isinstance(value, str) and value for value in (run_id, session_id, run_dir)):
                 return None
             name = hashlib.sha256(session_id.encode("utf-8")).hexdigest() + ".jsonl"
-            trace = self.reference(evidence_path.parent / run_dir.replace("\\", "/") / name)
+            directory = self._reference_target(run_dir, evidence_path.parent)
+            trace = self.reference(directory / name) if directory is not None else None
             if trace:
                 return {"id": trace, "runId": run_id, "sessionId": session_id}
         except (OSError, ValueError):
@@ -336,6 +454,7 @@ class ArtifactBrowser:
         with path.open("rb") as stream:
             content = stream.read(MAX_DOCUMENT_BYTES + 1)
         require(len(content) <= MAX_DOCUMENT_BYTES, "Event lookup exceeds the 8 MiB viewer limit; browse the trace manually")
+        self._verify_archive_content(path, content)
         matches = []
         for index, line in enumerate(io.BytesIO(content)):
             if len(line) > TRACE_LINE_BYTES:
@@ -365,19 +484,32 @@ class ArtifactBrowser:
             if focus:
                 offset = max(0, focus["line"] - 1 - min(5, limit - 1))
             rows, has_more = [], False
+            digest = hashlib.sha256() if self._archive is not None and path.is_relative_to(self.roots["runs"]) else None
+            observed_size = 0
+            def observe(content):
+                nonlocal observed_size
+                if digest is not None:
+                    digest.update(content)
+                    observed_size += len(content)
             with path.open("rb") as stream:
                 index = 0
                 while True:
                     line = stream.readline(TRACE_LINE_BYTES + 1)
                     if not line:
                         break
+                    observe(line)
                     oversized = len(line) > TRACE_LINE_BYTES
                     if oversized and not line.endswith(b"\n"):
-                        while (tail := stream.readline(TRACE_LINE_BYTES)) and not tail.endswith(b"\n"):
-                            pass
+                        while tail := stream.readline(TRACE_LINE_BYTES):
+                            observe(tail)
+                            if tail.endswith(b"\n"):
+                                break
                     if index >= offset:
                         if len(rows) == limit:
                             has_more = True
+                            if digest is not None:
+                                for tail in iter(lambda: stream.read(65536), b""):
+                                    observe(tail)
                             break
                         row = {"line": index + 1}
                         try:
@@ -387,6 +519,8 @@ class ArtifactBrowser:
                             row.update(error=str(error), preview=line[:2048].decode("utf-8", errors="replace"))
                         rows.append(row)
                     index += 1
+            if digest is not None:
+                self._verify_archive_digest(path, observed_size, digest.hexdigest())
             if focus:
                 selected = next((row.get("data") for row in rows if row["line"] == focus["line"]), None)
                 require(isinstance(selected, dict) and selected.get("runId") == run_id
@@ -402,8 +536,12 @@ class ArtifactBrowser:
             with path.open("rb") as stream:
                 content = stream.read(MAX_DOCUMENT_BYTES + 1)
             require(len(content) <= MAX_DOCUMENT_BYTES, "Markdown exceeds the 8 MiB viewer limit")
+            self._verify_archive_content(path, content)
             return {"id": identifier, "kind": "markdown", "text": content.decode("utf-8"), "links": []}
         kind, data = self._json(path)
+        if kind == "archive_bundle":
+            require(self._archive is not None and path == self._archive_manifest,
+                    "Choose the archive bundle itself as --runs-root")
         links = self._links(data, path.parent)
         result = {"id": identifier, "kind": kind, "data": data, "links": links}
         if kind == "experiment_assertion_preview":

@@ -1,5 +1,7 @@
 # 批次级安全续跑
 
+130 的[目录归档包](archive-bundles.md)可随所选实验 / 续跑链保留批次证据做搬迁后的离线分析，不支持从包内进行本页的续跑规划与执行。独立裸批次不是本版打包主入口。
+
 更新：2026 年 10 月 31 日，Asia/Shanghai。首版复用既有 batch / runner / evaluate / inspect，仅对明确未开始的项创建新批次；原批次结果、输入和已执行任务不覆盖。[052](changes/2026-10-26-052-safe-batch-resume.md) 的首版验收为合成任务与真实子进程检查；[064](changes/2026-10-29-064-live-continuation-acceptance.md) 已通过实验连续续跑验收共用批次核心，没有额外执行独立 --resume-batch CLI 的真实模型任务。领取前的 Windows 路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口

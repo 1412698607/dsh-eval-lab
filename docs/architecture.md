@@ -1,5 +1,7 @@
 # dsh-eval-lab 架构与技术取舍
 
+130 以目录清单和只读映射支持搬迁。archive_bundle 只复制选定主入口及规范关联的分析依赖，发布前重新核对闭包、冻结语义和字节；archive_paths 保留历史逻辑字符串做原身份 / 指纹核验，将实际读取限制到当前 payload。默认行为不变，归档上下文拒绝续跑规划 / 执行。--report 在包外生成新结果，HTTP 实例显式持有映射并核对实际展示的字节，不回退读取原路径。[目录包与边界](archive-bundles.md)
+
 127 的实验原因汇总由 Python diagnostics 模块消费当前复验产生的 assertionDiagnostics，严格关联原断言身份、角色、结论与直接依赖；可用性和独立问题 / 后继阻断 / 全局门禁分开保存。report 在原核心复验之后派生 samples[].assertionCauses，再通过共享 _summary 生成独立 assertionCauseSummary；原诊断角色汇总和评分字段不改。现有用例 / 配置 / 来源、匹配子集与续跑分区复用同一聚合器，不新增调度或读取原归档的写入路径。Markdown 与浏览页只展示派生摘要，并复用 evaluationPath 定位单样本。[格式与分母](configuration-reports.md#结构化原因汇总127)
 
 125 复查修复合成适配器的录制配置传递：createRecorder 应用冻结用例 recorder 的容量限制，并在其后固定任务输出目录。诊断视图将已验证的元数据按保存断言的唯一 ID 位置排列，避免元数据重排改变“首个缺证”及独立源头顺序；评分与持久化格式不变。[复查依据](changes/2026-11-09-125-workflow-diagnostics-review.md)

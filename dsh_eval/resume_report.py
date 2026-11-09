@@ -5,6 +5,7 @@ import re
 from uuid import UUID
 
 from .batch import input_fingerprint
+from .archive_paths import archive_context_active, logical_str, physical
 from .experiment_resume import _binding, _load_inputs
 from .formats import load_json, nonempty, require, validate_batch, validate_case
 from .report import _path
@@ -24,7 +25,7 @@ def _terminal(saved, version, *, allow_unfinished=False, expected_version=1):
 def _identity(saved, directory):
     value = saved["resumeId"]
     require(isinstance(value, str) and str(UUID(value)) == value
-            and Path(saved["resumeDirectory"]).resolve() == directory, "Continuation identity/directory mismatch")
+            and physical(saved["resumeDirectory"]) == directory, "Continuation identity/directory mismatch")
 
 
 def _check_files(directory, hashes, required):
@@ -56,16 +57,16 @@ def load_resume_inputs(source, *, allow_unfinished=False):
                 "counts", "planFingerprint", "batchPlanFingerprint"):
         require(_digest(resumed[key]) == _digest(plan[key]), f"Continuation/plan {key} mismatch")
     require(_digest(resumed["samplePlan"]) == _digest(plan["samples"]), "Continuation sample plan mismatch")
-    original_path = Path(plan["sourceExperimentResult"])
-    require(original_path.is_absolute(), "Source experiment must have an explicit absolute path")
-    original_path = original_path.resolve()
+    original_path = plan["sourceExperimentResult"]
+    require(archive_context_active() or Path(original_path).is_absolute(), "Source experiment must have an explicit absolute path")
+    original_path = physical(original_path)
     batch_path = _binding(load_json(original_path), original_path.parent)
-    require(str(batch_path) == plan["sourceBatchResult"], "Continuation source batch binding mismatch")
+    require(logical_str(batch_path) == plan["sourceBatchResult"], "Continuation source batch binding mismatch")
     original, manifest, cases, batch, identities, files, verification = _load_inputs(original_path, batch_path)
     require(plan["sourceExperimentId"] == original["experimentId"] and plan["sourceBatchId"] == batch["batchId"],
             "Continuation source identity mismatch")
     _check_files(original_path.parent, plan["sourceFilesSha256"], files)
-    payload = {"version": 1, "sourceExperimentResult": str(original_path), "sourceFilesSha256": plan["sourceFilesSha256"],
+    payload = {"version": 1, "sourceExperimentResult": logical_str(original_path), "sourceFilesSha256": plan["sourceFilesSha256"],
                "batchPlanFingerprint": plan["batchPlanFingerprint"], "maxSamples": plan["maxSamples"], "samples": plan["samples"]}
     require(_digest(plan["planFingerprint"]) == _digest({"version": 1, "sha256": _digest(payload)}), "Saved experiment resume fingerprint mismatch")
 
@@ -80,7 +81,7 @@ def load_resume_inputs(source, *, allow_unfinished=False):
     claim = load_json(batch_path.parent / CLAIM_NAME)
     require(isinstance(claim, dict) and type(claim.get("resumeClaimFormatVersion")) is int and claim["resumeClaimFormatVersion"] == 1
             and claim["resumeId"] == child["resumeId"]
-            and Path(claim["resumeDirectory"]).resolve() == child_path.parent, "Continuation claim binding mismatch")
+            and physical(claim["resumeDirectory"]) == child_path.parent, "Continuation claim binding mismatch")
     batch_plan = load_json(child_path.parent / "resume-plan.json")
     require(isinstance(batch_plan, dict) and type(batch_plan.get("batchResumePlanFormatVersion")) is int and batch_plan["batchResumePlanFormatVersion"] == 1
             and batch_plan.get("canResume") is True, "Invalid saved batch resume plan")
@@ -94,7 +95,7 @@ def load_resume_inputs(source, *, allow_unfinished=False):
             and len(pending) + len(reused) == len(identities), "Continuation sample count mismatch")
     require(_digest(plan["counts"]) == _digest({"original": len(identities), "reused": len(reused), "newSamples": len(pending), "blocked": 0}),
             "Continuation counts mismatch")
-    batch_payload = {"version": 1, "sourceBatchResult": str(batch_path), "sourceFilesSha256": batch_plan["sourceFilesSha256"],
+    batch_payload = {"version": 1, "sourceBatchResult": logical_str(batch_path), "sourceFilesSha256": batch_plan["sourceFilesSha256"],
                      "pendingEntryIds": pending, "reusedEntryIds": [row["entryId"] for row in reused], "maxSamples": plan["maxSamples"]}
     require(_digest(batch_plan["planFingerprint"]) == _digest({"version": 1, "sha256": _digest(batch_payload)}), "Saved batch resume fingerprint mismatch")
     # Evidence bytes may have changed: recheck those per sample, retaining their denominators.
@@ -118,9 +119,9 @@ def load_resume_inputs(source, *, allow_unfinished=False):
     new_id = new_batch["batchId"]
     require(isinstance(new_id, str) and str(UUID(new_id)) == new_id and new_id != batch["batchId"]
             and new_path == _path(child_path.parent, f"batches/{new_id}/batch-result.json")
-            and Path(new_batch["batchDirectory"]).resolve() == new_path.parent, "New batch identity/path mismatch")
+            and physical(new_batch["batchDirectory"]) == new_path.parent, "New batch identity/path mismatch")
     require((child["status"] == "running" or new_batch["status"] == child["status"]) and new_batch["failurePolicy"] == manifest["failurePolicy"]
-            and new_batch["mode"] == "sequential" and new_batch["sourceManifest"] == str(child_path.parent / "remaining.batch.json"),
+            and new_batch["mode"] == "sequential" and new_batch["sourceManifest"] == logical_str(child_path.parent / "remaining.batch.json"),
             "New batch source or scheduling mismatch")
     remaining = validate_batch(load_json(child_path.parent / "remaining.batch.json"))
     frozen = validate_batch(load_json(_path(new_path.parent, new_batch["manifestPath"])))
@@ -167,7 +168,7 @@ def load_resume_inputs(source, *, allow_unfinished=False):
             frozen_entry, remaining_entry = frozen["cases"][pending_index], remaining["cases"][pending_index]
             require(row["entryId"] == frozen_entry["entryId"] == remaining_entry["entryId"] == sample_id
                     and row["casePath"] == frozen_entry["casePath"]
-                    and row["sourceCasePath"] == str(_path(child_path.parent, remaining_entry["casePath"])), "Remaining input association mismatch")
+                    and row["sourceCasePath"] == logical_str(_path(child_path.parent, remaining_entry["casePath"])), "Remaining input association mismatch")
             for base_path, entry in ((new_path.parent, frozen_entry), (child_path.parent, remaining_entry)):
                 require(_digest(validate_case(load_json(_path(base_path, entry["casePath"])))) == _digest(expected), "New frozen input differs from original experiment")
             new_cases.append(expected)
@@ -194,11 +195,11 @@ def load_resume_inputs(source, *, allow_unfinished=False):
                 _path(base, row[key])
         sample_inputs.append(({**row, **identity}, base, selected_batch["batchId"],
                               {"executionOrigin": origin, "sourceBatchId": selected_batch["batchId"],
-                               "sourceBatchResult": str(batch_path if origin == "reused" else new_path)}))
+                               "sourceBatchResult": logical_str(batch_path if origin == "reused" else new_path)}))
     require(observed_reused == [row["entryId"] for row in reused] and pending_index == len(pending), "Incomplete continuation mapping")
     require(_digest(new_batch["inputFingerprint"]) == _digest(input_fingerprint(frozen, new_cases)), "New batch input fingerprint mismatch")
-    metadata = {"comparisonReportFormatVersion": 2, "sourceResumeResult": str(source), "resumeId": resumed["resumeId"],
-                "sourceExperimentResult": str(original_path), "batchId": None, "batchIds": [batch["batchId"], new_id],
+    metadata = {"comparisonReportFormatVersion": 2, "sourceResumeResult": logical_str(source), "resumeId": resumed["resumeId"],
+                "sourceExperimentResult": logical_str(original_path), "batchId": None, "batchIds": [batch["batchId"], new_id],
                 "resumeVerification": {"status": "verified", "planFingerprint": plan["planFingerprint"],
-                                       "batchPlanFingerprint": plan["batchPlanFingerprint"], "batchResumeResult": str(child_path)}}
+                                       "batchPlanFingerprint": plan["batchPlanFingerprint"], "batchResumeResult": logical_str(child_path)}}
     return {**original, "summary": child.get("combinedSummary")}, manifest, cases, verification, sample_inputs, metadata

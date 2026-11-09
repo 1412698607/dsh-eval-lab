@@ -2,6 +2,7 @@
 
 const $ = (id) => document.getElementById(id);
 const categories = [
+  ["archive_bundle", "归档包", "▣"],
   ["workflow_demo", "工作流演示", "▷"],
   ["experiment", "实验", "◫"], ["experiment_resume", "实验续跑", "↻"], ["report", "配置报告", "▤"],
   ["assertion_comparison", "断言对照", "⇄"],
@@ -676,6 +677,26 @@ function renderDocument(documentData) {
     return;
   }
   if (documentData.kind === "markdown") { target.append(panel("报告文本", node("pre", documentData.text))); return; }
+  if (documentData.kind === "archive_bundle") {
+    const entry = links.find((item) => item.label === "entryPath" && item.id);
+    target.append(cards([["归档 ID", data.archiveId], ["清单文件数", Array.isArray(data.files) ? data.files.length : "缺失"],
+      ["打包时模型调用", data.modelCalled === false ? "否" : "未知"], ["浏览方式", "只读"]]));
+    target.append(panel("归档内容", append(node("div"),
+      node("p", "启动时校验清单和文件摘要，打开文件时再次核对；浏览不会评分或调用模型。", "subtext"),
+      node("p", `原始路径根：${data.logicalSourceRoot ?? "缺失"}`, "subtext"),
+      table(["入口 / 内容", "保存路径", "类型"], [
+        [entry ? button("打开主入口", () => openDocument(entry.id)) : "主入口缺失或不可访问", data.entryPath, "主入口"],
+        ...(Array.isArray(data.artifacts) ? data.artifacts : []).map((row, index) => {
+          const link = links.find((item) => item.label === `归档内容 ${index + 1} / path` && item.id);
+          return [link ? button(`打开归档内容 ${index + 1}`, () => openDocument(link.id)) : "内容缺失或不可访问", row?.path,
+            categories.find(([kind]) => kind === row?.kind)?.[1] ?? display(row?.kind)];
+        }),
+      ]))));
+    const files = evidence(links);
+    if (files) target.append(files);
+    target.append(append(node("details", null, "panel padded"), node("summary", "查看保存的完整 JSON"), json(data)));
+    return;
+  }
   if (documentData.kind === "workflow_demo") {
     target.append(cards([["生成状态", display(data.status)], ["来源声明", display(data.source)],
       ["模型调用", data.modelCalled === false ? "否" : "未知"]]));
@@ -827,7 +848,7 @@ async function openDocument(id, offset = 0, remember = true, focus = null) {
     $("catalog-view").hidden = true;
     $("detail-view").hidden = false;
     $("document-path").textContent = id;
-    $("title").textContent = result.data?.workflowName || result.data?.experimentName || result.data?.batchName || result.data?.caseId || result.data?.resumeId || "证据详情";
+    $("title").textContent = result.data?.workflowName || result.data?.experimentName || result.data?.batchName || result.data?.caseId || result.data?.resumeId || result.data?.archiveId || "证据详情";
     renderDocument(result);
     message("");
     window.scrollTo(0, 0);

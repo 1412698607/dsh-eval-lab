@@ -14,7 +14,7 @@ def main(argv=None):
     selection.add_argument("--experiment", help="Version 1 repeated-trial experiment manifest")
     selection.add_argument("--resume-batch", help="Preview or continue provably unstarted entries from a coordinated batch result")
     selection.add_argument("--resume-experiment", help="Preview or continue unstarted samples from a bound experiment or explicit continuation result")
-    selection.add_argument("--report", help="Recheck a terminal experiment-result.json or experiment-resume-result.json without model calls")
+    selection.add_argument("--report", help="Recheck a terminal experiment, continuation or archive-manifest.json without model calls")
     selection.add_argument("--compare-baseline", help="Recheck an old experiment against --candidate for regressions; no model calls")
     selection.add_argument("--compare-assertions", metavar="EVIDENCE", help="Compare the frozen case.json with --candidate on one archived recording")
     selection.add_argument("--compare-experiment-assertions", metavar="RESULT", help="Preview candidate assertion rules across a completed experiment without model calls")

@@ -1,5 +1,7 @@
 # 实验级安全续跑
 
+130 的[可迁移目录包](archive-bundles.md)为原实验和续跑链增加只读离线分析入口，保留原字节和绝对路径指纹；不扩展本页规划 / 执行权限。下文原目录绑定、领取、锁与执行限制继续适用于实际续跑。
+
 更新：2026 年 11 月 1 日，Asia/Shanghai。`--resume-experiment --plan / --run` 接受原实验或已有实验续跑结果，仅为明确未开始项创建新批次。连续续跑保留完整原矩阵与所有历史证据，终态结果生成独立版本 3 报告；首轮报告保持版本 2，见 [059](changes/2026-10-28-059-continuation-chains.md)。首版预检、执行和报告分别见 [054](changes/2026-10-27-054-experiment-resume-preflight.md)、[055](changes/2026-10-27-055-experiment-resume-execution.md)、[056](changes/2026-10-27-056-experiment-resume-report.md)，Windows 领取前路径保护见 [062](changes/2026-10-29-062-resume-output-path-guard.md)。
 
 ## 入口与返回值

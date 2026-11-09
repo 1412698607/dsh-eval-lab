@@ -879,6 +879,60 @@ test("old reports omit diagnostic panels and partial summaries show missing coun
   assert.match(panel.textContent, /缺失 \/ 缺失 \/ 缺失 \/ 缺失/);
 });
 
+async function openArchive(artifact, requests = []) {
+  const get = await viewer([{ id: "runs:archive-manifest.json", kind: "archive_bundle", title: "归档索引", path: "archive-manifest.json" }], artifact, requests);
+  get("navigation").children.find((item) => item.children[1].textContent === "归档包").trigger("click");
+  findButton(get("catalog"), "归档索引").trigger("click");
+  await new Promise(setImmediate);
+  return get;
+}
+
+test("archive bundle index opens only approved primary and selected artifact links", async () => {
+  const requests = [];
+  const artifact = { kind: "archive_bundle", data: { archiveBundleFormatVersion: 1, archiveId: "archive-identity",
+    logicalSourceRoot: "C:/retired/project/runs", modelCalled: false, entryPath: "payload/experiment-result.json",
+    files: [{ path: "payload/experiment-result.json" }, { path: "payload/report/report.json" }],
+    artifacts: [{ path: "payload/experiment-result.json", kind: "experiment" },
+      { path: "payload/report/report.json", kind: "report" }] }, links: [
+      { label: "entryPath", id: "runs:payload/experiment-result.json" },
+      { label: "归档内容 1 / path", id: "runs:payload/experiment-result.json" },
+      { label: "归档内容 2 / path", id: "runs:payload/report/report.json" },
+    ] };
+  const get = await openArchive((path) => path.includes("id=runs%3Aarchive-manifest.json") ? artifact
+    : { kind: "experiment", links: [], data: { experimentName: "归档内实验", status: "completed" } }, requests);
+  assert.equal(get("title").textContent, "archive-identity");
+  const content = section(get, "归档内容");
+  assert.match(get("detail").textContent, /清单文件数 2/);
+  assert.match(get("detail").textContent, /打包时模型调用 否/);
+  assert.match(get("detail").textContent, /浏览方式 只读/);
+  assert.match(content.textContent, /配置报告/);
+  findButton(content, "打开主入口").trigger("click");
+  await new Promise(setImmediate);
+  assert.ok(requests.at(-1).includes("id=runs%3Apayload%2Fexperiment-result.json"));
+  get("back").trigger("click");
+  await new Promise(setImmediate);
+  findButton(section(get, "归档内容"), "打开归档内容 2").trigger("click");
+  await new Promise(setImmediate);
+  assert.ok(requests.at(-1).includes("id=runs%3Apayload%2Freport%2Freport.json"));
+  assert.ok(requests.every((path) => path.startsWith("/api/catalog") || path.startsWith("/api/document?")));
+});
+
+test("archive origins and paths are literal text and inaccessible links stay unavailable", async () => {
+  const html = "<img src=x onerror=bad()>";
+  const artifact = { kind: "archive_bundle", data: { archiveBundleFormatVersion: 1, archiveId: "archive",
+    logicalSourceRoot: "C:/" + html, entryPath: "payload/" + html, artifacts: [{ path: html, kind: "report" }] },
+    links: [{ label: "entryPath", id: null }, { label: "归档内容 1 / path", id: null }] };
+  const get = await openArchive(artifact), content = section(get, "归档内容");
+  assert.ok(literalText(content).includes(html));
+  assert.equal(descendants(content, "img").length, 0);
+  assert.equal(findButton(content, "打开主入口"), null);
+  assert.equal(findButton(content, "打开归档内容 1"), null);
+  assert.match(content.textContent, /主入口缺失或不可访问/);
+  assert.match(content.textContent, /内容缺失或不可访问/);
+  assert.match(get("detail").textContent, /清单文件数 缺失/);
+  assert.match(get("detail").textContent, /打包时模型调用 未知/);
+});
+
 function causeSample(required = {}, diagnostic = {}) {
   const role = (value) => ({ declaredAssertions: 1, rootIssues: [], blockedAssertions: [], globalGates: [], ...value });
   return { assertionCausesFormatVersion: 1, status: "available", byRole: { required: role(required), diagnostic: role(diagnostic) } };

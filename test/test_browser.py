@@ -1,4 +1,5 @@
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 import hashlib
 import http.client
 import io
@@ -9,6 +10,7 @@ import threading
 import unittest
 from unittest.mock import patch
 from urllib.parse import quote, urlsplit
+from uuid import uuid4
 
 from dsh_eval.__main__ import main
 from dsh_eval.browser import ArtifactBrowser, create_server, TRACE_LINE_BYTES, MAX_DOCUMENT_BYTES
@@ -38,6 +40,232 @@ class BrowserTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
         return path
+
+    def archive(self):
+        preview, preview_path, trace_id = self.preview()
+        primary = Path(preview["experimentPath"])
+        report_path = self.write(self.runs / "report/report.json", {"comparisonReportFormatVersion": 1,
+            "reportId": "report-archive", "sourceExperimentResult": str(primary), "samples": [
+                {"sampleId": "sample-1", "evaluationPath": str(self.runs / "one/evaluation.json"),
+                 "sourceEvidencePath": str(self.runs / "one/evidence.json")} ]})
+        (report_path.parent / "report.md").write_text("# Saved report\n", encoding="utf-8")
+        bundle = self.directory / "bundle"
+        bundle.mkdir()
+        records = []
+        for source in sorted(self.runs.rglob("*")):
+            if not source.is_file():
+                continue
+            name = "payload/" + source.relative_to(self.runs).as_posix()
+            target = bundle / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            content = source.read_bytes()
+            target.write_bytes(content)
+            records.append({"path": name, "size": len(content), "sha256": hashlib.sha256(content).hexdigest()})
+        def member(path):
+            return "payload/" + path.relative_to(self.runs).as_posix()
+        manifest = {"archiveBundleFormatVersion": 1, "archiveId": str(uuid4()),
+            "createdAt": datetime.now(timezone.utc).isoformat(), "logicalSourceRoot": str(self.runs),
+            "entryPath": member(primary), "artifacts": [
+                {"path": member(primary), "kind": "experiment"}, {"path": member(report_path), "kind": "report"},
+                {"path": member(preview_path), "kind": "experiment_assertion_preview"},
+                {"path": "payload/comparison/assertion-comparison.json", "kind": "assertion_comparison"}],
+            "files": records, "modelCalled": False}
+        self.write(bundle / "archive-manifest.json", manifest)
+        return bundle, manifest, "runs:payload/" + trace_id.split(":", 1)[1]
+
+    def test_archive_index_and_links_survive_source_removal_without_rescoring(self):
+        bundle, manifest, trace_id = self.archive()
+        self.assertTrue(self.runs.is_relative_to(self.directory))
+        self.runs.rename(self.directory / "source-hidden")
+        self.assertTrue(bundle.is_relative_to(self.directory))
+        relocated = self.directory / "relocated"
+        bundle.rename(relocated)
+        bundle = relocated
+        before = self.digest()
+        with patch("dsh_eval.evaluate.evaluate", side_effect=AssertionError("browse cannot score")):
+            browser = ArtifactBrowser(self.cases, bundle)
+            catalog = browser.catalog()
+            self.assertTrue({"archive_bundle", "experiment", "report", "assertion_comparison", "experiment_assertion_preview"}
+                            <= {item["kind"] for item in catalog["items"]})
+            index = browser.document("runs:archive-manifest.json")
+            self.assertEqual(index["data"], manifest)
+            self.assertEqual(next(link["id"] for link in index["links"] if link["label"] == "entryPath"),
+                             "runs:" + manifest["entryPath"])
+            report = browser.document("runs:payload/report/report.json")
+            self.assertEqual({row["label"]: row["id"] for row in report["links"]}["1 / evaluationPath"],
+                             "runs:payload/one/evaluation.json")
+            preview = browser.document("runs:payload/preview/experiment-assertion-preview.json")
+            self.assertEqual(preview["sampleEvidence"][0]["id"], "runs:payload/one/evidence.json")
+            self.assertEqual(preview["sampleEvidence"][0]["assertionTrace"]["id"], trace_id)
+            comparison = browser.document("runs:payload/comparison/assertion-comparison.json")
+            self.assertEqual(comparison["assertionTrace"]["id"], trace_id)
+            evaluation = browser.document("runs:payload/one/evaluation.json")
+            self.assertEqual(evaluation["assertionTrace"]["id"], trace_id)
+            focused = browser.document(trace_id, seq=110, run_id="recording", session_id="diagnostic-session")
+            self.assertEqual((focused["focus"]["seq"], focused["focus"]["line"]), (110, 11))
+        self.assertEqual(self.digest(), before)
+
+    def test_archive_server_threads_use_the_explicit_instance_mapping(self):
+        bundle, _, trace_id = self.archive()
+        self.runs.rename(self.directory / "source-hidden")
+        self.runs = bundle
+        self.server()
+        status, _, body = self.request("/api/document?id=runs:payload/preview/experiment-assertion-preview.json")
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertEqual(result["sampleEvidence"][0]["assertionTrace"]["id"], trace_id)
+        query = "/api/document?id=" + quote(trace_id) + "&seq=110&runId=recording&sessionId=diagnostic-session"
+        status, _, body = self.request(query)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["focus"]["line"], 11)
+
+    def test_archive_unlisted_aliases_never_fall_back_to_an_existing_source(self):
+        bundle, _, _ = self.archive()
+        browser = ArtifactBrowser(self.runs, bundle)
+        original = self.runs
+        unlisted = self.write(original / "unlisted/evaluation.json", self.evaluation)
+        added = self.write(bundle / "payload/unlisted/evaluation.json", self.evaluation)
+        resolve = Path.resolve
+        def guarded(path, *args, **kwargs):
+            if path.is_relative_to(original):
+                raise AssertionError("Original filesystem must not be resolved")
+            return resolve(path, *args, **kwargs)
+        with patch.object(Path, "resolve", new=guarded):
+            self.assertEqual(browser.reference(original / "one/evaluation.json"), "runs:payload/one/evaluation.json")
+            self.assertIsNone(browser.reference(unlisted))
+            self.assertIsNone(browser.reference(added))
+            self.assertIsNone(browser.reference(original / "../outside/evaluation.json"))
+        self.assertFalse(any(item["path"].endswith("unlisted/evaluation.json")
+                             for item in browser.catalog()["items"] if item["id"].startswith("runs:")))
+
+    def test_archive_foreign_windows_logical_paths_are_mapped_before_native_join(self):
+        bundle, manifest, _ = self.archive()
+        manifest["logicalSourceRoot"] = "Z:\\retired\\source"
+        self.write(bundle / "archive-manifest.json", manifest)
+        browser = ArtifactBrowser(self.cases, bundle)
+        self.assertEqual(browser.reference("Z:\\retired\\source\\one\\evaluation.json"),
+                         "runs:payload/one/evaluation.json")
+        document = browser.document("runs:archive-manifest.json")
+        self.assertTrue(any(row["id"] == "runs:" + manifest["entryPath"] for row in document["links"]))
+        self.assertIsNone(browser.reference("Z:\\retired\\source\\unlisted.json"))
+
+    def test_archive_manifest_and_payload_tampering_fail_before_view_reads(self):
+        bundle, manifest, _ = self.archive()
+        browser = ArtifactBrowser(self.cases, bundle)
+        report = bundle / "payload/report/report.json"
+        content = report.read_bytes()
+        changed = content.replace(b'report-archive', b'report-Archive')
+        self.assertEqual(len(content), len(changed))
+        self.assertNotEqual(content, changed)
+        report.write_bytes(changed)
+        with self.assertRaisesRegex(ValueError, "digest changed"):
+            browser.document("runs:payload/report/report.json")
+        with self.assertRaisesRegex(ValueError, "missing or changed"):
+            ArtifactBrowser(self.cases, bundle)
+        report.write_bytes(content)
+        path = bundle / "archive-manifest.json"
+        path.write_bytes(path.read_bytes() + b" ")
+        with self.assertRaisesRegex(ValueError, "manifest changed"):
+            browser.document("runs:archive-manifest.json")
+        with self.assertRaisesRegex(ValueError, "manifest changed"):
+            browser.document("runs:payload/report/report.json")
+        with self.assertRaisesRegex(ValueError, "manifest changed"):
+            browser.document("runs:" + manifest["entryPath"])
+
+    def test_archive_manifest_remains_accessible_inside_its_original_logical_root(self):
+        bundle, manifest, _ = self.archive()
+        target = self.runs / "packages/bundle"
+        target.parent.mkdir()
+        self.assertTrue(bundle.is_relative_to(self.directory) and target.is_relative_to(self.directory))
+        bundle.rename(target)
+        browser = ArtifactBrowser(self.cases, target)
+        document = browser.document("runs:archive-manifest.json")
+        self.assertEqual(document["data"], manifest)
+        self.assertTrue(any(row["id"] == "runs:" + manifest["entryPath"] for row in document["links"]))
+        self.assertEqual(browser.document("runs:" + manifest["entryPath"])["kind"], "experiment")
+        self.assertTrue(any(row["kind"] == "archive_bundle" for row in browser.catalog()["items"]))
+
+    def test_archive_json_rejects_bytes_changed_between_path_check_and_json_read(self):
+        bundle, manifest, _ = self.archive()
+        browser = ArtifactBrowser(self.cases, bundle)
+        read = browser._json
+        def changed(path):
+            path.write_bytes(path.read_bytes() + b" ")
+            return read(path)
+        with patch.object(browser, "_json", side_effect=changed), self.assertRaisesRegex(ValueError, "changed"):
+            browser.document("runs:" + manifest["entryPath"])
+
+    def test_archive_markdown_rejects_bytes_changed_after_path_check(self):
+        bundle, _, _ = self.archive()
+        browser = ArtifactBrowser(self.cases, bundle)
+        resolve = browser.path
+        def changed(identifier):
+            path = resolve(identifier)
+            path.write_bytes(path.read_bytes() + b"changed\n")
+            return path
+        with patch.object(browser, "path", side_effect=changed), self.assertRaisesRegex(ValueError, "changed"):
+            browser.document("runs:payload/report/report.md")
+
+    def test_archive_trace_pages_and_focus_reject_bytes_changed_after_path_check(self):
+        bundle, _, trace_id = self.archive()
+        browser = ArtifactBrowser(self.cases, bundle)
+        target = bundle / trace_id.split(":", 1)[1]
+        content = target.read_bytes()
+        changed_content = content.replace(b"assistant/message", b"assistant/changed", 1)
+        self.assertEqual(len(content), len(changed_content))
+        resolve = browser.path
+        def changed(identifier):
+            path = resolve(identifier)
+            path.write_bytes(changed_content)
+            return path
+        for focus in ({}, {"seq": 110, "run_id": "recording", "session_id": "diagnostic-session"}):
+            with self.subTest(focus=focus):
+                target.write_bytes(content)
+                with patch.object(browser, "path", side_effect=changed), self.assertRaisesRegex(ValueError, "digest changed"):
+                    browser.document(trace_id, limit=1, **focus)
+
+    def test_archive_large_trace_pagination_hashes_next_line_and_oversized_tails(self):
+        bundle, manifest, trace_id = self.archive()
+        target = bundle / trace_id.split(":", 1)[1]
+        first, rest = target.read_bytes().split(b"\n", 1)
+        oversized = json.dumps({"event": {"type": "padding", "data": "x" * (TRACE_LINE_BYTES * 2)}}).encode() + b"\n"
+        padding = json.dumps({"event": {"type": "padding", "data": "x" * 32768}}).encode() + b"\n"
+        content = first + b"\n" + oversized + rest + padding * (MAX_DOCUMENT_BYTES // len(padding) + 1)
+        self.assertGreater(len(content), MAX_DOCUMENT_BYTES)
+        target.write_bytes(content)
+        row = next(item for item in manifest["files"] if item["path"] == trace_id.split(":", 1)[1])
+        row.update(size=len(content), sha256=hashlib.sha256(content).hexdigest())
+        self.write(bundle / "archive-manifest.json", manifest)
+        browser = ArtifactBrowser(self.cases, bundle)
+        page = browser.document(trace_id, limit=1)
+        self.assertEqual((page["rows"][0]["data"]["event"]["seq"], page["nextOffset"]), (100, 1))
+        page = browser.document(trace_id, offset=1, limit=1)
+        self.assertIn("64 KiB", page["rows"][0]["error"])
+        self.assertEqual(page["nextOffset"], 2)
+        with self.assertRaisesRegex(ValueError, "lookup exceeds"):
+            browser.document(trace_id, seq=110, run_id="recording", session_id="diagnostic-session")
+
+    def test_archive_nested_manifest_is_not_automatically_loaded_or_catalogued(self):
+        bundle, _, _ = self.archive()
+        browser = ArtifactBrowser(self.cases, self.directory)
+        self.assertFalse(any(row["kind"] == "archive_bundle" for row in browser.catalog()["items"]))
+        with self.assertRaisesRegex(ValueError, "bundle itself"):
+            browser.document("runs:bundle/archive-manifest.json")
+
+    def test_archive_listed_payload_replaced_by_link_is_not_read(self):
+        bundle, _, _ = self.archive()
+        browser = ArtifactBrowser(self.cases, bundle)
+        target = bundle / "payload/report/report.json"
+        outside = self.write(self.directory / "outside/report.json", {"comparisonReportFormatVersion": 1})
+        self.assertTrue(target.is_relative_to(self.directory))
+        target.unlink()
+        try:
+            target.symlink_to(outside)
+        except OSError as error:
+            self.skipTest(f"Symlink creation unavailable: {error}")
+        self.assertIsNone(browser.reference(target))
+        with self.assertRaises(ValueError):
+            browser.document("runs:payload/report/report.json")
 
     def diagnostic_trace(self, events=None):
         session = "diagnostic-session"

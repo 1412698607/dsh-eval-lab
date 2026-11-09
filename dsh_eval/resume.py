@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from .batch import _cleanup_confirmed, _now, input_fingerprint, run_batch
 from .batch_lock import batch_lock
+from .archive_paths import archive_context_active
 from .evaluate import evaluate
 from .formats import load_json, nonempty, require, validate_batch
 from .metrics import summarize
@@ -160,6 +161,7 @@ def _load_plan(source, max_samples):
 
 
 def plan_batch_resume(result_path, *, max_samples=None):
+    require(not archive_context_active(), "Archive relocation is read-only; continuation planning is unsupported")
     source = Path(result_path).resolve()
     with batch_lock(source.parent):
         return _load_plan(source, max_samples)[0]
@@ -167,6 +169,7 @@ def plan_batch_resume(result_path, *, max_samples=None):
 
 def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
                  expected_plan_sha256=None, stop_after=None, stop_after_tokens=None):
+    require(not archive_context_active(), "Archive relocation is read-only; continuation execution is unsupported")
     require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(stop_after_tokens is None or type(stop_after_tokens) is int and stop_after_tokens > 0,
             "stop_after_tokens must be a positive integer")
@@ -184,6 +187,7 @@ def resume_batch(result_path, runs_root=None, modules_dir=None, cancel_after_str
 def _execute_resume(source, plan, saved, cases, runs_root, modules_dir, cancel_after_stream, *, resume_id=None, _lock_stack=None,
                     stop_after=None, stop_after_tokens=None):
     """Execute a verified plan while the caller retains the source batch lock."""
+    require(not archive_context_active(), "Archive relocation is read-only; continuation execution is unsupported")
     _check_resume_output_root(runs_root)
     resume_id = resume_id or str(uuid4())
     directory = Path(runs_root or ROOT / "runs" / "resumes").resolve() / resume_id

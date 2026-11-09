@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from .batch import _now
 from .batch_lock import batch_lock
+from .archive_paths import archive_context_active, logical_str, physical
 from .experiment import _check_order, _expand_samples
 from .formats import fields, load_json, require, validate_batch, validate_case, validate_experiment
 from .report import _load_plan as load_terminal_experiment, _verify_plan_input
@@ -34,7 +35,7 @@ def _load_inputs(source, batch_source):
     require(type(saved.get("experimentResultFormatVersion")) is int and saved["experimentResultFormatVersion"] == 1,
             "Unsupported experiment result format")
     require(isinstance(saved.get("experimentId"), str) and str(UUID(saved["experimentId"])) == saved["experimentId"]
-            and Path(saved["experimentDirectory"]).resolve() == directory, "Experiment identity/directory mismatch")
+            and physical(saved["experimentDirectory"]) == directory, "Experiment identity/directory mismatch")
     require(saved["status"] in ("running", "completed", "stopped", "error", "interrupted"),
             "Unsupported experiment scheduling state")
     manifest_path = _path(directory, saved["manifestPath"])
@@ -51,7 +52,7 @@ def _load_inputs(source, batch_source):
     require(plan_verification["status"] == "verified", "Experiment resume requires a verified saved plan input")
     batch_saved = load_json(batch_source)
     require(batch_saved["batchId"] == saved["batchBinding"]["batchId"], "Reserved/observed batch identity mismatch")
-    require(_digest(batch_saved["sourceManifest"]) == _digest(str(directory / "expanded.batch.json")),
+    require(_digest(batch_saved["sourceManifest"]) == _digest(logical_str(directory / "expanded.batch.json")),
             "Batch does not originate from the experiment's expansion")
     require(isinstance(batch_saved["entries"], list) and len(batch_saved["entries"]) == count, "Experiment/batch sample count mismatch")
     expanded_path = directory / "expanded.batch.json"
@@ -76,7 +77,7 @@ def _load_inputs(source, batch_source):
                 "Expanded sample/batch identity or configuration mismatch")
         expanded_case_path = _path(directory, entry["casePath"])
         frozen_case_path = _path(batch_source.parent, row["casePath"])
-        require(Path(row["sourceCasePath"]).resolve() == expanded_case_path, "Sample expansion source path mismatch")
+        require(physical(row["sourceCasePath"]) == expanded_case_path, "Sample expansion source path mismatch")
         require(_digest(load_json(expanded_case_path)) == _digest(case)
                 and _digest(load_json(frozen_case_path)) == _digest(case),
                 "Expanded/frozen sample differs from original plan")
@@ -127,6 +128,7 @@ def _load_plan(source, batch_source, max_samples):
 
 
 def plan_experiment_resume(result_path, *, max_samples=None):
+    require(not archive_context_active(), "Archive relocation is read-only; continuation planning is unsupported")
     require(max_samples is None or type(max_samples) is int and max_samples > 0, "max_samples must be a positive integer")
     source = Path(result_path).resolve()
     if "experimentResumeResultFormatVersion" in load_json(source):
@@ -140,6 +142,7 @@ def plan_experiment_resume(result_path, *, max_samples=None):
 
 def resume_experiment(result_path, runs_root=None, modules_dir=None, cancel_after_stream=False, *, max_samples=None,
                       expected_plan_sha256=None, stop_after=None, stop_after_tokens=None):
+    require(not archive_context_active(), "Archive relocation is read-only; continuation execution is unsupported")
     require(stop_after is None or type(stop_after) is int and stop_after > 0, "stop_after must be a positive integer")
     require(stop_after_tokens is None or type(stop_after_tokens) is int and stop_after_tokens > 0,
             "stop_after_tokens must be a positive integer")

@@ -568,14 +568,53 @@ def _load_report_inputs(source):
     return saved, manifest, cases, plan_verification, sample_inputs, metadata
 
 
-def generate_report(experiment_result_path, reports_root=None):
-    source = Path(experiment_result_path).resolve()
+def _relocated_metadata(metadata):
+    from .archive_paths import archive_context_active, physical
+    if not archive_context_active():
+        return metadata
+    result = dict(metadata)
+    for key in ("sourceExperimentResult", "sourceResumeResult", "sourceBatchResult"):
+        if key in result:
+            result[key] = str(physical(result[key]))
+    if "batchResultPaths" in result:
+        result["batchResultPaths"] = [str(physical(path)) for path in result["batchResultPaths"]]
+    if "resumeChain" in result:
+        result["resumeChain"] = [{**row, "resultPath": str(physical(row["resultPath"]))} for row in result["resumeChain"]]
+    if "resumeVerification" in result:
+        result["resumeVerification"] = dict(result["resumeVerification"])
+        if "batchResumeResult" in result["resumeVerification"]:
+            result["resumeVerification"]["batchResumeResult"] = str(physical(result["resumeVerification"]["batchResumeResult"]))
+    return result
+
+
+def generate_report(experiment_result_path, reports_root=None, *, _archive_bundle=None):
+    source = Path(os.path.abspath(experiment_result_path))
+    if source.is_dir() or source.name == "archive-manifest.json":
+        from .archive_bundle import load_archive, verify_archive
+        from .archive_paths import archive_read_context
+        manifest_path = source / "archive-manifest.json" if source.is_dir() else source
+        manifest, resolver = load_archive(manifest_path)
+        manifest_path = resolver.payload_root.parent / "archive-manifest.json"
+        manifest_bytes = manifest_path.read_bytes()
+        require(_same(parse_json(manifest_bytes.decode("utf-8")), manifest), "Archive manifest changed while loading")
+        manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
+        verify_archive(manifest_path)
+        require(hashlib.sha256(manifest_path.read_bytes()).hexdigest() == manifest_digest,
+                "Archive manifest changed during semantic verification")
+        output = Path(reports_root or ROOT / "runs" / "reports").resolve()
+        require(not output.is_relative_to(manifest_path.parent), "Archive reports must be written outside the immutable bundle")
+        info = {"archiveId": manifest["archiveId"], "manifestPath": str(manifest_path),
+                "manifestSha256": manifest_digest, "verifiedFiles": len(manifest["files"])}
+        with archive_read_context(resolver):
+            return generate_report(manifest_path.parent / manifest["entryPath"], output, _archive_bundle=info)
+    source = source.resolve()
     saved, manifest, cases, plan_verification, sample_inputs, metadata = _load_report_inputs(source)
+    metadata = _relocated_metadata(metadata)
     rows, evaluations = [], []
     for sample, base, batch_id, provenance in sample_inputs:
         expected = {**cases[sample["caseEntryId"]], "configRef": sample["requestedConfiguration"]}
         row, fresh = _recheck(sample, expected, base, batch_id)
-        row.update(provenance)
+        row.update(_relocated_metadata(provenance))
         if fresh is not None:
             row["evaluationPath"] = f"evaluations/{len(rows) + 1:06}.json"
             evaluations.append((row["evaluationPath"], fresh))
@@ -631,6 +670,14 @@ def generate_report(experiment_result_path, reports_root=None):
         report["limitations"].append("跨批次报告只读取所选续跑结果及其显式祖先链；不合并任意实验或自动查找后续续跑。"
                                      if metadata.get("comparisonReportFormatVersion") == 3 else
                                      "跨批次报告只整合一个显式实验续跑及其原批次 / 新批次；不合并任意实验或自动跟随再次续跑。")
+    if _archive_bundle is not None:
+        from .archive_bundle import load_archive
+        manifest_path = Path(_archive_bundle["manifestPath"])
+        require(hashlib.sha256(manifest_path.read_bytes()).hexdigest() == _archive_bundle["manifestSha256"],
+                "Archive manifest changed while generating the report")
+        load_archive(manifest_path)
+        report["archiveBundle"] = dict(_archive_bundle)
+        report["limitations"].append("报告从逐文件清单核验的只读归档生成，逻辑路径仅用于历史身份与指纹校验；不支持从搬迁归档调度续跑。")
     # All input checks and fresh evaluations finish before a new output directory is created.
     (directory / "evaluations").mkdir(parents=True, exist_ok=False)
     for name, fresh in evaluations:
