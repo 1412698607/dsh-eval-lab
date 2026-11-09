@@ -45,3 +45,37 @@ Windows、Python3.12.0，允许真实子进程与链接的环境。
 ## 限制与后续
 
 当前实际验证限定Windows；链接和进程检查需要环境允许真实操作，受限时记录限制而不以mock替代。没有新增真实模型任务或修改历史真实轨迹。原比较浏览页面及整体交付整理仍属于后续批次，当前不扩大范围。
+
+## 实现交付与云端验收补记
+
+135与本次复查的13份公开文件已共同提交推送为 `96d6ae3b0f89361d7f4dfbebe2ca7a8f51078979`。以上未提交 / 待验证表述保留提交前状态。本节仅补充已实际核对的云端结果，不覆盖135本地结果或初次测试的限制。
+
+按完整head_sha筛选，只有本分支push的确定性工作流；核对run / job的head_sha及attempt。[CI运行](https://github.com/1412698607/dsh-eval-lab/actions/runs/42622636151) · [作业](https://github.com/1412698607/dsh-eval-lab/actions/runs/42622636151/job/129178390593)
+
+该次云端日志环境为Windows Server2025、Node.js v24.22.2、CPython3.12.10，与上文本地版本分别记录。
+
+| 项目 | 已核对结果 |
+| --- | --- |
+| run / job / attempt | 42622636151 / 129178390593 / 1 |
+| 运行、作业及步骤 | completed / success，全部17步成功，含新增演示、摘要发布和上传 |
+| 实际云端测试日志 | 644项Python / 417.607秒，OK，无跳过；154项Node通过，0失败 / 取消 / 跳过；45文件JS语法通过 |
+| 演示 | 实际退出0，场景比较0 / 1 / 2，128份源文件比较前后摘要保持 |
+| 其他原步骤 | compileall、原合成示例与工作流生成成功 |
+
+### 摘要与实际产物
+
+摘要发布步骤成功；正式下载ZIP内的summary.md为908字节UTF8，三个场景的退出码、覆盖2/2、2/2、1/2，以及“示例成功不等于所有任务通过”的说明均正确。公开未登录页面实际可见本次成功状态、1件12KB产物及digest，但未显示自定义作业摘要。本次据发布步骤和下载文本核对摘要，不将网页渲染记为已验证。
+
+| 产物项目 | 实际结果 |
+| --- | --- |
+| artifact ID / 名称 | 13678010428 / synthetic-regression-gates-42622636151-1，本run无其他产物 |
+| 绑定 | workflow_run.id=42622636151，分支与完整head_sha匹配 |
+| ZIP大小与摘要 | 12288字节；SHA-256为189a7b1f49de4ee9af6fb2569d5f4aa836252ada927421cc7afddc988f5f2ddf，与GitHub digest完全一致 |
+| 保存范围 | 精确五个平面文件：incomplete.json、index.json、no-regression.json、regression.json、summary.md，无目录或额外成员 |
+| 三份比较 | 正常compared、modelCalled=false，原退出0 / 1 / 2；覆盖不足保留regression=1、unavailable=1 |
+| 索引 | source=synthetic、modelCalled=false、sourceArchivesUnchanged=true，128条格式正确的SHA-256声明 |
+| 有效期 | 非expired，创建2026-11-09 21:14:41至过期2026-11-16 21:14:41（Asia/Shanghai），精确7天 |
+
+通过正式GitHub下载工具取得ZIP并审计实际字节，摘要与API元数据匹配。下载包不含原始源归档，因此128条源摘要在下载审计中只验证数量 / 格式及声明，未独立重读遗漏的源字节；源不变由CI生成器本次比较前后核对，不混为同一证明。ZIP与审计副本保留在忽略目录，不加入公开提交。
+
+本节资料更新的补丁检查及四份文档394个相对文件链接目标检查通过，不重跑本地代码测试；后续资料提交的CI与产物仍按新SHA独立核对，不继承实现提交结果。
