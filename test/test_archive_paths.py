@@ -14,7 +14,7 @@ class ArchivePathsTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="dsh-archive-paths-")
         self.addCleanup(temporary.cleanup)
-        self.base = Path(temporary.name)
+        self.base = Path(temporary.name).resolve()
         self.payload = self.base / "bundle/payload"
         self.payload.mkdir(parents=True)
         self.names = ["experiment/experiment-result.json", "experiment/batches/one/.batch-resume-claim.json",
@@ -40,6 +40,28 @@ class ArchivePathsTests(unittest.TestCase):
         target = resolver.physical("/retired/experiment-data/" + self.names[0])
         self.assertEqual(target, self.payload / self.names[0])
         self.assertEqual(resolver.logical_str(target), "/retired/experiment-data/" + self.names[0])
+
+    @unittest.skipUnless(os.name == "nt", "Windows short temporary path behavior")
+    def test_fixture_paths_are_canonical_when_the_child_temp_root_uses_an_actual_short_alias(self):
+        import ctypes
+        import sys
+        temporary_root = self.base / "long temporary directory for archive alias"
+        temporary_root.mkdir()
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = ctypes.windll.kernel32.GetShortPathNameW(str(temporary_root), buffer, len(buffer))
+        if not length or length >= len(buffer) or Path(buffer.value) == temporary_root:
+            self.skipTest("The temporary volume does not provide an actual 8.3 alias")
+        self.assertEqual(Path(buffer.value).resolve(), temporary_root)
+        # Run every other path test in a fresh interpreter; omitting this one avoids recursion.
+        selected = ["test_archive_paths.ArchivePathsTests." + name
+                    for name in unittest.defaultTestLoader.getTestCaseNames(type(self)) if name != self._testMethodName]
+        root = Path(__file__).resolve().parents[1]
+        existing = os.environ.get("PYTHONPATH")
+        environment = {**os.environ, "TMP": buffer.value, "TEMP": buffer.value,
+                       "PYTHONPATH": str(root / "test") + (os.pathsep + existing if existing else "")}
+        child = subprocess.run([sys.executable, "-m", "unittest", *selected], cwd=root, env=environment,
+                               capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(child.returncode, 0, child.stderr + child.stdout)
 
     def test_required_hidden_claim_is_allowed_but_other_hidden_or_private_members_are_rejected(self):
         claim = self.payload / self.names[1]

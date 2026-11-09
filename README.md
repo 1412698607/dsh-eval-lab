@@ -1,6 +1,8 @@
 # dsh-eval-lab
 
-面向 DeepSeek Harness 的 Agent 行为回归测试项目。第一阶段实现实时会话轨迹记录，为后续测试用例、确定性断言和版本对比提供输入。
+面向 DeepSeek Harness 的 Agent 行为回归评测项目，提供轨迹记录、受控工具环境、版本化用例、重复实验、离线报告和可迁移只读归档。
+
+[当前能力与验证矩阵](docs/capabilities.md)汇总实现范围、最短复现入口、历史真实证据和未覆盖边界。
 
 在新 checkout 中运行可浏览的合成工作流，需要 Python 3.12+ 和 Node.js 22.8+，无需安装 Harness 或配置模型：
 

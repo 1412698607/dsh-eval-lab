@@ -36,11 +36,11 @@ python -m dsh_eval --report runs/packages/example/archive-manifest.json --report
 python -m dsh_eval --browse --runs-root runs/packages/example
 ```
 
-verify 核对清单、所有成员的大小 / SHA-256、精确依赖闭包，以及原冻结输入、续跑身份与指纹绑定，返回 taskEvaluationPerformed=false。它没有执行 Node inspect 或任务断言，不能把 verified 当作任务通过。
+verify 核对清单、所有成员的大小 / SHA-256、精确依赖闭包，以及原冻结输入、续跑身份与可重算的已声明指纹绑定，返回 taskEvaluationPerformed=false。旧普通实验缺少 planInputPath 时，包可 verified，但新报告的 planVerification 仍为 unverified，保留原覆盖未知状态。它没有执行 Node inspect 或任务断言，不能把包 verified 当作任务通过或自动升级全部历史计划覆盖。
 
 --report 可以选择包目录或 archive-manifest.json。它先核验包，再使用现有评分器执行 fresh inspect 和逐项断言；新的报告、原因摘要和评测写入包外的新 UUID 目录。--reports-root 位于包内时拒绝。新报告保留归档来源信息，已知关联路径使用当前包内位置，历史路径字符串只用于原身份和指纹校验。
 
-浏览时显式选择包根，页面提供“归档包”索引、主入口和选定产物；原报告 / 预览 / 对照及任务原事件均通过清单映射定位。启动时核对清单与成员，打开成员时再次核对清单和该文件摘要；浏览仍只显示保存结论，不重新评分。缺失、额外成员、篡改、未列明原路径和链接 / junction 都拒绝，不修补旧文件。嵌套在普通 runs 根下的包不自动启用映射，应明确把该包设为 --runs-root。
+浏览时显式选择包根，页面提供“归档包”索引、主入口和选定产物；原报告 / 预览 / 对照及任务原事件均通过清单映射定位。启动时核对清单与成员，打开成员时再次核对清单和该文件摘要；浏览仍只显示保存结论，不重新评分。缺失、额外成员、篡改、未列明原路径以及包内成员 / 引用链上的链接或 junction 都拒绝，不修补旧文件。显式浏览根的拼写别名沿用普通根配置规则，可解析到同一有效包；导出与CLI包核验对所选路径链仍执行无链接检查。嵌套在普通 runs 根下的包不自动启用映射，应明确把该包设为 --runs-root。
 
 报告生成后可按普通报告方式浏览新报告，配置根须同时覆盖新报告与其包内源文件。新报告位于包外，其自身不是原清单成员；再次搬迁时，原目录包仍可独立核验和重新生成报告。
 
