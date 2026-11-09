@@ -38,3 +38,22 @@ jobs:
         run: npm.cmd run demo:eval
       - name: Generate and recheck synthetic workflow
         run: npm.cmd run demo:workflow -- --generate-only
+      - name: Check synthetic baseline regression gates
+        run: npm.cmd run demo:regression -- --output-dir runs/ci-regression-demo
+      - name: Publish synthetic regression gate summary
+        if: ${{ always() && hashFiles('runs/ci-regression-demo/artifacts/summary.md') != '' }}
+        run: Get-Content -LiteralPath 'runs/ci-regression-demo/artifacts/summary.md' -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+      - name: Upload synthetic regression gate results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: synthetic-regression-gates-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            runs/ci-regression-demo/artifacts/no-regression.json
+            runs/ci-regression-demo/artifacts/regression.json
+            runs/ci-regression-demo/artifacts/incomplete.json
+            runs/ci-regression-demo/artifacts/summary.md
+            runs/ci-regression-demo/artifacts/index.json
+          retention-days: 7
+          if-no-files-found: warn
+          include-hidden-files: false

@@ -1,5 +1,11 @@
 # dsh-eval-lab 架构与技术取舍
 
+136 复查将演示输出改为先排他创建原始目录，再规范化，用于拒绝已有悬空链接并保持短路径身份一致。比较CLI改用Popen，在取得自有进程对象后通过finally复用runner的独立进程组和进程树回收，修正原subprocess.run超时只杀Python本体的问题。原比较格式、0 / 1 / 2及五文件产物不变；中断回归仅验证实际进程就绪后注入KeyboardInterrupt的异常清理，不承诺信号投递或总退出硬上限。[复查与验证](changes/2026-11-09-136-synthetic-regression-review.md)
+
+135 的无模型CI回归示例由`dsh_eval.regression_demo`在新目录冻结同一用例、配置和两轮计划，预先固定回复及调度行为，产生四个独立实验、七次实际合成任务。三个独立Python CLI进程调用原`--compare-baseline`，验证无退化0、明确退化1、覆盖不足2；覆盖不足保留一项已确认退化及一项未开始样本。原比较、评分和结果格式不变，比较前后输入及实验文件摘要须保持。
+
+独立的`regressionDemoFormatVersion=1`索引记录新demoId、synthetic来源、modelCalled=false、输出 / 产物目录、基线、三个场景的预期及实际退出码、计数、比较与候选路径，以及源文件摘要。CI只发布三份比较JSON、summary.md及index.json，原输入和录制不上传。这五文件用于查看保存结论，包含原运行路径但不含完整原归档，下载后不能独立fresh inspect；完整搬迁复验仍使用显式目录包。只有预设场景全部符合预期，演示才返回0；真实门禁继续使用原CLI传递退出码。[CI回归门禁示例](ci-regression.md)
+
 130 以目录清单和只读映射支持搬迁。archive_bundle 只复制选定主入口及规范关联的分析依赖，发布前重新核对闭包、冻结语义和字节；archive_paths 保留历史逻辑字符串做原身份 / 指纹核验，将实际读取限制到当前 payload。默认行为不变，归档上下文拒绝续跑规划 / 执行。--report 在包外生成新结果，HTTP 实例显式持有映射并核对实际展示的字节，不回退读取原路径。[目录包与边界](archive-bundles.md)
 
 127 的实验原因汇总由 Python diagnostics 模块消费当前复验产生的 assertionDiagnostics，严格关联原断言身份、角色、结论与直接依赖；可用性和独立问题 / 后继阻断 / 全局门禁分开保存。report 在原核心复验之后派生 samples[].assertionCauses，再通过共享 _summary 生成独立 assertionCauseSummary；原诊断角色汇总和评分字段不改。现有用例 / 配置 / 来源、匹配子集与续跑分区复用同一聚合器，不新增调度或读取原归档的写入路径。Markdown 与浏览页只展示派生摘要，并复用 evaluationPath 定位单样本。[格式与分母](configuration-reports.md#结构化原因汇总127)

@@ -79,7 +79,7 @@ configurationId 只是每个实验内的选择标签，可以不同；actual 配
 | incompatible | 任务输入、来源或全局可比性条件不满足 |
 | unavailable | 共有项缺少可比较的执行 / 录制 / 断言 / 路由证据 |
 
-计划中存在但 skipped、证据文件缺失的样本属于 unavailable，区别于矩阵本身没有该项。两侧行保留 saved 结论与新复验 outcome、changedFields、原因和证据路径；不根据旧 summary 或旧 evaluation 的 passed 字段做判断。该格式当前只提供 CLI / JSON，不接入结果浏览器目录或自动 CI 工作流。
+计划中存在但 skipped、证据文件缺失的样本属于 unavailable，区别于矩阵本身没有该项。两侧行保留 saved 结论与新复验 outcome、changedFields、原因和证据路径；不根据旧 summary 或旧 evaluation 的 passed 字段做判断。该格式提供 CLI / JSON；[CI回归门禁示例](ci-regression.md)使用独立合成实验验证原退出语义并发布比较产物，结果浏览器接入仍待后续批次。
 
 ## 边界
 
