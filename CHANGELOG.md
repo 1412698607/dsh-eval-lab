@@ -1,5 +1,9 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月9日 工作流与诊断交付验收
+
+- [126](docs/changes/2026-11-09-126-workflow-diagnostics-delivery-ci.md) 核实 122–125 的共同提交推送为 `4ef9d8f`，对应 Windows 无模型 push CI 首次运行、作业和全部 14 个步骤成功。
+
 ## 2026年11月9日 工作流与诊断复查
 
 - [125](docs/changes/2026-11-09-125-workflow-diagnostics-review.md) 修复合成执行忽略录制限额、诊断重排后首缺证标记错误两项问题，新增实际子进程和前端回归，并复查评分与历史兼容。
