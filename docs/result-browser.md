@@ -1,5 +1,7 @@
 # 本地结果浏览与持续集成
 
+137 增加[基线回归比较](baseline-regression.md#比较浏览)：读取版本1保存结果，展示门禁结论、退出码、覆盖、退化 / 改善 / 缺项和不可比原因；按原样本索引保留双方来源保存值与比较时复验值。双方证据按钮使用后端核准的来源、原评测、证据和轨迹ID；缺少完整原归档的CI比较文件仍能查看结论，关联不可用时明确说明，不造跳转。浏览不重新评分。[实现与验证](changes/2026-11-11-137-baseline-regression-browser.md)
+
 130 提供显式[归档包根](archive-bundles.md)浏览：`--browse --runs-root <包目录>`。目录只列清单成员与包索引，原绝对引用映射后继续核对范围、身份和序号；不回退访问原文件。读取缓冲区或同一分页文件流核对摘要，浏览不重新评分。普通结果根不会自动启用嵌套包映射。
 
 128 复查要求原因列表与计数共同支持“零问题”：列表截断、计数缺失或矛盾时明确显示不完整 / 不一致；逐样本原因条目不得超过声明断言数，避免矛盾数据被标成未声明角色。[复查记录](changes/2026-11-09-128-assertion-cause-report-review.md)
@@ -52,7 +54,7 @@ python -m dsh_eval --browse --cases-root fixtures/evaluation --runs-root runs --
 
 ## 从列表到证据
 
-页面分为实验、实验续跑、配置报告、批次、批次续跑、逐次结果和用例库。用例库收录 `*.case.json`；结果列表收录 `experiment-result.json`、`experiment-resume-result.json`、`report.json`、`batch-result.json`、`resume-result.json`、`evaluation.json`，冻结输入及报告中的复验结果通过关联文件打开，避免把每份快照都当成一个新用例。续跑标题优先使用保存的名称或 resumeId，不从来源文件推测名称。支持名称 / 标识 / 路径搜索、任务结论筛选及来源声明筛选；“刷新文件”重新读取目录。
+页面包括基线回归比较、实验、实验续跑、配置报告、批次、批次续跑、逐次结果和用例库等分类。用例库收录 `*.case.json`；普通结果按已有标准文件名收录，基线回归比较还按顶层regressionComparisonFormatVersion发现任意名称的JSON。冻结输入及报告中的复验结果通过关联文件打开，避免把每份快照都当成一个新用例。续跑标题优先使用保存的名称或 resumeId，不从来源文件推测名称。支持名称 / 标识 / 路径搜索、结论和来源声明筛选；在基线回归分类中，结论筛选指保存的门禁结论。“刷新文件”重新读取目录。
 
 来源筛选保留样本中的缺失声明，因此同一实验 / 报告可同时出现在真实运行、合成和缺失筛选中。缺失来源仅在浏览响应中标为 `unknown`，不修改原 `source`；失败样本的结构化异常显示类型与消息。
 
@@ -127,11 +129,14 @@ Python 标准库服务仅绑定 `127.0.0.1`，仅提供静态页面和读取 API
 npm.cmd run check
 npm.cmd test
 npm.cmd run test:python
-python -m compileall -q dsh_eval test
+python -m compileall -q dsh_eval scripts test
 npm.cmd run demo:eval
+npm.cmd run demo:workflow -- --generate-only
+npm.cmd run demo:regression -- --output-dir runs/ci-regression-demo
+npm.cmd run check:delivery -- --output-dir runs/ci-delivery-check
 ```
 
-不安装 Harness 或项目依赖，不配置模型密钥，不执行 `--run`，不上传原始运行目录。测试中的确定性适配器会启动真实 Node / Python 子进程，使用原录制器、inspect 与状态化工具，但不调用模型。`smoke:host`、`check:output` 和真实工具注册 smoke 需要本机的固定 Harness 安装，不属于这个干净环境工作流。
+之后发布基线比较摘要并仅上传[五份固定合成产物](ci-regression.md)，交付搬迁检查见[命令说明](delivery-check.md)。不安装 Harness 或项目依赖，不配置模型密钥，不执行真实任务的 `--run`，不上传原始运行目录。测试中的确定性适配器会启动真实 Node / Python 子进程，使用原录制器、inspect 与状态化工具，但不调用模型。`smoke:host`、`check:output` 和真实工具注册 smoke 需要本机的固定 Harness 安装，不属于这个干净环境工作流。
 
 真实模型验收继续使用明确的 `--case / --batch / --experiment ... --run` 命令，预算来自用例 `timeoutSeconds`，调用前需单独选择任务与配置；本批没有新增模型自动工作流，也没有 token / 费用硬限额。工作流权限仅 `contents: read`，checkout 不保留凭据，整项检查上限 15 分钟。
 

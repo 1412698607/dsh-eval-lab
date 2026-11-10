@@ -7,6 +7,7 @@ const categories = [
   ["experiment", "实验", "◫"], ["experiment_resume", "实验续跑", "↻"], ["report", "配置报告", "▤"],
   ["assertion_comparison", "断言对照", "⇄"],
   ["experiment_assertion_preview", "实验规则预览", "◈"],
+  ["regression_comparison", "基线回归比较", "↔"],
   ["batch", "批次", "☷"], ["batch_resume", "批次续跑", "↻"],
   ["evaluation", "逐次结果", "◷"], ["case", "用例库", "◇"],
 ];
@@ -91,7 +92,9 @@ function select(kind) {
   $("source").value = "";
   const title = categories.find((item) => item[0] === kind)[1];
   $("title").textContent = title;
-  $("section-label").textContent = title;
+  $("section-label").textContent = kind === "regression_comparison" ? `${title} · 结论筛选使用保存的门禁结论` : title;
+  $("outcome-label").textContent = kind === "regression_comparison" ? "门禁结论" : "任务结论";
+  $("outcome").setAttribute("aria-label", kind === "regression_comparison" ? "门禁结论筛选" : "任务结论筛选");
   $("detail-view").hidden = true;
   $("catalog-view").hidden = false;
   navigation();
@@ -108,13 +111,16 @@ function renderCatalog() {
     $("catalog").replaceChildren(append(node("div", null, "empty"), node("strong", "暂无匹配记录"), node("span", "已有文件会在刷新后显示；可切换分类或调整筛选。")));
     return;
   }
-  $("catalog").replaceChildren(table(["名称 / 标识", "任务结论", "状态", "来源声明", "保存时间"], items.map((item) => [
+  $("catalog").replaceChildren(table(["名称 / 标识", category === "regression_comparison" ? "门禁结论 / 覆盖" : "任务结论", "状态", "来源声明", "保存时间"], items.map((item) => [
     append(node("div"), button(item.title || item.path, () => openDocument(item.id)), node("div", item.path, "subtext"), ...(item.error ? [node("div", item.error, "error")] : [])),
     item.kind === "assertion_comparison" ? node("span", `${display(item.baselineOutcome)} → ${display(item.candidateOutcome)}`)
       : item.kind === "experiment_assertion_preview" ? node("span", `可对照 ${number(item.previewSummary?.comparedSamples)} / ${number(item.previewSummary?.plannedSamples)} · 无法对照 ${number(item.previewSummary?.inconclusive)}`)
+      : item.kind === "regression_comparison" ? append(node("div"), regressionBadge(item.outcome),
+        node("div", `退化 ${regressionCount(item.regressionCounts?.regression)} · 可比 ${regressionCount(item.regressionCounts?.compared)} / ${regressionCount(item.regressionCounts?.total)}`, "subtext"))
       : item.kind === "report" && item.outcomes ? node("span", `通过 ${item.outcomes.passed ?? "缺失"} · 未通过 ${item.outcomes.failed ?? "缺失"} · 无法评测 ${item.outcomes.unevaluable ?? "缺失"}`)
       : item.kind === "case" ? node("span", "用例定义", "subtext") : badge(item.outcome),
-    item.kind === "case" ? "—" : badge(item.status), item.kind === "case" ? "—" : item.sources?.length ? item.sources.map(display).join("、") : "缺失", item.kind === "case" ? "—" : date(item.time),
+    item.kind === "case" ? "—" : item.kind === "regression_comparison" ? regressionBadge(item.status) : badge(item.status),
+    item.kind === "case" ? "—" : item.sources?.length ? item.sources.map(item.kind === "regression_comparison" ? regressionValue : display).join("、") : "缺失", item.kind === "case" ? "—" : date(item.time),
   ])));
 }
 function cards(items) {
@@ -650,6 +656,142 @@ function experimentAssertionPreview(documentData) {
   target.append(panel("样本结论与变化断言", list));
   return target;
 }
+const regressionChanges = { regression: "退化", improvement: "改善", unchanged_passed: "保持通过", unchanged_failed: "保持未通过",
+  missing_in_baseline: "基线缺项", missing_in_candidate: "候选缺项", incompatible: "不可比", unavailable: "不可用" };
+function regressionValue(value) {
+  if (value === null || value === undefined) return "缺失";
+  if (typeof value === "object") return JSON.stringify(value);
+  return typeof value === "string" && Object.hasOwn(words, value) ? words[value] : String(value);
+}
+function regressionCell(value) { return node("span", regressionValue(value)); }
+function regressionBadge(value) {
+  return node("span", regressionValue(value), "badge " + (["passed", "completed", "complete", "compared"].includes(value) ? "good"
+    : ["failed", "error"].includes(value) ? "bad" : value === "unevaluable" ? "warn" : ""));
+}
+function regressionCount(value) { return Number.isSafeInteger(value) && value >= 0 ? String(value) : "缺失"; }
+function regressionObject(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
+function regressionList(value) { return Array.isArray(value) ? value.map(regressionValue).join("；") || "无" : "缺失"; }
+function regressionReason(value) {
+  const labels = { same_experiment: "两侧属于同一原实验", baseline_plan_unverified: "基线计划未核验",
+    candidate_plan_unverified: "候选计划未核验", configuration_changed_without_permission: "存在未经允许的配置变化",
+    shared_caseRunId: "两侧共享任务运行身份", shared_runId: "两侧共享录制身份", shared_sessionId: "两侧共享会话身份",
+    task_input_changed: "任务输入发生变化", source_mismatch: "两侧来源声明不一致",
+    baseline_evidence_unavailable: "基线证据不可用于比较", candidate_evidence_unavailable: "候选证据不可用于比较" };
+  return typeof value === "string" && Object.hasOwn(labels, value) ? `${labels[value]}（${value}）` : regressionValue(value);
+}
+function regressionReasons(value) { return Array.isArray(value) ? value.map(regressionReason).join("；") || "无" : "缺失"; }
+function regressionLink(id, label, allowed) {
+  return allowed && typeof id === "string" && id ? button(label, () => openDocument(id)) : node("span", `${label}不可用`, "subtext");
+}
+function regressionUnavailable(value, fallback) {
+  return typeof value.reason === "string" && value.reason ? value.reason
+    : typeof value.reasonCode === "string" && value.reasonCode ? value.reasonCode : fallback;
+}
+function regressionSource(side, title, descriptor, completed) {
+  const source = regressionObject(side), configuration = regressionObject(source.configuration);
+  const ref = regressionObject(configuration.configRef), link = regressionObject(descriptor);
+  const allowed = completed && link.status === "available";
+  const content = append(node("div"), table(["来源信息", "保存值"], [
+    ["实验 ID", regressionCell(source.experimentId)], ["配置 ID", regressionCell(configuration.configurationId)],
+    ["provider / model", `${regressionValue(ref.provider)} / ${regressionValue(ref.model)}`],
+    ["profile / 插件版本", `${regressionValue(ref.profile)} / ${regressionValue(ref.pluginVersion)}`],
+    ["原计划样本", regressionCount(source.plannedSamples)], ["计划核验", regressionCell(source.planVerification?.status)],
+  ]), regressionLink(link.id, `${title}来源实验`, allowed),
+  node("p", `保存来源路径：${regressionValue(source.sourceResult)}`, "subtext"));
+  if (!allowed) content.append(node("p", regressionUnavailable(link, "来源归档缺失或未通过关联检查；这里只显示保存的比较结论。"), "subtext"));
+  const result = panel(`${title}实验`, content);
+  result.className += " regression-side";
+  return result;
+}
+function regressionSide(side, title, descriptor, completed) {
+  const value = regressionObject(side), saved = regressionObject(value.saved), link = regressionObject(descriptor);
+  const body = node("div");
+  if (side === null || side === undefined) body.append(node("p", "该侧没有计划样本。", "subtext"));
+  else body.append(table(["样本信息", "比较时复验值", "来源保存值"], [
+    ["任务结论", regressionCell(value.outcome), regressionCell(saved.outcome)],
+    ["执行状态", regressionCell(value.executionStatus), regressionCell(saved.executionStatus)],
+    ["录制状态", regressionCell(value.recordingOutcome), regressionCell(saved.recordingOutcome)],
+    ["断言汇总", regressionCell(value.assertionOutcome), regressionCell(saved.assertionOutcome)],
+    ["来源声明", regressionCell(value.source), regressionCell(saved.source)],
+    ["配置匹配", regressionCell(value.configurationMatch), regressionCell(saved.configurationMatch)],
+  ]), node("p", `保存的复验状态：${regressionValue(value.verification)} · 样本状态：${regressionValue(value.status)}`, "subtext"),
+  node("p", `样本 ${regressionValue(value.sampleId)} · 用例 ${regressionValue(value.caseId)} · 配置 ${regressionValue(value.configurationId)}`, "subtext"),
+  node("p", `caseRunId ${regressionValue(value.caseRunId)} · runId ${regressionValue(value.runId)} · sessionId ${regressionValue(value.sessionId)}`, "subtext"),
+  node("p", `与来源保存值的变化字段：${regressionList(value.changedFields)}`, "subtext"),
+  node("p", `该侧原因：${regressionReasons(value.reasons)}`, "subtext"));
+  const allowed = completed && link.status === "available";
+  body.append(append(node("div", null, "evidence"),
+    regressionLink(link.evaluationId, `${title}原评测`, allowed), regressionLink(link.evidenceId, `${title}证据`, allowed),
+    regressionLink(link.assertionTrace?.id, `${title}轨迹`, allowed)));
+  if (!allowed || link.reason || link.reasonCode) body.append(node("p", regressionUnavailable(link,
+    value.status === "skipped" ? "该侧尚未执行，没有保存证据。" : "来源归档缺失或未通过关联检查；这里只显示保存的比较结论。"), "subtext"));
+  if (side !== null && side !== undefined) body.append(append(node("details"), node("summary", "查看该侧保存的配置与指标"),
+    json({ requestedConfiguration: value.requestedConfiguration, configuration: value.configuration, metrics: value.metrics })));
+  const result = panel(`${title}样本`, body);
+  result.className += " regression-side";
+  return result;
+}
+function regressionComparison(documentData) {
+  const data = regressionObject(documentData.data), counts = regressionObject(data.counts), complete = data.status === "compared";
+  const target = node("div");
+  target.append(cards([["保存的门禁结论", regressionValue(data.outcome)], ["原退出码", regressionCount(data.exitCode)],
+    ["可比 / 样本键并集", `${regressionCount(counts.compared)} / ${regressionCount(counts.total)}`],
+    ["已确认退化", regressionCount(counts.regression)]]));
+  const gate = append(node("div"), node("p", "读取保存的基线比较，浏览不会重新评分或调用模型。0 表示完整可比且无退化，不表示所有任务通过；2 表示覆盖不足、不可比或输入错误，已确认退化仍保留。", "notice"),
+    node("p", `比较状态：${regressionValue(data.status)} · 可比性保存值：${regressionValue(data.comparability?.status)} · 模型调用：${data.modelCalled === false ? "否" : data.modelCalled === true ? "是（保存值）" : "未知"}`, "subtext"),
+    table(["退化", "改善", "保持通过", "保持未通过", "基线缺项", "候选缺项", "不可比", "不可用"],
+      [[...Object.keys(regressionChanges)].map((key) => regressionCount(counts[key]))]),
+    node("p", `全局不可比原因：${regressionReasons(data.comparability?.issues)}`, "subtext"));
+  if (!complete) gate.append(node("div", data.status === "error" ? `比较输入或输出错误：${regressionValue(data.error)}`
+    : "没有正常完成的比较状态；保留保存值，不生成证据跳转。", "error"));
+  target.append(panel("比较门禁与覆盖", gate));
+  const sources = regressionObject(documentData.regressionSources);
+  target.append(append(node("div", null, "two-columns"), regressionSource(data.baseline, "基线", sources.baseline, complete),
+    regressionSource(data.candidate, "候选", sources.candidate, complete)));
+  const changes = Array.isArray(data.configurationChanges) ? data.configurationChanges : null;
+  target.append(panel("配置变化与允许范围", append(node("div"),
+    node("p", `显式允许变化的字段：${regressionList(data.allowedConfigurationChanges)}`, "subtext"),
+    changes?.length ? table(["字段", "基线保存值", "候选保存值", "是否已允许"], changes.map((row) => [
+      regressionCell(row?.field), regressionCell(row?.baseline), regressionCell(row?.candidate), row?.allowed === true ? "是" : row?.allowed === false ? "否" : "缺失"]))
+      : node("p", changes ? "没有保存的配置变化。" : "配置变化明细缺失。", "subtext"))));
+  const filter = node("select");
+  filter.setAttribute("aria-label", "基线回归样本筛选");
+  for (const [value, title] of [["all", "全部样本"], ["regression", "仅退化"], ["improvement", "仅改善"],
+    ["unchanged", "保持结论"], ["missing", "缺项"], ["incompatible", "不可比"], ["unavailable", "不可用"]]) {
+    const option = node("option", title); option.value = value; filter.append(option);
+  }
+  filter.value = "all";
+  const hasSamples = Array.isArray(data.samples), list = node("div", null, "assertion-list"), rows = hasSamples ? data.samples : [];
+  const details = Array.isArray(documentData.regressionEvidence) ? documentData.regressionEvidence : [];
+  const filterState = node("p", "", "subtext");
+  function renderRows() {
+    const selected = rows.map((row, index) => ({ row, index: index + 1 })).filter(({ row }) => filter.value === "all"
+      || filter.value === "unchanged" && ["unchanged_passed", "unchanged_failed"].includes(row?.change)
+      || filter.value === "missing" && ["missing_in_baseline", "missing_in_candidate"].includes(row?.change)
+      || row?.change === filter.value);
+    filterState.textContent = hasSamples ? `当前显示 ${selected.length} / ${rows.length} 条保存配对；总体分母与门禁结论保持原值。`
+      : "逐样本配对明细缺失；总体分母与门禁结论按保存值展示。";
+    list.replaceChildren(...selected.map(({ row: raw, index }) => {
+      const row = regressionObject(raw), link = regressionObject(details.find((item) => item?.index === index));
+      const mark = node("span", typeof row.change === "string" && Object.hasOwn(regressionChanges, row.change) ? regressionChanges[row.change] : regressionValue(row.change),
+        "badge " + (row.change === "regression" ? "bad" : row.change === "improvement" ? "good" : ""));
+      return append(node("article", null, "assertion-card"),
+        append(node("div", null, "assertion-heading"), node("h3", `${regressionValue(row.caseEntryId)} · 第 ${regressionValue(row.repeatIndex)} 轮`), mark),
+        node("p", `配对原因：${regressionReasons(row.reasons)}`, "subtext"),
+        node("p", `变化的任务字段：${regressionList(row.taskChanges)}`, "subtext"),
+        append(node("div", null, "two-columns"), regressionSide(row.baseline, "基线", link.baseline, complete),
+          regressionSide(row.candidate, "候选", link.candidate, complete)));
+    }));
+    if (!selected.length) list.append(node("p", rows.length ? "没有匹配的保存配对。" : "没有保存逐样本配对明细。", "subtext"));
+  }
+  filter.addEventListener("change", renderRows);
+  renderRows();
+  target.append(panel("逐样本基线回归对照", append(node("div"),
+    node("p", "按 caseEntryId 和 repeatIndex 配对；sampleId 不用于跨实验对齐。比较时复验值与原评测保存值可能不同。证据按钮仅使用后端核准关联，原评测页可继续定位具体断言事件。", "subtext"),
+    append(node("div", null, "toolbar"), append(node("label", "样本筛选"), filter)), filterState, list)));
+  if (Array.isArray(data.limitations) && data.limitations.length) target.append(panel("解释边界", append(node("div"), ...data.limitations.map((item) => node("p", regressionValue(item))))));
+  return target;
+}
 function renderDocument(documentData) {
   const target = $("detail"), data = documentData.data, links = documentData.links;
   target.replaceChildren();
@@ -677,6 +819,11 @@ function renderDocument(documentData) {
     return;
   }
   if (documentData.kind === "markdown") { target.append(panel("报告文本", node("pre", documentData.text))); return; }
+  if (documentData.kind === "regression_comparison") {
+    target.append(...regressionComparison(documentData).children);
+    target.append(append(node("details", null, "panel padded"), node("summary", "查看保存的完整 JSON"), json(data)));
+    return;
+  }
   if (documentData.kind === "archive_bundle") {
     const entry = links.find((item) => item.label === "entryPath" && item.id);
     target.append(cards([["归档 ID", data.archiveId], ["清单文件数", Array.isArray(data.files) ? data.files.length : "缺失"],
@@ -848,7 +995,7 @@ async function openDocument(id, offset = 0, remember = true, focus = null) {
     $("catalog-view").hidden = true;
     $("detail-view").hidden = false;
     $("document-path").textContent = id;
-    $("title").textContent = result.data?.workflowName || result.data?.experimentName || result.data?.batchName || result.data?.caseId || result.data?.resumeId || result.data?.archiveId || "证据详情";
+    $("title").textContent = result.kind === "regression_comparison" ? "基线回归比较" : result.data?.workflowName || result.data?.experimentName || result.data?.batchName || result.data?.caseId || result.data?.resumeId || result.data?.archiveId || "证据详情";
     renderDocument(result);
     message("");
     window.scrollTo(0, 0);

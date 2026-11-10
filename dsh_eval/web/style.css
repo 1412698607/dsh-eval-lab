@@ -5,7 +5,7 @@ button, input, select { font: inherit; }
 button, a, select { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; border: 0; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #9db9ed; outline-offset: 3px; }
-.sidebar { position: fixed; width: 232px; height: 100vh; background: #fff; border-right: 1px solid #e4e8ee; padding: 34px 20px; display: flex; flex-direction: column; }
+.sidebar { position: fixed; width: 232px; height: 100vh; background: #fff; border-right: 1px solid #e4e8ee; padding: 34px 20px; display: flex; flex-direction: column; overflow-y: auto; }
 .brand { color: #233a66; text-decoration: none; font-size: 24px; font-weight: 750; padding-left: 10px; letter-spacing: -.8px; }
 .brand span { display: inline-block; font-size: 13px; font-weight: 500; letter-spacing: 0; margin-left: 9px; color: #64748b; }
 .eyebrow { font-size: 10px; letter-spacing: 1.7px; color: #8a96a8; font-weight: 600; }
@@ -70,6 +70,10 @@ summary { cursor: pointer; color: #6a7b92; font-size: 12px; padding: 6px 0 12px;
 .assertion-values { margin: 16px 0; }
 .assertion-values > div { min-width: 0; }
 .assertion-value { min-height: 24px; }
+.regression-side { min-width: 0; }
+.regression-side table { min-width: 0; table-layout: fixed; }
+.regression-side td, .regression-side th { padding: 10px; overflow-wrap: anywhere; white-space: normal; }
+.regression-side td:first-child { min-width: 0; }
 .expected-difference { background: #e1f2e8; color: #285b40; }
 .actual-difference { background: #fbe3e3; color: #863737; }
 .focused-event { background: #fff3cc; outline: 2px solid #b18127; outline-offset: -2px; }

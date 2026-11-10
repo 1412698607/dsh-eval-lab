@@ -18,7 +18,11 @@ npm.cmd run demo:workflow -- --generate-only
 
 运行 `npm.cmd run demo:regression` 可生成独立合成实验，使用真实比较CLI验证无退化、明确退化和覆盖不足的0 / 1 / 2退出码。仓库CI已配置为发布这些场景的摘要及五份合成比较产物；演示返回0表示预设场景验证成功，真实基线门禁仍应传递比较命令的失败退出码。用法及产物范围见[CI回归门禁示例](docs/ci-regression.md)。
 
+运行 `npm.cmd run check:delivery`，检查固定合成流程、门禁、归档搬迁、包外重评及只读HTTP访问。138分别完成旧已提交基线和公开候选的源码导出验收；该候选属于139修复前快照，当前验证与交付状态见[复查记录139](docs/changes/2026-11-11-139-baseline-delivery-review.md)和[开发进度](docs/progress.md)。命令不自行证明源码来自已提交版本，摘要网页渲染仍未验证。用法与准确证据范围见[交付检查](docs/delivery-check.md)。
+
 ## 当前功能
+
+- [基线回归比较浏览](docs/baseline-regression.md#比较浏览)：查看两个实验的保存门禁结论、可比覆盖、退化 / 改善 / 缺项及不可比原因，分别打开双方原评测、证据和轨迹。CI五文件包缺少原归档时保留结论并提示证据不可用，浏览不调用模型或重评。
 
 - [可迁移只读归档包](docs/archive-bundles.md)：打包实验 / 续跑链与选定报告、预览和对照的必要文件，保留原字节及指纹；搬迁后可核验、重新生成报告并浏览原事件。
 
@@ -55,7 +59,7 @@ npm.cmd run demo:workflow -- --generate-only
 - [四任务真实验收](docs/guarded-acceptance.md) 已验证现有 deepseek-flash 的读取 / 恢复各两次，以及上限、预期指纹、保存快照和离线报告链路；首轮深目录准备失败保留，短目录下 4 个真实任务均通过。
 - [双配置八任务比较](docs/guarded-comparison.md) 保留空配置模板和无模型配对回归；065 已用 DeepSeek Flash / 百炼 Qwen3.7-Plus 新建 continue 实验，八项全部执行、七通过一失败，两个用例各形成两对 verified / matched / live 样本。失败保留原精确文本断言，不因正常执行或录制完整而判通过。
 - 用例可通过 [modelProviders](docs/evaluation-format.md#可选外部模型路由两个用例版本通用) 声明外部文本模型路由，随输入冻结并计入计划指纹；密钥仅按名称引用。`npm.cmd run check:model-providers -- <case.json>` 检查本机真实宿主的路由 / 目录注册和凭据存在性，不调用模型、不验证远端端点。
-- [批次级安全续跑](docs/batch-resume.md) 提供 `--resume-batch <batch-result.json> --plan` 无模型复核；显式执行仅安排已协调批次中明确未开始的任务，已完成项经重新 inspect / 评测后复用，未知项阻断。原结果不覆盖；实验层汇总回填尚未实现。
+- [批次级安全续跑](docs/batch-resume.md) 提供 `--resume-batch <batch-result.json> --plan` 无模型复核；显式执行仅安排已协调批次中明确未开始的任务，已完成项经重新 inspect / 评测后复用，未知项阻断。原结果不覆盖；实验层整合由独立续跑结果和版本2 / 3报告提供，原实验汇总仍不回填。
 - [实验级安全续跑](docs/experiment-resume.md) 的 `--resume-experiment <result.json> --plan / --run` 接受原实验或已有实验续跑结果；每轮比较预检摘要，只为明确未开始项创建新批次，未知项阻断。保留原用例 / 配置 / 轮次及全部历史证据，与批次入口共用锁和单次领取保护。终态结果可交给 --report，首轮报告版本 2、连续续跑版本 3，分开历史复用与本轮新增用量。
 - Windows 单用例、批次、实验及续跑执行在创建新身份与输出前检查完整宿主安装目录长度；路径过深时退出 2，提示缩短 `--runs-root`。续跑检查仍先于领取，保留源资格；`--plan` 不检查未来输出根，详见 [Windows 输出根预检](docs/output-paths.md)。
 - 批次、实验与续跑的 `--run` 可用 `--stop-after N` 在本轮 N 项完成、清理及检查点保存后停止后续调度；保留完整矩阵和未开始项，支持重新预检续跑。参数是独立运行控制，不进入计划指纹，也不限制模型调用数或费用，见 [任务边界停止](docs/batch-runner.md#任务边界停止)。
@@ -64,7 +68,7 @@ npm.cmd run demo:workflow -- --generate-only
 - [四任务真实用量停止验收](docs/changes/2026-11-01-071-live-token-stop-acceptance.md) 已以现有 DeepSeek Flash 按 1 / 1 / 2 完成两用例各两轮，前两段 token 阈值 1、末段 100000。独立版本 3 报告四项 verified / matched / live，历史复用与末轮新增各两项；只验证当前短根及单配置，不提供任务内硬限额或总体模型优劣结论。
 - [六任务真实连续续跑](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 已使用 deepseek-flash 按原实验 2 项、两轮续跑各 2 项完成验收；最终六项 verified / matched / live，报告历史复用 4 / 本轮新增 2，147 份选定归档文件摘要不变。范围限于单配置与当前 Windows 宿主，没有双配置比较结论。
 - M4.2 已实现保存实验的离线配置报告，重新 inspect 和断言，按实际配置、用例、重复编号及来源配对，独立保存 JSON / Markdown。
-- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量。最新已验收实现为 `ca45099`，其独立 Windows 无模型 CI 全部步骤已核实成功，见 [交付验收 098](docs/changes/2026-11-03-098-mutation-delivery-ci.md)；旧验收保留历史，具体云端测试数量未读取。
+- M5 已实现本地只读结果浏览：用例、实验 / 批次、配置报告、三维结果与分页证据；续跑版本 2 / 3 报告可查看全部来源批次、续跑链及分开的历史 / 新增用量，基线回归比较可按保存变化定位双方证据。历史提交 `ca45099` 的独立 Windows 无模型 CI 验收见 [098](docs/changes/2026-11-03-098-mutation-delivery-ci.md)；当前实现与验证范围以[开发进度](docs/progress.md)为准。
 - M6.1 已实现运行级会话清单：新 run.json 版本 2 登记应有会话，inspect 可发现整对会话文件缺失；旧日志保留片段检查结果并明确运行级覆盖未知。
 - M6.2 已实现可配置的单条事件字节上限，超限拒绝且不截断证据；提供长文本、多会话、慢写入的独立进程资源测量入口。
 - M6.3 新增 10 个固定用例，覆盖文件发现、引用链、缺失 / 空文件、中文和故障恢复；审查修复补齐必要步骤的 after 约束和空文本精确比较，复用既有实验、隔离环境及离线报告入口。
@@ -268,7 +272,7 @@ python scripts/verify_live.py 'D:\your-project\runs\live\<check-id>\read\<launch
 npm.cmd run test:python
 ```
 
-Python 检查器也支持其他四种模式：先重新调用 Node inspect，再核对用户输入、实际工具参数、callId 关联的结果、助手答案及结束原因；工具名不硬编码。它只处理 M2.3 的单会话固定 fixture，输出 `verified: true` 表示该场景证据通过。通用用例管理、状态化工具环境和批次评测仍留在 M3。
+Python 检查器也支持其他四种模式：先重新调用 Node inspect，再核对用户输入、实际工具参数、callId 关联的结果、助手答案及结束原因；工具名不硬编码。它只处理 M2.3 的单会话固定 fixture，输出 `verified: true` 表示该场景证据通过。通用用例管理、状态化工具环境和批次评测由M3及后续独立入口提供，本固定fixture检查器不承担这些职责。
 
 沙箱若以 EPERM 阻止真实子进程，应在获准环境或外部终端执行同一命令，不能将失败计为通过。实际结果见 [修改记录 008](docs/changes/2026-10-15-008-m2-3-live-integration.md)。
 
@@ -429,7 +433,7 @@ python -m dsh_eval --compare-baseline 'runs/experiments/<baseline-id>/experiment
 - 只录制插件观察到的新增事件；不会补齐加载前、恢复会话或 fork 继承的历史。`run.json` 明确标注 `live-events-only`，这些日志不能直接作为完整会话恢复文件。
 - 已完成异步写入和封存不代表断电时绝对可靠；没有 fsync、跨进程恢复或日志轮转。状态替换使用同目录临时文件与 rename，当前 Windows 本地文件系统检查通过。
 - SHA-256 用于一致性校验，不是签名。新版本 2 元信息可发现保留的清单中登记的整对会话文件缺失；旧格式仍无法检测这类删除。清单、版本、日志与摘要同时被改写，或整个运行目录被删除，均不在检测保证内。
-- 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；M3.3 状态化工具、M3.4 顺序批次、M4 重复试验 / 离线报告及 M5 本地浏览已完成当前范围。Windows 无模型云端 CI 已通过；配置差值由合成重复样本验证，历史真实任务只验证单配置报告，少量验收样本不构成模型表现或性能提升结论。
+- 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；M3.3 状态化工具、M3.4 顺序批次、M4 重复试验 / 离线报告及 M5 本地浏览已完成当前范围。Windows无模型云端CI按已交付提交保留，B/C当前候选不继承该结果；配置比较有合成回归及[072固定双配置矩阵](docs/changes/2026-11-01-072-full-core-two-config-comparison.md)的历史报告依据。四十项观测为39通过 / 1严格格式失败，不构成总体模型优胜、成本或性能改善结论，也不是本轮C新增模型验收。
 
 ## 下一阶段
 
@@ -445,7 +449,7 @@ M2 基线与 M3 至 M5 已完成当前实现范围、本地验证和 Windows 无
 6. M4.2 已完成：冻结输入核对、独立复验、来源与路由匹配配对、JSON / Markdown；117 项 Python 检查及四个历史真实样本报告通过，本批没有新模型调用。
 7. M5 已验收：本机只读结果与证据浏览、保存分母 / 配对覆盖、JSONL 分页及 Windows 无模型 CI；`e47de36` 的云端运行中 134 Python、44 Node、31 文件语法、compileall 与合成 demo 均通过，历史页面验证保留。
 
-M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。`103c090` 包含 030 至 034，`4b97120` 包含 035 至 038 及三项修复，并已通过新的无模型云端验收。[064](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 增加单配置六任务连续续跑，[065](docs/changes/2026-10-29-065-live-two-config-comparison.md) 增加两用例 / 两配置 / 两轮的完整八任务比较；完整十用例的双配置 / 重复扩大、其他平台 / CLI / desktop / SDK 仍待确定范围。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
+M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-validation.md) 已完成 M6.1 / M6.2 本地实现与验证，以及 M6.3 单配置 10 个任务各一次的真实验收。M6.3 审查修复补齐顺序与空文件断言，首次模型结果保留在 [固定评测集验收](docs/core-evaluation.md)。M6.4 已完成 [合成检查与 Windows / 当前 CLI 的真实 Web 生命周期验收](docs/web-lifecycle.md)：三个最终场景均有工作区匹配样本，保留首次失败和旧取消工作区未知，取消 / 中断仍为 unevaluable。`103c090` 包含 030 至 034，`4b97120` 包含 035 至 038 及三项修复，并已通过新的无模型云端验收。[064](docs/changes/2026-10-29-064-live-continuation-acceptance.md) 增加单配置六任务连续续跑，[065](docs/changes/2026-10-29-065-live-two-config-comparison.md) 增加两用例 / 两配置 / 两轮的完整八任务比较；[072](docs/changes/2026-11-01-072-full-core-two-config-comparison.md)另已完成完整十用例 / 两配置 / 两轮四十项。更多任务与重复、其他平台 / CLI / desktop / SDK仍按需另定，历史失败与各批验证不合并成新实测。原交付范围见 [M3 与后续计划](docs/plans/m3-regression-evaluation.md)。
 
 ## 开发文档
 
@@ -463,7 +467,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。最新复核日期为 2026 年 11 月 3 日（Asia/Shanghai）。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。当前摘要的源码 / 资料复核日期为2026年11月11日（Asia/Shanghai）；本轮合成与离线交付验收见[138](docs/changes/2026-11-11-138-synthetic-delivery-check.md)，不代表重跑历史模型任务或新云端CI。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 

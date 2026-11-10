@@ -10,7 +10,7 @@ import re
 import secrets
 from urllib.parse import parse_qs, urlsplit
 
-from .formats import parse_json, require
+from .formats import parse_json, require, validate_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +25,7 @@ FORMATS = {"caseFormatVersion": ("case", (1, 2)), "batchFormatVersion": ("batch_
            "experimentResultFormatVersion": ("experiment", (1,)), "comparisonReportFormatVersion": ("report", (1, 2, 3)),
            "assertionComparisonFormatVersion": ("assertion_comparison", (1,)),
            "experimentAssertionPreviewFormatVersion": ("experiment_assertion_preview", (1,)),
+           "regressionComparisonFormatVersion": ("regression_comparison", (1,)),
            "assertionRuleMapFormatVersion": ("assertion_rule_map", (1,)),
            "workflowDemoFormatVersion": ("workflow_demo", (1,)),
            "archiveBundleFormatVersion": ("archive_bundle", (1,)),
@@ -37,6 +38,24 @@ RESULT_NAMES = {"batch-result.json", "experiment-result.json", "report.json", "e
                 "resume-result.json", "experiment-resume-result.json", "assertion-comparison.json",
                 "experiment-assertion-preview.json", "workflow-index.json", "archive-manifest.json"}
 TRACE_NAME = re.compile(r"[0-9a-f]{64}\.jsonl\Z")
+
+
+def _same_json(left, right):
+    return json.dumps(left, sort_keys=True, ensure_ascii=False) == json.dumps(right, sort_keys=True, ensure_ascii=False)
+
+
+def _regression_key(row):
+    require(isinstance(row, dict) and all(isinstance(row.get(key), str) and row[key]
+                                        for key in ("caseEntryId", "configurationId", "sampleId", "caseId"))
+            and type(row.get("repeatIndex")) is int and row["repeatIndex"] > 0,
+            "Invalid source sample identity")
+    return row["caseEntryId"], row["configurationId"], row["repeatIndex"]
+
+
+def _case_component(value):
+    return (isinstance(value, str) and bool(value) and value == value.strip() and ".." not in value
+            and not any(char in value for char in "/\\:") and not any(ord(char) < 32 for char in value)
+            and _allowed_parts((value,)))
 
 
 def _allowed_parts(parts):
@@ -279,7 +298,8 @@ class ArtifactBrowser:
                     if name == "archive-manifest.json" and (label != "runs" or self._archive is None
                                                                or Path(directory) / name != self._archive_manifest):
                         continue
-                    if not (name.endswith(".case.json") if label == "cases" else name in RESULT_NAMES):
+                    standard = name.endswith(".case.json") if label == "cases" else name in RESULT_NAMES
+                    if not standard and not (label == "runs" and name.endswith(".json")):
                         continue
                     identifier = self.reference(Path(directory) / name)
                     if identifier is None:
@@ -291,7 +311,22 @@ class ArtifactBrowser:
                         break
                     item = {"id": identifier, "path": identifier.split(":", 1)[1], "kind": "unknown"}
                     try:
-                        kind, data = self._json(self.path(identifier))
+                        candidate_path = self.path(identifier)
+                        if not standard:
+                            # Discover arbitrary --output names without adding unrelated raw JSON to the catalog.
+                            with candidate_path.open("rb") as stream:
+                                content = stream.read(MAX_DOCUMENT_BYTES + 1)
+                            if len(content) > MAX_DOCUMENT_BYTES or b'"regressionComparisonFormatVersion"' not in content:
+                                continue
+                            self._verify_archive_content(candidate_path, content)
+                            data = _viewer_json(content.decode("utf-8"))
+                            if not isinstance(data, dict) or "regressionComparisonFormatVersion" not in data:
+                                continue
+                            kind = _kind(data)
+                            if kind != "regression_comparison":
+                                continue
+                        else:
+                            kind, data = self._json(candidate_path)
                         item.update(kind=kind, title=data.get("workflowName") or data.get("experimentName") or data.get("batchName")
                                     or data.get("caseId") or data.get("reportId") or data.get("resumeId") or data.get("workflowId") or data.get("experimentId") or data.get("archiveId") or name,
                                     outcome=data.get("outcome"), status=data.get("status"), source=data.get("source"),
@@ -311,10 +346,17 @@ class ArtifactBrowser:
                             item["previewSummary"] = summary
                             item["outcomes"] = {outcome: sum(row.get("candidateOutcome") == outcome for row in rows if isinstance(row, dict))
                                                 for outcome in ("passed", "failed", "unevaluable")}
+                        if kind == "regression_comparison":
+                            item["regressionCounts"] = data.get("counts")
                         item["sources"] = sorted({row["source"] if isinstance(row.get("source"), str) and row["source"] else "unknown"
                                                   for row in rows if isinstance(row, dict)})
                         if kind in ("batch_resume", "experiment_resume"):
                             item["sources"] = _resume_sources(data, kind)
+                        elif kind == "regression_comparison":
+                            item["sources"] = sorted({side.get("source") or "unknown" for row in rows if isinstance(row, dict)
+                                                      for key in ("baseline", "candidate")
+                                                      if isinstance(side := row.get(key), dict)
+                                                      and (side.get("source") is None or isinstance(side.get("source"), str))})
                         elif isinstance(item["source"], str) and item["source"]:
                             item["sources"] = [item["source"]]
                     except (OSError, ValueError) as error:
@@ -392,6 +434,348 @@ class ArtifactBrowser:
         if "comparisonReportFormatVersion" in data:
             add("Markdown", "report.md")
         return links
+
+    def _regression_target(self, value, directory, within=None):
+        if not isinstance(value, str) or not value:
+            return None
+        raw = value.replace("\\", "/")
+        if self._archive is None and PureWindowsPath(raw).is_absolute() and not Path(raw).is_absolute():
+            return None
+        target = self._resolve_reference(self._reference_target(value, directory))
+        return target if target is not None and (within is None or target.is_relative_to(within)) else None
+
+    def _regression_json(self, value, directory, cache, *, kind=None, within=None):
+        target = self._regression_target(value, directory, within)
+        require(target is not None, "Reference is missing or outside the configured source directory")
+        identifier = self.reference(target)
+        require(identifier is not None, "Referenced source file is unavailable")
+        path = self.path(identifier)
+        if path not in cache:
+            cache[path] = self._json(path)
+        actual_kind, data = cache[path]
+        require(kind is None or actual_kind == kind, "Referenced source has an unexpected artifact kind")
+        return path, identifier, data
+
+    def _regression_batch(self, value, directory, cache, *, expected_id=None, within=None):
+        path, identifier, data = self._regression_json(value, directory, cache, kind="batch", within=within)
+        require(_case_component(data.get("batchId"))
+                and (expected_id is None or data["batchId"] == expected_id), "Source batch identity mismatch")
+        require(isinstance(data.get("entries"), list), "Source batch entries are unavailable")
+        rows = {}
+        for row in data["entries"]:
+            require(isinstance(row, dict) and isinstance(row.get("entryId"), str) and row["entryId"]
+                    and row["entryId"] not in rows, "Duplicate or invalid source batch sample")
+            rows[row["entryId"]] = row
+        return path, data, rows
+
+    def _regression_context(self, value, directory, cache, visited=None, resume_ids=None, depth=0):
+        require(depth <= 32, "Source continuation chain exceeds the viewer limit")
+        path, identifier, data = self._regression_json(value, directory, cache)
+        visited, resume_ids = set(visited or ()), set(resume_ids or ())
+        require(path not in visited, "Source continuation chain contains a cycle")
+        visited.add(path)
+        kind = cache[path][0]
+        if kind == "experiment":
+            require(isinstance(data.get("experimentId"), str) and data["experimentId"]
+                    and isinstance(data.get("samples"), list)
+                    and data.get("status") in (("running", "completed", "stopped", "error", "interrupted") if depth
+                                              else ("completed", "stopped", "error", "interrupted")), "Invalid source experiment")
+            _, _, manifest = self._regression_json(data.get("manifestPath"), path.parent, cache,
+                                                   kind="experiment_manifest", within=path.parent)
+            configurations = manifest.get("configurations")
+            require(isinstance(configurations, list) and configurations and _same_json(configurations, data.get("configurations")),
+                    "Source experiment configurations do not match its manifest")
+            config_ids = [row.get("configurationId") for row in configurations if isinstance(row, dict)]
+            require(len(config_ids) == len(configurations) and all(isinstance(item, str) and item for item in config_ids)
+                    and len(set(config_ids)) == len(config_ids), "Duplicate or invalid source configurations")
+            cases, repetitions = manifest.get("cases"), manifest.get("repetitions")
+            require(isinstance(cases, list) and cases and type(repetitions) is int and repetitions > 0,
+                    "Source experiment matrix is unavailable")
+            case_ids = [row.get("entryId") for row in cases if isinstance(row, dict)]
+            require(len(case_ids) == len(cases) and all(isinstance(item, str) and item for item in case_ids)
+                    and len(set(case_ids)) == len(case_ids), "Duplicate or invalid source case entries")
+            frozen_cases = {}
+            for item in cases:
+                _, _, frozen = self._regression_json(item.get("casePath"), path.parent, cache,
+                                                     kind="case", within=path.parent)
+                require(isinstance(frozen.get("caseId"), str) and frozen["caseId"], "Frozen source case identity is unavailable")
+                frozen_cases[item["entryId"]] = frozen
+            require(len(data["samples"]) == len(case_ids) * len(config_ids) * repetitions,
+                    "Source experiment matrix count mismatch")
+            binding = data.get("batchBinding")
+            batch_value = data.get("batchResultPath") or (binding.get("resultPath") if isinstance(binding, dict) else None)
+            batch_path, batch, batch_rows = self._regression_batch(batch_value, path.parent, cache,
+                                                                  expected_id=data.get("batchId") or (binding.get("batchId") if isinstance(binding, dict) else None),
+                                                                  within=path.parent)
+            require(batch_path == path.parent / "batches" / batch["batchId"] / "batch-result.json",
+                    "Source experiment batch is not in its canonical directory")
+            require(len(batch_rows) == len(data["samples"]), "Source experiment/batch matrix count mismatch")
+            rows, sample_ids = {}, set()
+            seen = {field: set() for field in ("caseRunId", "runId", "sessionId")}
+            for item in data["samples"]:
+                key = _regression_key(item)
+                require(key not in rows and item["sampleId"] not in sample_ids
+                        and key[0] in case_ids and key[1] in config_ids and key[2] <= repetitions,
+                        "Source experiment sample is duplicated or outside its matrix")
+                sample_ids.add(item["sampleId"])
+                require(item["caseId"] == frozen_cases[key[0]]["caseId"], "Source sample/frozen case identity mismatch")
+                row = batch_rows.get(item["sampleId"])
+                require(isinstance(row, dict) and all(_same_json(row.get(name), item.get(name)) for name in
+                        ("caseId", "requestedConfiguration", "status", "caseRunId", "runId", "sessionId")
+                        if data.get("status") != "running" or name in item),
+                        "Source experiment/batch sample identity mismatch")
+                for field, values in seen.items():
+                    identity = row.get(field)
+                    require(identity is None or isinstance(identity, str) and identity and identity not in values,
+                            "Duplicate or invalid source execution identity")
+                    if identity is not None:
+                        values.add(identity)
+                selected = next(config for config in configurations if config["configurationId"] == key[1])
+                require(_same_json(row.get("requestedConfiguration"), selected.get("configRef")),
+                        "Source sample requested configuration mismatch")
+                for field in ("casePath", "caseDirectory", "evidencePath", "evaluationPath", "runtimeReport", "runDir"):
+                    if data.get("status") == "running" and field not in item:
+                        continue
+                    left, right = item.get(field), row.get(field)
+                    require((left is None) == (right is None), "Source experiment/batch artifact mismatch")
+                    if left is not None:
+                        target = self._regression_target(left, path.parent, batch_path.parent)
+                        require(target is not None and target == self._regression_target(right, batch_path.parent, batch_path.parent),
+                                "Source experiment/batch artifact path mismatch")
+                rows[key] = {"row": {**row, **{name: item[name] for name in
+                            ("sampleId", "caseEntryId", "configurationId", "repeatIndex", "caseId")},
+                                       "requestedConfiguration": selected["configRef"]},
+                             "base": batch_path.parent, "batchPath": batch_path, "batchId": batch["batchId"], "recovered": False}
+            return {"id": identifier, "path": path, "data": data, "originalPath": path,
+                    "experimentId": data["experimentId"], "configurations": configurations, "rows": rows,
+                    "cases": frozen_cases,
+                    "latestBatch": batch_path, "latestBatchId": batch["batchId"]}
+        require(kind == "experiment_resume" and _case_component(data.get("resumeId"))
+                and data["resumeId"] not in resume_ids
+                and data.get("status") in (("running", "completed", "stopped", "error", "interrupted") if depth
+                                          else ("completed", "stopped", "error", "interrupted")),
+                "Invalid or nonterminal source continuation")
+        resume_ids.add(data["resumeId"])
+        version = data["experimentResumeResultFormatVersion"]
+        previous_value = data.get("sourceResumeResult") if version == 2 else data.get("sourceExperimentResult")
+        previous = self._regression_context(previous_value, path.parent, cache, visited, resume_ids, depth + 1)
+        require((version == 1 and cache[previous["path"]][0] == "experiment")
+                or (version == 2 and cache[previous["path"]][0] == "experiment_resume"
+                    and data.get("sourceResumeId") == previous["data"].get("resumeId")),
+                "Source continuation ancestry identity mismatch")
+        require(data.get("sourceExperimentId") == previous["experimentId"]
+                and self._regression_target(data.get("sourceExperimentResult"), path.parent) == previous["originalPath"]
+                and self._regression_target(data.get("sourceBatchResult"), path.parent) == previous["latestBatch"]
+                and data.get("sourceBatchId") == previous["latestBatchId"], "Source continuation origin mismatch")
+        child_path, _, child = self._regression_json(data.get("batchResumeResultPath"), path.parent, cache,
+                                                    kind="batch_resume", within=path.parent)
+        require(_case_component(child.get("resumeId"))
+                and child_path == path.parent / "continuations" / child["resumeId"] / "resume-result.json"
+                and self._regression_target(child.get("sourceBatchResult"), child_path.parent) == previous["latestBatch"]
+                and child.get("sourceBatchId") == previous["latestBatchId"]
+                and (data["status"] == "running" or child.get("status") == data["status"]), "Source continuation child mismatch")
+        binding = child.get("batchBinding")
+        batch_value = child.get("batchResultPath") or (binding.get("resultPath") if isinstance(binding, dict) else None)
+        batch_path, batch, entries = self._regression_batch(batch_value, child_path.parent, cache,
+                                                          expected_id=binding.get("batchId") if isinstance(binding, dict) else None,
+                                                          within=child_path.parent)
+        require(batch_path == child_path.parent / "batches" / batch["batchId"] / "batch-result.json",
+                "Continuation batch is not in its canonical directory")
+        require(child.get("status") == "running" or batch.get("status") == child.get("status"),
+                "Continuation child/batch scheduling state mismatch")
+        require(isinstance(data.get("samplePlan"), list) and len(data["samplePlan"]) == len(previous["rows"]),
+                "Continuation sample matrix is unavailable")
+        rows, sample_ids, pending_ids = {}, set(), set()
+        for item in data["samplePlan"]:
+            key = _regression_key(item)
+            prior = previous["rows"].get(key)
+            require(prior is not None and key not in rows and item["sampleId"] not in sample_ids
+                    and all(_same_json(item.get(name), prior["row"].get(name)) for name in
+                            ("sampleId", "caseId", "requestedConfiguration")), "Continuation sample identity mismatch")
+            sample_ids.add(item["sampleId"])
+            if item.get("disposition") == "pending":
+                row = entries.get(item["sampleId"])
+                require(isinstance(row, dict) and row.get("caseId") == item["caseId"]
+                        and _same_json(row.get("requestedConfiguration"), item["requestedConfiguration"]),
+                        "Continuation new batch sample mismatch")
+                pending_ids.add(item["sampleId"])
+                current = {"row": {**row, **{name: item[name] for name in
+                           ("sampleId", "caseEntryId", "configurationId", "repeatIndex", "caseId", "requestedConfiguration")}},
+                           "base": batch_path.parent, "batchPath": batch_path, "batchId": batch["batchId"], "recovered": False}
+            else:
+                require(item.get("disposition") == "reuse" and item.get("caseRunId") == prior["row"].get("caseRunId"),
+                        "Continuation reused sample mismatch")
+                if version == 2:
+                    require(self._regression_target(item.get("sourceBatchResult"), path.parent) == prior["batchPath"]
+                            and item.get("sourceBatchId") == prior["batchId"], "Continuation reuse batch mismatch")
+                current = {**prior, "row": dict(prior["row"])}
+                if prior["row"].get("status") == "running":
+                    require(item.get("recoveredCheckpoint") is True and item.get("verification") == "verified",
+                            "Continuation checkpoint is not explicitly recovered")
+                    current["row"].update(status="finished", source=item.get("source"))
+                    current["recovered"] = True
+            rows[key] = current
+        require(pending_ids == set(entries), "Continuation batch has unrelated samples")
+        for field in ("caseRunId", "runId", "sessionId"):
+            identities = [item["row"][field] for item in rows.values() if item["row"].get(field) is not None]
+            require(all(isinstance(item, str) and item for item in identities) and len(set(identities)) == len(identities),
+                    "Duplicate or invalid continuation execution identity")
+        return {**previous, "id": identifier, "path": path, "data": data, "rows": rows,
+                "latestBatch": batch_path, "latestBatchId": batch["batchId"]}
+
+    def _regression_side_evidence(self, row, pair, context, directory, cache):
+        if row is None:
+            return {"status": "missing_side", "reasonCode": "missing_side", "reason": "该侧没有对应的计划样本。"}
+        if not isinstance(row, dict):
+            return {"status": "unavailable", "reasonCode": "invalid_metadata", "reason": "该侧样本元数据不完整。"}
+        if row.get("status") == "skipped":
+            return {"status": "not_recorded", "reasonCode": "not_recorded", "reason": "该侧样本未执行，没有录制证据。"}
+        try:
+            require(context is not None, "来源归档缺失、越界或不完整。")
+            key = _regression_key(row)
+            require(isinstance(pair, dict) and type(pair.get("repeatIndex")) is int
+                    and key[0] == pair.get("caseEntryId") and key[2] == pair["repeatIndex"]
+                    and key[1] == context["selectedConfiguration"], "比较行与来源配对身份不一致。")
+            selected = context["rows"].get(key)
+            require(selected is not None, "来源没有唯一对应的样本。")
+            source = selected["row"]
+            require(row.get("status") == source.get("status") == "finished" and row.get("verification") == "verified"
+                    and row.get("source") == source.get("source")
+                    and all(isinstance(row.get(field), str) and row[field] for field in
+                            ("sampleId", "caseId", "caseRunId", "runId", "sessionId"))
+                    and all(_same_json(row.get(field), source.get(field)) for field in
+                            ("sampleId", "caseId", "caseRunId", "requestedConfiguration")), "比较与来源样本身份不一致或未经复验。")
+            for field in ("runId", "sessionId"):
+                require(selected["recovered"] and source.get(field) is None or source.get(field) == row[field],
+                        "比较与来源运行身份不一致。")
+            if "sourceBatchResult" in row or "sourceBatchId" in row:
+                require(self._regression_target(row.get("sourceBatchResult"), directory) == selected["batchPath"]
+                        and row.get("sourceBatchId") == selected["batchId"], "比较与来源批次不一致。")
+            require(_case_component(source.get("caseRunId")), "来源执行目录标识无效。")
+            case_directory = selected["base"] / "cases" / source["caseRunId"]
+            require(self._regression_target(source.get("caseDirectory"), selected["base"], selected["base"]) == case_directory,
+                    "来源执行目录不是规范路径。")
+            evidence_path = case_directory / "evidence.json"
+            source_evidence = source.get("evidencePath")
+            require((selected["recovered"] and source_evidence is None
+                     or self._regression_target(source_evidence, selected["base"], case_directory) == evidence_path)
+                    and self._regression_target(row.get("sourceEvidencePath"), directory, case_directory) == evidence_path,
+                    "比较证据路径与来源规范位置不一致。")
+            _, evidence_id, evidence = self._regression_json(str(evidence_path), case_directory, cache, kind="evidence", within=case_directory)
+            expected_case = {**context["cases"][key[0]], "configRef": row.get("requestedConfiguration")}
+            validate_evidence(evidence, expected_case)
+            require(all(evidence.get(field) == row[field] for field in ("caseId", "caseRunId", "runId", "sessionId"))
+                    and evidence.get("batchId") == selected["batchId"] and evidence.get("source") == row.get("source"),
+                    "证据身份与来源运行不一致。")
+            run_directory = self._regression_target(evidence.get("runDir"), case_directory, case_directory)
+            expected_run = self._regression_target(source.get("runDir"), selected["base"], case_directory)
+            require(_case_component(row["runId"]) and run_directory == case_directory / "traces" / row["runId"]
+                    and (selected["recovered"] and source.get("runDir") is None or expected_run == run_directory),
+                    "证据轨迹目录与来源运行不一致。")
+            manifest_path, _, recording = self._regression_json(str(run_directory / "run.json"), run_directory, cache,
+                                                               kind="recording", within=run_directory)
+            require(manifest_path == run_directory / "run.json" and recording.get("runId") == row["runId"],
+                    "录制目录标识与来源运行不一致。")
+            if recording.get("formatVersion") == 2:
+                sessions = recording.get("sessions")
+                require(isinstance(sessions, list), "录制会话清单缺失。")
+                selected_sessions = [item for item in sessions if isinstance(item, dict) and item.get("sessionId") == row["sessionId"]]
+                name = hashlib.sha256(row["sessionId"].encode("utf-8")).hexdigest()
+                require(len(selected_sessions) == 1 and selected_sessions[0].get("traceFile") == name + ".jsonl"
+                        and selected_sessions[0].get("statusFile") == name + ".status.json", "录制会话清单与来源会话不一致。")
+            if run_directory.is_dir():
+                for child in run_directory.iterdir():
+                    if child.name == "run.json" or TRACE_NAME.fullmatch(child.name) or re.fullmatch(r"[0-9a-f]{64}\.status\.json", child.name):
+                        require(self._regression_target(str(child), run_directory, run_directory) == child,
+                                "录制成员不在本次运行的规范位置。")
+            runtime_path = case_directory / "runtime.json"
+            for saved_path, base in ((evidence.get("runtimeReport"), case_directory),
+                                     (source.get("runtimeReport"), selected["base"])):
+                require(saved_path is None or self._regression_target(saved_path, base, case_directory) == runtime_path,
+                        "运行报告不在本次执行的规范位置。")
+            case_path, _, case = self._regression_json(str(case_directory / "case.json"), case_directory, cache, kind="case", within=case_directory)
+            require(case_path == case_directory / "case.json" and _same_json(case, expected_case),
+                    "保存用例与来源样本不一致。")
+            result = {"status": "available", "evidenceId": evidence_id}
+            unavailable = []
+            evaluation_path = case_directory / "evaluation.json"
+            try:
+                source_evaluation = source.get("evaluationPath")
+                require(selected["recovered"] and source_evaluation is None
+                        or self._regression_target(source_evaluation, selected["base"], case_directory) == evaluation_path,
+                        "保存评测位置不规范。")
+                _, evaluation_id, evaluation = self._regression_json(str(evaluation_path), case_directory, cache,
+                                                                     kind="evaluation", within=case_directory)
+                association = evaluation.get("association")
+                navigation = {"casePath", "evidencePath", "evaluationPath", "runtimeReport", "manifestPath", "batchResultPath",
+                              "sourceExperimentResult", "sourceEvidencePath", "sourceResumeResult", "sourceBatchResult",
+                              "batchResumeResultPath", "batchResumeResult", "runDir", "batchBinding", "resumeVerification",
+                              "batchResultPaths", "resumeChain", "entries", "samples", "cases"}
+                require(isinstance(association, dict) and evaluation.get("caseRunId") == row["caseRunId"]
+                        and evaluation.get("caseId") == row["caseId"]
+                        and not navigation.intersection(evaluation)
+                        and set(association).issubset({"runId", "sessionId", "runDir", "casePath", "evidencePath", "runtimeReport"})
+                        and all(association.get(field) == row[field] for field in ("runId", "sessionId"))
+                        and self._regression_target(association.get("evidencePath"), case_directory, case_directory) == evidence_path
+                        and self._regression_target(association.get("casePath"), case_directory, case_directory) == case_directory / "case.json"
+                        and self._regression_target(association.get("runDir"), case_directory, case_directory) == run_directory
+                        and ("runtimeReport" not in association or self._regression_target(association["runtimeReport"], case_directory, case_directory) == runtime_path),
+                        "保存评测身份与证据不一致。")
+                result["evaluationId"] = evaluation_id
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                unavailable.append("保存评测缺失或关联不一致。")
+            trace_path = run_directory / (hashlib.sha256(row["sessionId"].encode("utf-8")).hexdigest() + ".jsonl")
+            if self._regression_target(str(trace_path), run_directory, run_directory) == trace_path:
+                trace = self.reference(trace_path)
+                if trace:
+                    result["assertionTrace"] = {"id": trace, "runId": row["runId"], "sessionId": row["sessionId"]}
+            if "assertionTrace" not in result:
+                unavailable.append("原始轨迹缺失或关联不一致。")
+            if unavailable:
+                result.update(reasonCode="partial_evidence", reason=" ".join(unavailable))
+            return result
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            return {"status": "unavailable", "reasonCode": "evidence_unavailable", "reason": str(error)}
+
+    def _regression_evidence(self, data, directory):
+        cache, contexts, sources = {}, {}, {}
+        if data.get("status") != "compared":
+            return ({side: {"status": "unavailable", "reasonCode": "comparison_unavailable", "reason": "没有已完成的保存比较。"}
+                     for side in ("baseline", "candidate")}, [])
+        for side in ("baseline", "candidate"):
+            try:
+                value = data.get(side)
+                require(isinstance(value, dict), "未保存该侧来源元数据。")
+                context = self._regression_context(value.get("sourceResult"), directory, cache)
+                require(value.get("experimentId") == context["experimentId"], "来源实验ID与比较不一致。")
+                configuration = value.get("configuration")
+                require(isinstance(configuration, dict) and sum(_same_json(configuration, item) for item in context["configurations"]) == 1,
+                        "比较配置与来源实验不一致。")
+                context["selectedConfiguration"] = configuration["configurationId"]
+                contexts[side] = context
+                sources[side] = {"status": "available", "id": context["id"]}
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                contexts[side] = None
+                sources[side] = {"status": "unavailable", "reasonCode": "source_unavailable", "reason": str(error)}
+        pairs = data.get("samples")
+        pairs = pairs if isinstance(pairs, list) else []
+        keys = [(row.get("caseEntryId"), row["repeatIndex"]) for row in pairs
+                if isinstance(row, dict) and isinstance(row.get("caseEntryId"), str) and type(row.get("repeatIndex")) is int]
+        observed, repeated = set(), set()
+        for key in keys:
+            if key in observed:
+                repeated.add(key)
+            observed.add(key)
+        evidence = []
+        for index, pair in enumerate(pairs, 1):
+            key = ((pair.get("caseEntryId"), pair.get("repeatIndex")) if isinstance(pair, dict)
+                   and isinstance(pair.get("caseEntryId"), str) and type(pair.get("repeatIndex")) is int else None)
+            sides = {side: ({"status": "unavailable", "reasonCode": "invalid_metadata", "reason": "比较配对键重复，无法唯一定位。"}
+                            if key in repeated else self._regression_side_evidence(pair.get(side) if isinstance(pair, dict) else {},
+                                                                                  pair, contexts[side], directory, cache))
+                     for side in ("baseline", "candidate")}
+            evidence.append({"index": index, **sides})
+        return sources, evidence
 
     def _preview_evidence(self, data, directory):
         """Offer only source evidence whose saved sample identity still matches."""
@@ -542,8 +926,10 @@ class ArtifactBrowser:
         if kind == "archive_bundle":
             require(self._archive is not None and path == self._archive_manifest,
                     "Choose the archive bundle itself as --runs-root")
-        links = self._links(data, path.parent)
+        links = [] if kind == "regression_comparison" else self._links(data, path.parent)
         result = {"id": identifier, "kind": kind, "data": data, "links": links}
+        if kind == "regression_comparison":
+            result["regressionSources"], result["regressionEvidence"] = self._regression_evidence(data, path.parent)
         if kind == "experiment_assertion_preview":
             result["sampleEvidence"] = self._preview_evidence(data, path.parent)
         if kind == "assertion_comparison":

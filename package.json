@@ -23,6 +23,7 @@
     "demo:eval": "node scripts/demo-eval.js",
     "demo:workflow": "python -m dsh_eval.workflow_demo",
     "demo:regression": "python -m dsh_eval.regression_demo",
+    "check:delivery": "python -m dsh_eval.delivery_check",
     "smoke:host": "node scripts/smoke-host.js",
     "check:output": "node scripts/check-output.js",
     "check:model-providers": "node scripts/check-model-providers.js",

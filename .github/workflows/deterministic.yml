@@ -40,6 +40,8 @@ jobs:
         run: npm.cmd run demo:workflow -- --generate-only
       - name: Check synthetic baseline regression gates
         run: npm.cmd run demo:regression -- --output-dir runs/ci-regression-demo
+      - name: Check synthetic delivery and archive relocation
+        run: npm.cmd run check:delivery -- --output-dir runs/ci-delivery-check
       - name: Publish synthetic regression gate summary
         if: ${{ always() && hashFiles('runs/ci-regression-demo/artifacts/summary.md') != '' }}
         run: Get-Content -LiteralPath 'runs/ci-regression-demo/artifacts/summary.md' -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8

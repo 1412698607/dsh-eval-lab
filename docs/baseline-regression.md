@@ -79,7 +79,21 @@ configurationId 只是每个实验内的选择标签，可以不同；actual 配
 | incompatible | 任务输入、来源或全局可比性条件不满足 |
 | unavailable | 共有项缺少可比较的执行 / 录制 / 断言 / 路由证据 |
 
-计划中存在但 skipped、证据文件缺失的样本属于 unavailable，区别于矩阵本身没有该项。两侧行保留 saved 结论与新复验 outcome、changedFields、原因和证据路径；不根据旧 summary 或旧 evaluation 的 passed 字段做判断。该格式提供 CLI / JSON；[CI回归门禁示例](ci-regression.md)使用独立合成实验验证原退出语义并发布比较产物，结果浏览器接入仍待后续批次。
+计划中存在但 skipped、证据文件缺失的样本属于 unavailable，区别于矩阵本身没有该项。两侧行保留 saved 结论与新复验 outcome、changedFields、原因和证据路径；不根据旧 summary 或旧 evaluation 的 passed 字段做判断。该格式提供 CLI / JSON及下面的只读比较页面；[CI回归门禁示例](ci-regression.md)使用独立合成实验验证原退出语义并发布比较产物。
+
+## 比较浏览
+
+运行`python -m dsh_eval --browse --runs-root <同时包含比较JSON与双方原归档的目录>`，打开完整带令牌URL，选择“基线回归比较”。支持现有regressionComparisonFormatVersion=1及任意JSON输出文件名，包括CI示例的no-regression.json、regression.json、incomplete.json。
+
+页面展示保存的门禁outcome / exitCode、可比数 / 两侧样本键并集、各类变化计数、全局不可比原因及已允许 / 实际配置差异。可以筛选退化、改善、保持、缺项与不可比 / 不可用；筛选不改变分母、原行身份或退出码。覆盖不足时仍保留已确认退化。计数缺失不补零，输入错误的退出2与正常比较覆盖不足的退出2分开展示。
+
+每对保留caseEntryId与repeatIndex，两侧分别显示“比较时复验值”、来源保存值及changedFields。比较时复验值来自生成比较JSON时的复验，并非浏览时重新检查。打开原评测查看的是源归档的保存文件，可能与比较时复验值不同；继续使用原评测页的断言按钮可定位对应runId / sessionId / seq的事件。
+
+来源结果、原评测、证据JSON及轨迹按钮只使用后端已核对范围、来源图、样本身份与规范位置后提供的ID。普通实验及显式版本1 / 2续跑分别沿保存关联读取；来源图有界且拒绝循环。源缺失、越界、身份或路径不匹配、未开始项等仅显示不可用原因，不根据原路径、UUID或文件名在其他位置补找。
+
+只下载CI五文件包时，可以把其目录设为`--runs-root`查看三份比较JSON。包内没有原轨迹；源不在配置根中时，即使原绝对位置的文件仍存在，也不会读取或提供跳转。五文件包不是可独立重评的完整归档；下载目录中的index.json和summary.md可用文本编辑器查看，结果浏览器未为二者新增专用类型。
+
+浏览只展示保存结论及当前可访问关联，不执行inspect、评测、续跑或模型任务，也不认证来源声明或重算计划指纹。边界、启动和停止方式见[结果浏览](result-browser.md)，本批验证状态见[137](changes/2026-11-11-137-baseline-regression-browser.md)。
 
 ## 边界
 

@@ -1,5 +1,11 @@
 # dsh-eval-lab 架构与技术取舍
 
+139复查将比较页limitations条目纳入既有安全文本转换，保存对象或缺失值不再打断详情。交付检查仅对自己创建的HTTP服务使用非守护请求线程，由server_close等待请求处理完成，再核对主服务线程和监听套接字；不改变常规浏览服务默认值，不承诺清理总时限。[复查与验证](changes/2026-11-11-139-baseline-delivery-review.md)
+
+138 的delivery_check仅编排固定合成生成、原门禁、受限目录移动、归档verify、包外fresh报告及只读API，不新增评分规则或宿主依赖。独立deliveryCheckFormatVersion=1结果区分八阶段；verify仍为文件 / 依赖核验，四样本重评另记。实际HTTP只覆盖两个根的catalog与指定文档，深层证据用ArtifactBrowser API读取；连接、线程和套接字均finally回收。命令不拉取或认证Git版本，已提交HEAD导出与未提交公开候选导出由外部清单 / 模块ROOT证明分别建立，不混称同一checkout。[交付检查与范围](delivery-check.md)
+
+137 将保存的regressionComparisonFormatVersion=1接入只读浏览，评分器与比较格式不改。目录为基线比较识别任意JSON名，仍受单文档8MiB与项目数上限约束；这不是整个目录扫描的总资源硬限。详情额外返回regressionSources与按原行索引组织的regressionEvidence，不写回比较JSON。每一侧经浏览根守卫后，核对来源结果、选择配置、样本键 / 身份及规范证据路径，再提供原评测、证据与轨迹ID；显式v1 / v2续跑沿有界保存图关联，不调用报告加载器、指纹 / 领取核验或评测进程。无法证实的关联保留不可用状态，前端不从保存路径拼接按钮。[比较浏览与边界](baseline-regression.md#比较浏览)
+
 136 复查将演示输出改为先排他创建原始目录，再规范化，用于拒绝已有悬空链接并保持短路径身份一致。比较CLI改用Popen，在取得自有进程对象后通过finally复用runner的独立进程组和进程树回收，修正原subprocess.run超时只杀Python本体的问题。原比较格式、0 / 1 / 2及五文件产物不变；中断回归仅验证实际进程就绪后注入KeyboardInterrupt的异常清理，不承诺信号投递或总退出硬上限。[复查与验证](changes/2026-11-09-136-synthetic-regression-review.md)
 
 135 的无模型CI回归示例由`dsh_eval.regression_demo`在新目录冻结同一用例、配置和两轮计划，预先固定回复及调度行为，产生四个独立实验、七次实际合成任务。三个独立Python CLI进程调用原`--compare-baseline`，验证无退化0、明确退化1、覆盖不足2；覆盖不足保留一项已确认退化及一项未开始样本。原比较、评分和结果格式不变，比较前后输入及实验文件摘要须保持。

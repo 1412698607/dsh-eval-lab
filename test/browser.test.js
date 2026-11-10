@@ -1466,3 +1466,240 @@ test("reserved execution batch links open saved checkpoints and keep inaccessibl
     assert.ok(requests.every((path) => path.startsWith("/api/catalog") || path.startsWith("/api/document?")));
   }
 });
+
+function regressionArtifact(code = 2) {
+  const ref = { provider: "synthetic", model: "base-model", profile: "headless", pluginVersion: "0.1.2" };
+  const sample = (side, repeat, outcome) => ({ sampleId: `${side}-${repeat}`, caseEntryId: "confirmation", caseId: "rename",
+    configurationId: side, repeatIndex: repeat, status: "finished", caseRunId: `${side}-case-${repeat}`,
+    runId: `${side}-run-${repeat}`, sessionId: `${side}-session-${repeat}`, source: "synthetic", outcome,
+    verification: "verified", configurationMatch: "matched", executionStatus: "completed", recordingOutcome: "complete",
+    assertionOutcome: outcome, requestedConfiguration: side === "candidate" ? { ...ref, model: "candidate-model" } : ref,
+    configuration: side === "candidate" ? { ...ref, model: "candidate-model" } : ref, changedFields: [], reasons: [],
+    sourceEvidencePath: `runs:unapproved-${side}-${repeat}`, saved: { outcome, source: "synthetic", configurationMatch: "matched",
+      executionStatus: "completed", recordingOutcome: "complete", assertionOutcome: outcome } });
+  const pairs = [1, 2].map((repeat) => ({ caseEntryId: "confirmation", repeatIndex: repeat,
+    change: code === 0 ? "unchanged_failed" : repeat === 1 ? "regression" : code === 2 ? "unavailable" : "unchanged_passed",
+    reasons: code === 2 && repeat === 2 ? ["candidate_evidence_unavailable"] : [], taskChanges: [],
+    baseline: sample("baseline", repeat, code === 0 ? "failed" : "passed"),
+    candidate: sample("candidate", repeat, code === 0 || repeat === 1 ? "failed" : "passed") }));
+  if (code !== 0) {
+    pairs[0].candidate.saved.outcome = "passed";
+    pairs[0].candidate.changedFields = ["outcome", "assertionOutcome"];
+  }
+  if (code === 2) Object.assign(pairs[1].candidate, { status: "skipped", outcome: null, source: null,
+    executionStatus: null, recordingOutcome: null, assertionOutcome: null, verification: "skipped" });
+  const approved = (side, repeat) => ({ status: "available", evaluationId: `runs:${side}/sample-${repeat}/evaluation.json`,
+    evidenceId: `runs:${side}/sample-${repeat}/evidence.json`, assertionTrace: { id: `runs:${side}/sample-${repeat}/traces/${"a".repeat(64)}.jsonl`,
+      runId: `${side}-run-${repeat}`, sessionId: `${side}-session-${repeat}` } });
+  return { kind: "regression_comparison", links: [{ id: "runs:unapproved-footer", label: "unapproved generic link" }],
+    regressionSources: { baseline: { status: "available", id: "runs:baseline/experiment-result.json" },
+      candidate: { status: "available", id: "runs:candidate/experiment-result.json" } },
+    regressionEvidence: [1, 2].map((index) => ({ index, baseline: approved("baseline", index),
+      candidate: code === 2 && index === 2 ? { status: "not_recorded", reason: "该侧尚未执行，没有保存证据。" } : approved("candidate", index) })),
+    data: { regressionComparisonFormatVersion: 1, status: "compared", modelCalled: false, generatedAt: "2026-11-11T00:00:00Z",
+      baseline: { experimentId: "base-experiment", sourceResult: "runs:unapproved-source-baseline", plannedSamples: 2,
+        planVerification: { status: "verified" }, configuration: { configurationId: "baseline", configRef: ref } },
+      candidate: { experimentId: "candidate-experiment", sourceResult: "runs:unapproved-source-candidate", plannedSamples: 2,
+        planVerification: { status: "verified" }, configuration: { configurationId: "candidate", configRef: { ...ref, model: "candidate-model" } } },
+      allowedConfigurationChanges: ["model"], configurationChanges: [{ field: "model", baseline: "base-model", candidate: "candidate-model", allowed: true }],
+      comparability: { status: code === 2 ? "incomplete" : "comparable", issues: [] },
+      counts: { regression: code === 0 ? 0 : 1, improvement: 0, unchanged_passed: code === 1 ? 1 : 0,
+        unchanged_failed: code === 0 ? 2 : 0, missing_in_baseline: 0, missing_in_candidate: 0, incompatible: 0,
+        unavailable: code === 2 ? 1 : 0, compared: code === 2 ? 1 : 2, total: 2 },
+      outcome: ["passed", "failed", "unevaluable"][code], exitCode: code, hasRegressions: code !== 0,
+      samples: pairs, limitations: ["Only the saved independent experiments are compared."] } };
+}
+
+async function openRegression(artifact = regressionArtifact(), requests = []) {
+  const saved = typeof artifact === "function" ? regressionArtifact() : artifact;
+  const get = await viewer([{ id: "runs:regression.json", kind: "regression_comparison", title: "保存的基线回归", path: "regression.json",
+    outcome: saved.data.outcome, status: saved.data.status, regressionCounts: saved.data.counts, sources: ["synthetic", "unknown"] }], artifact, requests);
+  get("navigation").children.find((item) => item.children[1].textContent === "基线回归比较").trigger("click");
+  findButton(get("catalog"), "保存的基线回归").trigger("click");
+  await new Promise(setImmediate);
+  return get;
+}
+
+test("baseline regression pages retain gate exit codes, coverage and fresh versus saved sample verdicts", async () => {
+  for (const code of [0, 1, 2]) {
+    const artifact = regressionArtifact(code), before = JSON.stringify(artifact.data);
+    const get = await openRegression(artifact);
+    assert.equal(get("title").textContent, "基线回归比较");
+    assert.match(get("section-label").textContent, /筛选使用保存的门禁结论/);
+    assert.match(get("detail").textContent, new RegExp(`原退出码 ${code}`));
+    assert.match(get("detail").textContent, new RegExp(`可比 / 样本键并集 ${code === 2 ? 1 : 2} / 2`));
+    assert.match(section(get, "比较门禁与覆盖").textContent, /0 表示完整可比且无退化，不表示所有任务通过/);
+    assert.match(get("detail").textContent, /base-experiment/);
+    assert.match(get("detail").textContent, /candidate-experiment/);
+    assert.match(section(get, "配置变化与允许范围").textContent, /base-model candidate-model 是/);
+    assert.match(section(get, "逐样本基线回归对照").textContent, /比较时复验值 来源保存值/);
+    if (code !== 0) assert.match(get("detail").textContent, /任务结论 未通过 通过/);
+    assert.equal(JSON.stringify(artifact.data), before);
+  }
+});
+
+test("regression catalog uses gate outcomes and preserves source filters", async () => {
+  const get = await openRegression();
+  assert.equal(get("outcome-label").textContent, "门禁结论");
+  get("back").trigger("click");
+  assert.match(get("catalog").textContent, /门禁结论 \/ 覆盖/);
+  assert.match(get("catalog").textContent, /退化 1 · 可比 1 \/ 2/);
+  get("outcome").value = "failed"; get("outcome").trigger("change");
+  assert.match(get("catalog").textContent, /暂无匹配记录/);
+  get("outcome").value = "unevaluable"; get("outcome").trigger("change");
+  get("source").value = "unknown"; get("source").trigger("change");
+  assert.ok(findButton(get("catalog"), "保存的基线回归"));
+  get("navigation").children.find((item) => item.children[1].textContent === "实验").trigger("click");
+  assert.equal(get("outcome-label").textContent, "任务结论");
+  assert.equal(get("outcome").value, "");
+});
+
+test("regression evidence buttons navigate only separately approved source and side identifiers", async () => {
+  const fixture = regressionArtifact(), requests = [];
+  const get = await openRegression((path) => new URLSearchParams(path.split("?")[1]).get("id") === "runs:regression.json"
+    ? fixture : { kind: "markdown", text: "approved destination", links: [] }, requests);
+  for (const [label, expected] of [["基线来源实验", "runs:baseline/experiment-result.json"], ["候选来源实验", "runs:candidate/experiment-result.json"],
+    ["基线原评测", "runs:baseline/sample-1/evaluation.json"], ["候选原评测", "runs:candidate/sample-1/evaluation.json"],
+    ["基线证据", "runs:baseline/sample-1/evidence.json"], ["候选证据", "runs:candidate/sample-1/evidence.json"],
+    ["基线轨迹", `runs:baseline/sample-1/traces/${"a".repeat(64)}.jsonl`], ["候选轨迹", `runs:candidate/sample-1/traces/${"a".repeat(64)}.jsonl`]]) {
+    findButton(get("detail"), label).trigger("click");
+    await new Promise(setImmediate);
+    const query = new URLSearchParams(requests.at(-1).split("?")[1]);
+    assert.equal(query.get("id"), expected);
+    assert.equal(query.has("seq") || query.has("runId") || query.has("sessionId"), false);
+    get("back").trigger("click"); await new Promise(setImmediate);
+  }
+  assert.ok(requests.every((path) => !decodeURIComponent(path).includes("unapproved")));
+});
+
+test("regression filters keep the original sample index and overall denominator", async () => {
+  const fixture = regressionArtifact(), requests = [];
+  fixture.regressionEvidence.reverse();
+  const get = await openRegression(fixture, requests);
+  const scope = section(get, "逐样本基线回归对照"), filter = descendants(scope, "select")[0];
+  filter.value = "unavailable"; filter.trigger("change");
+  assert.match(scope.textContent, /当前显示 1 \/ 2/);
+  assert.match(scope.textContent, /第 2 轮/);
+  assert.doesNotMatch(scope.textContent, /第 1 轮/);
+  assert.match(get("detail").textContent, /可比 \/ 样本键并集 1 \/ 2/);
+  assert.equal(findButton(scope, "候选原评测"), null);
+  findButton(scope, "基线原评测").trigger("click"); await new Promise(setImmediate);
+  assert.equal(new URLSearchParams(requests.at(-1).split("?")[1]).get("id"), "runs:baseline/sample-2/evaluation.json");
+});
+
+test("regression change selectors distinguish improvement, unchanged, missing and incompatible pairs", async () => {
+  const fixture = regressionArtifact();
+  const base = fixture.data.samples[0];
+  fixture.data.samples = ["regression", "improvement", "unchanged_passed", "unchanged_failed", "missing_in_baseline", "missing_in_candidate", "incompatible", "unavailable", "future_change"]
+    .map((change, index) => ({ ...base, change, caseEntryId: `entry-${index}`, repeatIndex: index + 1 }));
+  fixture.regressionEvidence = [];
+  const get = await openRegression(fixture), scope = section(get, "逐样本基线回归对照"), filter = descendants(scope, "select")[0];
+  for (const [value, entries] of [["improvement", [1]], ["unchanged", [2, 3]], ["missing", [4, 5]], ["incompatible", [6]], ["unavailable", [7]]]) {
+    filter.value = value; filter.trigger("change");
+    const cards = descendants(scope, "article");
+    assert.equal(cards.length, entries.length);
+    assert.deepEqual(cards.map((card) => descendants(card, "h3")[0].textContent), entries.map((index) => `entry-${index} · 第 ${index + 1} 轮`));
+  }
+  filter.value = "all"; filter.trigger("change");
+  assert.match(scope.textContent, /future_change/);
+});
+
+test("CI-only regression JSON keeps conclusions without inventing evidence links", async () => {
+  const fixture = regressionArtifact(), requests = [];
+  delete fixture.regressionSources; delete fixture.regressionEvidence;
+  const get = await openRegression(fixture, requests);
+  assert.match(get("detail").textContent, /已确认退化 1/);
+  assert.match(get("detail").textContent, /来源归档缺失或未通过关联检查/);
+  assert.match(get("detail").textContent, /基线原评测不可用/);
+  assert.equal(descendants(get("detail"), "button").length, 0);
+  assert.equal(requests.filter((path) => path.startsWith("/api/document?")).length, 1);
+});
+
+test("partly available regression evidence keeps only the independently approved actions", async () => {
+  const fixture = regressionArtifact();
+  delete fixture.regressionEvidence[0].baseline.evaluationId;
+  fixture.regressionEvidence[0].baseline.reason = "原评测文件缺失；其余关联仍可用。";
+  fixture.regressionEvidence[0].candidate = { status: "unavailable", reasonCode: "evidence_identity_mismatch" };
+  const get = await openRegression(fixture), scope = descendants(section(get, "逐样本基线回归对照"), "article")[0];
+  assert.equal(findButton(scope, "基线原评测"), null);
+  assert.ok(findButton(scope, "基线证据"));
+  assert.ok(findButton(scope, "基线轨迹"));
+  assert.equal(findButton(scope, "候选原评测"), null);
+  assert.equal(findButton(scope, "候选证据"), null);
+  assert.equal(findButton(scope, "候选轨迹"), null);
+  assert.match(scope.textContent, /原评测文件缺失/);
+  assert.match(scope.textContent, /evidence_identity_mismatch/);
+});
+
+test("regression input errors and missing counters never become normal incomplete comparisons or zeros", async () => {
+  const fixture = regressionArtifact();
+  fixture.data = { regressionComparisonFormatVersion: 1, status: "error", exitCode: 2, outcome: "unevaluable", modelCalled: false,
+    error: "<img src=x onerror=alert(1)>" };
+  const get = await openRegression(fixture);
+  assert.match(section(get, "比较门禁与覆盖").textContent, /比较输入或输出错误：<img/);
+  assert.match(get("detail").textContent, /可比 \/ 样本键并集 缺失 \/ 缺失/);
+  assert.match(get("detail").textContent, /已确认退化 缺失/);
+  assert.match(get("detail").textContent, /逐样本配对明细缺失/);
+  assert.equal(descendants(get("detail"), "button").length, 0);
+  assert.equal(descendants(get("detail"), "img").length, 0);
+  const normal = await openRegression(regressionArtifact());
+  assert.doesNotMatch(section(normal, "比较门禁与覆盖").textContent, /比较输入或输出错误/);
+});
+
+test("regression metadata and unknown enums remain literal text without inherited-name translation", async () => {
+  const fixture = regressionArtifact(), attack = '<img src=x onerror="alert(1)">';
+  fixture.data.baseline.experimentId = attack;
+  fixture.data.baseline.planVerification.status = "__proto__";
+  fixture.data.samples[0].caseEntryId = attack;
+  fixture.data.samples[0].change = "__proto__";
+  fixture.data.samples[0].reasons = [attack, { toString: null, valueOf: null }];
+  fixture.data.samples[0].candidate.outcome = { toString: null, valueOf: null };
+  fixture.data.samples[0].candidate.saved.outcome = "__proto__";
+  fixture.data.counts.compared = "1";
+  fixture.data.counts.total = -1;
+  fixture.data.configurationChanges[0].field = attack;
+  fixture.data.outcome = "__proto__";
+  const get = await openRegression(fixture);
+  assert.ok(literalText(get("detail")).includes(attack));
+  assert.match(get("detail").textContent, /__proto__/);
+  assert.match(get("detail").textContent, /\{"toString":null,"valueOf":null\}/);
+  assert.match(get("detail").textContent, /可比 \/ 样本键并集 缺失 \/ 缺失/);
+  assert.equal(descendants(get("detail"), "img").length, 0);
+  assert.equal(descendants(get("detail"), "script").length, 0);
+  get("back").trigger("click");
+  assert.match(get("catalog").textContent, /__proto__/);
+});
+
+test("regression limitations preserve malformed saved values without interrupting document rendering", async () => {
+  const fixture = regressionArtifact(), attack = '<img src=x onerror="alert(1)">';
+  fixture.data.limitations = [attack, null, { toString: null, valueOf: null }];
+  const get = await openRegression(fixture);
+  assert.equal(get("message").textContent, "");
+  assert.match(section(get, "解释边界").textContent, /缺失/);
+  assert.match(section(get, "解释边界").textContent, /\{"toString":null,"valueOf":null\}/);
+  assert.ok(literalText(get("detail")).includes(attack));
+  assert.equal(descendants(get("detail"), "img").length, 0);
+  assert.ok(descendants(get("detail"), "summary").some((item) => item.textContent === "查看保存的完整 JSON"));
+});
+
+test("regression side evaluations reuse their own precise assertion event locators", async () => {
+  for (const side of ["baseline", "candidate"]) {
+    const fixture = regressionArtifact(1), requests = [], evaluation = diagnosticResult();
+    evaluation.assertionTrace = { id: `runs:${side}/actual-trace.jsonl`, runId: `${side}-run`, sessionId: `${side}-session` };
+    const get = await openRegression((path) => {
+      const query = new URLSearchParams(path.split("?")[1]);
+      if (query.get("id") === "runs:regression.json") return fixture;
+      if (query.has("seq")) return { kind: "trace", links: [], offset: 0, nextOffset: null, focus: { seq: 109, line: 9 },
+        rows: [{ line: 9, data: { event: { seq: 109, type: "assistant/message" } } }] };
+      return evaluation;
+    }, requests);
+    findButton(get("detail"), side === "baseline" ? "基线原评测" : "候选原评测").trigger("click"); await new Promise(setImmediate);
+    findButton(get("detail"), "最终答案 · seq 109").trigger("click"); await new Promise(setImmediate);
+    const query = new URLSearchParams(requests.at(-1).split("?")[1]);
+    assert.equal(query.get("id"), evaluation.assertionTrace.id);
+    assert.equal(query.get("runId"), `${side}-run`);
+    assert.equal(query.get("sessionId"), `${side}-session`);
+    assert.equal(query.get("seq"), "109");
+    assert.match(get("detail").textContent, /已定位 seq 109/);
+  }
+});
