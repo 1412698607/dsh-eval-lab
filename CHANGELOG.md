@@ -1,5 +1,9 @@
 # dsh-eval-lab 修改记录
 
+## 2026年11月11日 批次B、C实现交付与源码验收
+
+- [140](docs/changes/2026-11-11-140-baseline-delivery-acceptance.md) B/C及复查修正已交付为42bc019；345份已提交源码在仓库外独立验收通过，精确CI全部18步成功，日志673Python / 165Node；已下载核对唯一五文件ZIP及GitHub digest，摘要网页渲染未验证。
+
 ## 2026年11月11日 批次B、C复查与边界修正
 
 - [139](docs/changes/2026-11-11-139-baseline-delivery-review.md) 复查比较浏览和离线交付全部改动，修正异常limitations使整页中断、HTTP守护请求线程未等待退出两项问题；原评分、来源守卫与五文件上传范围保持，交付与新CI独立核对。

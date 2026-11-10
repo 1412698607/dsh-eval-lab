@@ -18,7 +18,7 @@ npm.cmd run demo:workflow -- --generate-only
 
 运行 `npm.cmd run demo:regression` 可生成独立合成实验，使用真实比较CLI验证无退化、明确退化和覆盖不足的0 / 1 / 2退出码。仓库CI已配置为发布这些场景的摘要及五份合成比较产物；演示返回0表示预设场景验证成功，真实基线门禁仍应传递比较命令的失败退出码。用法及产物范围见[CI回归门禁示例](docs/ci-regression.md)。
 
-运行 `npm.cmd run check:delivery`，检查固定合成流程、门禁、归档搬迁、包外重评及只读HTTP访问。138分别完成旧已提交基线和公开候选的源码导出验收；该候选属于139修复前快照，当前验证与交付状态见[复查记录139](docs/changes/2026-11-11-139-baseline-delivery-review.md)和[开发进度](docs/progress.md)。命令不自行证明源码来自已提交版本，摘要网页渲染仍未验证。用法与准确证据范围见[交付检查](docs/delivery-check.md)。
+运行 `npm.cmd run check:delivery`，检查固定合成流程、门禁、归档搬迁、包外重评及只读HTTP访问。B/C和[139复查修正](docs/changes/2026-11-11-139-baseline-delivery-review.md)已提交为42bc019，该版本345份公开源码的仓库外导出验收通过；最新CI与上传范围见[交付验收140](docs/changes/2026-11-11-140-baseline-delivery-acceptance.md)。138的旧已提交基线和修复前候选各保留原证据，命令不自行认证源码版本，摘要网页渲染仍未验证。用法与准确证据范围见[交付检查](docs/delivery-check.md)。
 
 ## 当前功能
 
@@ -433,7 +433,7 @@ python -m dsh_eval --compare-baseline 'runs/experiments/<baseline-id>/experiment
 - 只录制插件观察到的新增事件；不会补齐加载前、恢复会话或 fork 继承的历史。`run.json` 明确标注 `live-events-only`，这些日志不能直接作为完整会话恢复文件。
 - 已完成异步写入和封存不代表断电时绝对可靠；没有 fsync、跨进程恢复或日志轮转。状态替换使用同目录临时文件与 rename，当前 Windows 本地文件系统检查通过。
 - SHA-256 用于一致性校验，不是签名。新版本 2 元信息可发现保留的清单中登记的整对会话文件缺失；旧格式仍无法检测这类删除。清单、版本、日志与摘要同时被改写，或整个运行目录被删除，均不在检测保证内。
-- 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；M3.3 状态化工具、M3.4 顺序批次、M4 重复试验 / 离线报告及 M5 本地浏览已完成当前范围。Windows无模型云端CI按已交付提交保留，B/C当前候选不继承该结果；配置比较有合成回归及[072固定双配置矩阵](docs/changes/2026-11-01-072-full-core-two-config-comparison.md)的历史报告依据。四十项观测为39通过 / 1严格格式失败，不构成总体模型优胜、成本或性能改善结论，也不是本轮C新增模型验收。
+- 已验证 M2.3 固定基线、M3.1 合成离线断言和 M3.2 受控真实单用例闭环；M3.3 状态化工具、M3.4 顺序批次、M4 重复试验 / 离线报告及 M5 本地浏览已完成当前范围。Windows无模型云端CI按各提交独立核对，B/C实现交付与验证范围见[140](docs/changes/2026-11-11-140-baseline-delivery-acceptance.md)；配置比较有合成回归及[072固定双配置矩阵](docs/changes/2026-11-01-072-full-core-two-config-comparison.md)的历史报告依据。四十项观测为39通过 / 1严格格式失败，不构成总体模型优胜、成本或性能改善结论，也不是本轮C新增模型验收。
 
 ## 下一阶段
 
@@ -467,7 +467,7 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 - [修改记录](CHANGELOG.md)：按开发批次索引修改内容和验证依据。
 - [修改记录模板](docs/templates/change-record.md)：后续改动使用的记录格式。
 
-后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。当前摘要的源码 / 资料复核日期为2026年11月11日（Asia/Shanghai）；本轮合成与离线交付验收见[138](docs/changes/2026-11-11-138-synthetic-delivery-check.md)，不代表重跑历史模型任务或新云端CI。
+后续每批修改同步维护对应文档，规则见 [开发约定](AGENTS.md)。当前状态随开发更新，历史修改和验证结果保留在批次记录中。当前摘要的源码 / 资料复核日期为2026年11月11日（Asia/Shanghai）；形成时的合成与离线交付验收见[138](docs/changes/2026-11-11-138-synthetic-delivery-check.md)，后续复查和交付见139 / 140，各批不合并成新模型验收。
 
 公开仓库保留源码、测试和技术文档。原始日志、依赖缓存、个人笔记及本地凭据由 `.gitignore` 排除；环境变量示例只包含占位值。
 
