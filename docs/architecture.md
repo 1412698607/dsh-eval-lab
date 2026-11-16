@@ -1,5 +1,7 @@
 # dsh-eval-lab 架构与技术取舍
 
+首次阅读可先看[设计总览](design-overview.md)中的组件图、连续例子与五项取舍，再按[证据演示路线](demo-walkthrough.md)查看现有结果；[工程问题复盘](engineering-case-studies.md)整理相关历史失败与修正。本页继续保留详细协议和演进记录。
+
 139复查将比较页limitations条目纳入既有安全文本转换，保存对象或缺失值不再打断详情。交付检查仅对自己创建的HTTP服务使用非守护请求线程，由server_close等待请求处理完成，再核对主服务线程和监听套接字；不改变常规浏览服务默认值，不承诺清理总时限。[复查与验证](changes/2026-11-11-139-baseline-delivery-review.md)
 
 138 的delivery_check仅编排固定合成生成、原门禁、受限目录移动、归档verify、包外fresh报告及只读API，不新增评分规则或宿主依赖。独立deliveryCheckFormatVersion=1结果区分八阶段；verify仍为文件 / 依赖核验，四样本重评另记。实际HTTP只覆盖两个根的catalog与指定文档，深层证据用ArtifactBrowser API读取；连接、线程和套接字均finally回收。命令不拉取或认证Git版本，已提交HEAD导出与未提交公开候选导出由外部清单 / 模块ROOT证明分别建立，不混称同一checkout。[交付检查与范围](delivery-check.md)

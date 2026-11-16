@@ -453,6 +453,8 @@ M1 至 M5 主路线保留原验收。[M6 扩展](docs/plans/m6-reliability-valid
 
 ## 开发文档
 
+- [设计总览](docs/design-overview.md)：架构图、组件职责、连续例子与关键取舍；[证据演示路线](docs/demo-walkthrough.md)从任务结论走到原始事件，[工程问题复盘](docs/engineering-case-studies.md)保留问题、修正和验证依据。
+
 - [M2 开发方案](docs/plans/m2-reliable-recording.md)：M2.1、M2.2 和 M2.3 受控联调基线已完成。
 - [M3 与后续计划](docs/plans/m3-regression-evaluation.md)：从固定 fixture 检查推进到用例、单次运行、实时工具环境和批次评测。
 - [开发进度](docs/progress.md)：当前已实现和已验证的能力、限制及后续验收目标。
