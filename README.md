@@ -172,6 +172,8 @@ npm.cmd run check:output
 
 资源测量使用独立真实进程和文件，不调用模型，也不自动加入 CI：
 
+145补充CPU时间、事件循环延迟 / ELU、固定20秒持续输入及严格前后对照；默认仍为原八场景，持续场景显式选择。同负载冻结与结果边界见[录制性能测量](docs/recorder-profiling.md)，逐次数据保留CPU上涨等不利结果，不宣称全面性能提升。
+
 ```powershell
 npm.cmd run measure:recorder
 # 默认 8 类场景各 3 次；可显式改为 1～10 次

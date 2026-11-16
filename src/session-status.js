@@ -12,17 +12,18 @@ export function statusFilename(traceFile) {
 // Same-directory replacement; this is not an fsync or power-loss guarantee.
 export async function writeStatus(path, status) {
   const temporary = `${path}.${randomUUID()}.tmp`;
+  let replaced = false;
   try {
     await writeFile(temporary, JSON.stringify(status, null, 2) + "\n", { flag: "wx" });
     // Retry only replacement, using the already written bytes. Permanent access
     // failures still reject after six attempts / 310 ms of scheduled backoff.
     for (let attempt = 0; ; attempt++) {
-      try { await rename(temporary, path); break; } catch (error) {
+      try { await rename(temporary, path); replaced = true; break; } catch (error) {
         if (!retryableReplacementCodes.has(error.code) || attempt === replacementRetryDelays.length) throw error;
         await setTimeout(replacementRetryDelays[attempt]);
       }
     }
   } finally {
-    await unlink(temporary).catch((error) => { if (error.code !== "ENOENT") throw error; });
+    if (!replaced) await unlink(temporary).catch((error) => { if (error.code !== "ENOENT") throw error; });
   }
 }

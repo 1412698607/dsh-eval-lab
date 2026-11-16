@@ -1,5 +1,7 @@
 # dsh-eval-lab 架构与技术取舍
 
+145测量确认状态替换成功后仍有冗余unlink/ENOENT调用，仅将writeStatus的临时文件清理限定到未成功rename的路径；不跳过flush、登记、状态写入或重试。测量v2使用冻结来源、CPU阶段、ELD / ELU和固定轮次负载，Python对照器重读实际源码与产物，只归一明确身份、生成时间及验证后的派生摘要，保持正文、计数和inspect结构。[方法与结果](recorder-profiling.md)
+
 144复查为受控工具监督补上适配进程退出 / closed守卫：拒绝残留新请求，poll前取消未提交pending并保存协议错误，保留先发生的预算 / 超时 / 取消原因。预算completed复验另补监督与host实际完成事实，拒绝正常收据与协议错误 / 异常退出同时存在。已有修改不回滚，观察到退出的检查不构成跨进程原子事务。[修正与真实进程反例](changes/2026-11-16-144-controlled-tool-budget-review.md)
 
 143新增受控工具接纳预算：Python状态化环境在新requestId通过校验后、排队前扣减；缓存与pending重送不重复计数，超限取消未提交操作。监督器先排拒绝响应再发tool_budget，Node沿原取消通道收尾，运行保留budget_exceeded。计数存入摘要绑定的环境快照与supervisor；completed需通过预算收据与停止原因一致性检查。录制tool/call可能包含Host在工具体前拒绝的意图，与实际桥接接纳数分开。[字段、计数与范围](tool-call-budget.md)
@@ -196,7 +198,7 @@ close 先禁止接收，然后为每个会话排队 sealed 更新；一个失败
 
 ## 状态替换与宿主生命周期
 
-状态更新先写同目录 UUID 临时文件，再 rename 到固定状态路径，最后清理临时文件。只对 rename 的 EPERM / EACCES / EBUSY 使用同一临时文件有限重试：最多六次尝试，10 / 20 / 40 / 80 / 160 ms 退避合计 310 ms，不约束单次底层 I/O 耗时。临时文件写入、其他替换错误及 JSONL append 不重试。Windows 本地测试覆盖多次替换与目录占用导致的真实失败，受控故障注入覆盖暂时恢复与持续失败，不把错误码解释为已定位的占用原因。此流程没有 fsync，也不承诺所有文件系统的原子持久性。写入 failed 本身可能失败；残留 recording、缺失或损坏状态都不能被视为完整。
+状态更新先写同目录UUID临时文件，再rename到固定状态路径；仅在rename未成功时清理临时名，成功（含重试后成功）时临时名已不存在，不再发起unlink。只对rename的EPERM / EACCES / EBUSY使用同一临时文件有限重试：最多六次尝试，10 / 20 / 40 / 80 / 160 ms退避合计310 ms，不约束单次底层I/O耗时。临时文件写入、其他替换错误及JSONL append不重试。Windows本地测试覆盖多次替换与目录占用导致的真实失败，受控故障注入覆盖暂时恢复与持续失败，不把错误码解释为已定位的占用原因。此流程没有fsync，也不承诺所有文件系统的原子持久性。写入failed本身可能失败；残留recording、缺失或损坏状态都不能被视为完整。
 
 2026 年 10 月 12 日真实卸载检查发现旧 `ctx.on("dispose")` 在 Cordis 4.0.4 没有执行关闭，旧测试只证明 flush 后内容一致。本批改用 `ctx.effect(() => () => recorder.close())` 显式注册所属 fiber 的清理，并验证卸载后 sealed 和 inspect 通过。普通函数 apply 还可能被该版本按构造函数执行，因此不能只依赖它返回的函数作为清理。
 
