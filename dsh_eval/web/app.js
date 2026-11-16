@@ -14,7 +14,7 @@ const categories = [
 const words = { passed: "通过", failed: "未通过", unevaluable: "无法评测", completed: "已完成", running: "进行中",
   stopped: "已停止", interrupted: "已中断", error: "出错", finished: "已结束", skipped: "已跳过", generated: "已生成",
   complete: "完整", invalid: "无效", unverified: "未核验", not_run: "未执行", insufficient_evidence: "证据不足",
-  timed_out: "超时", cancelled: "已取消", runtime_error: "运行错误", unknown: "未知", live: "真实运行声明",
+  timed_out: "超时", cancelled: "已取消", budget_exceeded: "工具次数预算超限", runtime_error: "运行错误", unknown: "未知", live: "真实运行声明",
   synthetic: "合成声明", matched: "匹配", mismatched: "不匹配", verified: "复验已处理", rejected: "关联被拒绝", unavailable: "不可用",
   reused: "历史复用", new: "本次新增", compared: "已对照", inconclusive: "无法完成对照",
   passToFail: "通过转未通过", failToPass: "未通过转通过", unchangedPassed: "仍通过", unchangedFailed: "仍未通过" };
@@ -39,7 +39,7 @@ function number(value) { return typeof value === "number" && Number.isFinite(val
 function badge(value) {
   const style = ["passed", "completed", "complete", "matched"].includes(value) ? "good"
     : ["failed", "invalid", "runtime_error", "mismatched", "rejected", "error"].includes(value) ? "bad"
-      : ["unevaluable", "cancelled", "timed_out", "unavailable"].includes(value) ? "warn" : "";
+      : ["unevaluable", "cancelled", "timed_out", "budget_exceeded", "unavailable"].includes(value) ? "warn" : "";
   return node("span", display(value), "badge " + style);
 }
 function button(text, action, className = "link") {

@@ -52,6 +52,7 @@ python -m dsh_eval --case 'runs/evaluation/<caseRunId>/case.json' --evidence 'ru
 
 ## 预算、取消与清理
 
+- stateful用例可声明[budget.maxToolCalls](tool-call-budget.md)，在受控工具接纳入口限制次数。第N+1个合法新请求触发tool_budget停止，取消未提交操作，执行保存budget_exceeded、任务unevaluable；录制完整仍不代表任务通过。该次数与录制tool/call、模型调用数和token分别统计。
 - 准备阶段由 Python 单独实施 150 秒上限；任务预算从运行适配进程创建后开始，覆盖 Harness 启动和任务执行，不包含离线安装与最终 inspect。
 - `budget.timeoutSeconds` 是任务墙钟时间。达到期限后 Python 发 timeout，Node 通过 IPC 请求 Agent 停止 / idle / flush；仍未退出时，Node 10 秒后尝试强停专用 Harness 子进程，Python 15 秒后尝试终止自己创建的整个适配进程树。清理还有独立等待，总退出时间可超过任务预算；不是 token、费用或步骤上限。
 - 工具响应和控制帧由独立写线程串行写入，监督循环只入队。若响应阻塞，timeout / cancel 仍会记录；控制帧不能穿插进半条 JSONL，清理期限后仍尝试终止自有进程树。stdin 由写线程关闭，回收后记录 supervisor.stdinWriterStopped；超时后的管道写入错误不覆盖超时分类。详见 [修复记录 014](changes/2026-10-18-014-m3-3-review-fixes.md)。

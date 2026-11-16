@@ -34,7 +34,7 @@ const sessionId = `synthetic-${basename(directory)}`;
 const recorder = createRecorder({ ...task.recorder, outputDir: join(directory, "traces") });
 const input = createInterface({ input: process.stdin });
 const iterator = input[Symbol.asyncIterator]();
-let seq = 0, index = 0;
+let seq = 0, index = 0, intervention = null;
 const record = (type, data) => recorder.record(sessionId, { seq: seq++, type, data });
 const emit = (message) => process.stdout.write(JSON.stringify(message) + "\n");
 const route = { sessionId, provider: task.configRef.provider, model: task.configRef.model };
@@ -51,6 +51,12 @@ for (const [operation, args] of scenarios[scenario]) {
   // The real Tools pipeline presents thrown bridge errors with an Error: prefix.
   record("tool/result", { message: { toolCallId: requestId, isError: response.isError,
     content: [{ type: "text", text: response.isError ? `Error: ${response.text}` : response.text }] } });
+  if (response.isError && response.errorCode === "TOOL_CALL_LIMIT_EXCEEDED") {
+    const command = JSON.parse((await iterator.next()).value);
+    if (command.type !== "tool_budget") throw new Error("Expected tool budget stop after rejection");
+    intervention = "tool_budget";
+    break;
+  }
 }
 const decoratedConfirmation = ["rename-confirmation", "rename-timeout-retry"].includes(scenario);
 let answer = "done";
@@ -60,13 +66,14 @@ if (Object.hasOwn(options, "finalText")) {
   if (typeof options.finalText !== "string") throw new Error("Synthetic finalText must be a string");
   answer = options.finalText;
 }
-const reason = { kind: "completed" };
-record("assistant/message", { message: { content: [{ type: "text", text: answer }] } });
+const reason = intervention ? { kind: "aborted", reason: { kind: "user" } } : { kind: "completed" };
+if (intervention) answer = "";
+else record("assistant/message", { message: { content: [{ type: "text", text: answer }] } });
 record("turn/end", { reason });
 await recorder.close();
 const frames = [{ type: "session", sessionId }, { type: "status", phase: "turn_end", reason }, { type: "final", text: answer }];
 await writeFile(join(directory, "host-result.json"), JSON.stringify({ childClosed: true, sessionId, requests: [route],
-  forceStopped: false, exitCode: 0, signal: null, error: null,
+  forceStopped: false, exitCode: 0, signal: null, error: null, intervention,
   protocol: summarizeProtocol(frames.map(JSON.stringify).join("\n"), sessionId) }));
 input.close();
 process.stdin.pause();

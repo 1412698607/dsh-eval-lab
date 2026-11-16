@@ -1,5 +1,9 @@
 # dsh-eval-lab 架构与技术取舍
 
+144复查为受控工具监督补上适配进程退出 / closed守卫：拒绝残留新请求，poll前取消未提交pending并保存协议错误，保留先发生的预算 / 超时 / 取消原因。预算completed复验另补监督与host实际完成事实，拒绝正常收据与协议错误 / 异常退出同时存在。已有修改不回滚，观察到退出的检查不构成跨进程原子事务。[修正与真实进程反例](changes/2026-11-16-144-controlled-tool-budget-review.md)
+
+143新增受控工具接纳预算：Python状态化环境在新requestId通过校验后、排队前扣减；缓存与pending重送不重复计数，超限取消未提交操作。监督器先排拒绝响应再发tool_budget，Node沿原取消通道收尾，运行保留budget_exceeded。计数存入摘要绑定的环境快照与supervisor；completed需通过预算收据与停止原因一致性检查。录制tool/call可能包含Host在工具体前拒绝的意图，与实际桥接接纳数分开。[字段、计数与范围](tool-call-budget.md)
+
 首次阅读可先看[设计总览](design-overview.md)中的组件图、连续例子与五项取舍，再按[证据演示路线](demo-walkthrough.md)查看现有结果；[工程问题复盘](engineering-case-studies.md)整理相关历史失败与修正。本页继续保留详细协议和演进记录。
 
 139复查将比较页limitations条目纳入既有安全文本转换，保存对象或缺失值不再打断详情。交付检查仅对自己创建的HTTP服务使用非守护请求线程，由server_close等待请求处理完成，再核对主服务线程和监听套接字；不改变常规浏览服务默认值，不承诺清理总时限。[复查与验证](changes/2026-11-11-139-baseline-delivery-review.md)

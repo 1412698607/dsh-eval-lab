@@ -1,5 +1,7 @@
 # M3.3 状态化工具与实时桥接
 
+143新增可选[任务内受控工具次数预算](tool-call-budget.md)：`budget.maxToolCalls`只允许版本2的stateful用例，所有启用工具共用接纳计数；第N+1次合法新请求在副作用前拒绝并触发受控停止。失败 / 超时 / 取消不退次数，重复请求不重复扣减，已完成修改不回滚。以下既有工具期限、错误与历史验收继续保留。
+
 更新：2026 年 11 月 2 日，Asia/Shanghai。插件保持 0.1.2；caseFormatVersion 兼容 1 / 2；evidence / evaluation 保持 2，录制协议不变。094 新增可选虚拟写入、工具期限与最终状态证据，096 增加单文件删除与唯一原文编辑，历史读取验收保留。
 
 ## 运行
@@ -53,7 +55,7 @@ Python 校验后调度一次操作，就绪后同步提交内存状态；延迟�
 
 错误的内部响应与录制呈现不同：Python response.text 为 `NOT_FOUND: <path>` 等消息，工具体抛出的 Error.message 保持该值；当前 Tools 0.2.0-rc.2 在真实 tool/result 的 message.content 中呈现为 `Error: NOT_FOUND: <path>`。`tool_result.result.textEquals` 比较后者，应包含 Error 前缀，成功结果不加前缀。097 的真实验收发现并修正了两份用例及合成适配器的这一差异，未在评测器中剥离前缀。
 
-NOT_FOUND / TEMPORARY_READ_FAILURE / INVALID_PATH / PATH_COLLISION / TOOL_TIMEOUT，以及编辑的 EMPTY_EDIT_TARGET / TEXT_NOT_FOUND / AMBIGUOUS_MATCH 均为普通工具失败；JavaScript 抛出带错误文本的 Error，由真实 Tools 管线生成 isError 结果，模型可以恢复。协议格式、身份错误、桥接断线、发送失败或桥接看门狗到期属于基础设施故障，触发 bridge-error / shutdown，运行归 runtime_error，普通断言不运行。生产入口的桥接看门狗为该工具期限加 1000 ms；未传预算的独立桥接 API 保留原 5000 ms 默认值。它与工具期限、任务墙钟预算分开，不提供任务内 token 或步骤预算。
+NOT_FOUND / TEMPORARY_READ_FAILURE / INVALID_PATH / PATH_COLLISION / TOOL_TIMEOUT，以及编辑的 EMPTY_EDIT_TARGET / TEXT_NOT_FOUND / AMBIGUOUS_MATCH 均为普通工具失败；JavaScript 抛出带错误文本的 Error，由真实 Tools 管线生成 isError 结果，模型可以恢复。协议格式、身份错误、桥接断线、发送失败或桥接看门狗到期属于基础设施故障，触发 bridge-error / shutdown，运行归 runtime_error，普通断言不运行。生产入口的桥接看门狗为该工具期限加 1000 ms；未传预算的独立桥接 API 保留原 5000 ms 默认值。看门狗与工具期限、任务墙钟预算分开；143的TOOL_CALL_LIMIT_EXCEEDED则是独立的次数预算停止，不能当作可无限重试的普通业务错误，不提供任务内token或所有宿主工具的步骤上限。
 
 工具 AbortSignal 触发时移除本地 waiter 并发送 tool-cancel；Python 接收后移除尚未提交的操作，重复或迟到响应不能重新激活调用。任务停止 / 子进程收尾清空待执行操作。已提交的内存写入不会因随后取消回滚；不提供任意外部工具取消保证。卸载拒绝待处理请求并移除监听器；任务停止仍沿用 Agent cancel / idle / flush / 专用进程退出，超清理期限才尝试强停。
 

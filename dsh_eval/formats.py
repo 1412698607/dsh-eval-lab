@@ -174,9 +174,14 @@ def validate_case(case):
         for name, value in case["recorder"].items():
             require(type(value) is int and 0 < value <= 9007199254740991,
                     f"recorder.{name} must be a positive safe integer (UTF-8 bytes)")
-    fields(case["budget"], ("timeoutSeconds",), ("toolTimeoutMs", "toolTimeoutsMs"))
+    fields(case["budget"], ("timeoutSeconds",), ("toolTimeoutMs", "toolTimeoutsMs", "maxToolCalls"))
     require(type(case["budget"]["timeoutSeconds"]) is int and case["budget"]["timeoutSeconds"] > 0,
             "timeoutSeconds must be a positive integer")
+    if "maxToolCalls" in case["budget"]:
+        require(case["caseFormatVersion"] == 2 and "stateful" in case["environment"],
+                "maxToolCalls requires the controlled stateful environment in case version 2")
+        require(type(case["budget"]["maxToolCalls"]) is int and 0 <= case["budget"]["maxToolCalls"] <= 9007199254740991,
+                "maxToolCalls must be a nonnegative safe integer")
     if any(key in case["budget"] for key in ("toolTimeoutMs", "toolTimeoutsMs")):
         require("stateful" in case["environment"], "Tool deadlines require the controlled stateful environment")
         overrides = case["budget"].get("toolTimeoutsMs", {})
@@ -276,13 +281,16 @@ def validate_evidence(evidence, case):
         digest = evidence["environmentSnapshotSha256"]
         require(version == 2 and "runtimeReport" in evidence and isinstance(digest, str)
                 and len(digest) == 64 and all(char in "0123456789abcdef" for char in digest), "Invalid environment snapshot digest")
-    fields(evidence["budgetEnforcement"], ("timeoutSeconds",), ("toolTimeouts",))
+    fields(evidence["budgetEnforcement"], ("timeoutSeconds",), ("toolTimeouts", "maxToolCalls"))
     require("toolTimeouts" not in evidence["budgetEnforcement"] or type(evidence["budgetEnforcement"]["toolTimeouts"]) is bool,
             "Tool timeout enforcement must be boolean")
+    require("maxToolCalls" not in evidence["budgetEnforcement"] or type(evidence["budgetEnforcement"]["maxToolCalls"]) is bool,
+            "Tool call budget enforcement must be boolean")
     require(type(evidence["budgetEnforcement"]["timeoutSeconds"]) is bool, "Budget enforcement must be boolean")
     execution = evidence["execution"]
     fields(execution, ("status",), ("reason", "exitCode", "signal"))
-    require(execution["status"] in ("completed", "cancelled", "timed_out", "runtime_error", "unknown"), "Unknown execution status")
+    require(execution["status"] in ("completed", "cancelled", "timed_out", "budget_exceeded", "runtime_error", "unknown"),
+            "Unknown execution status")
     for key in ("reason", "signal"):
         require(key not in execution or execution[key] is None or nonempty(execution[key]), f"Invalid execution {key}")
     require("exitCode" not in execution or execution["exitCode"] is None or type(execution["exitCode"]) is int, "Invalid exitCode")

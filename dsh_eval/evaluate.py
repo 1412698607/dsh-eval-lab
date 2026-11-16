@@ -304,6 +304,9 @@ def evaluate(case_path, evidence_path):
         if any(key in case["budget"] for key in ("toolTimeoutMs", "toolTimeoutsMs")):
             require(evidence["budgetEnforcement"].get("toolTimeouts") is True
                     and "environmentSnapshotSha256" in evidence, "Tool deadline enforcement is unverified")
+        if "maxToolCalls" in case["budget"]:
+            require(evidence["budgetEnforcement"].get("maxToolCalls") is True
+                    and "environmentSnapshotSha256" in evidence, "Tool call budget enforcement is unverified")
         if "environmentSnapshotSha256" in evidence:
             runtime = load_json(result["association"]["runtimeReport"])
             require(type(runtime.get("runtimeFormatVersion")) is int and runtime["runtimeFormatVersion"] == 1
@@ -317,6 +320,30 @@ def evaluate(case_path, evidence_path):
             require(snapshot.get("environmentSha256") == snapshot_digest(case["environment"])
                     and _same(snapshot.get("toolBudget"), {key: value for key, value in case["budget"].items() if key != "timeoutSeconds"}),
                     "Environment snapshot input/policy mismatch")
+            if "maxToolCalls" in case["budget"]:
+                calls = snapshot.get("toolCallBudget")
+                require(isinstance(calls, dict) and set(calls) ==
+                        {"toolCallBudgetFormatVersion", "limit", "admitted", "rejected", "exhausted"}
+                        and type(calls["toolCallBudgetFormatVersion"]) is int and calls["toolCallBudgetFormatVersion"] == 1
+                        and all(type(calls[key]) is int and 0 <= calls[key] <= 9007199254740991
+                                for key in ("limit", "admitted", "rejected"))
+                        and calls["limit"] == case["budget"]["maxToolCalls"]
+                        and calls["admitted"] <= calls["limit"] and calls["rejected"] == 0
+                        and calls["exhausted"] is False,
+                        "Completed task tool call budget evidence is missing or inconsistent")
+                require(_same(runtime.get("supervisor", {}).get("toolCallBudget"), calls),
+                        "Tool call budget supervisor/snapshot mismatch")
+                require(runtime["supervisor"].get("intervention") is None
+                        and isinstance(runtime.get("host"), dict) and runtime["host"].get("intervention") is None,
+                        "Completed execution conflicts with runtime budget/control stop")
+                supervisor, host = runtime["supervisor"], runtime["host"]
+                require(not supervisor.get("protocolError") and supervisor.get("adapterExitCode") == 0
+                        and not host.get("error") and host.get("childClosed") is True
+                        and host.get("forceStopped") is False and host.get("exitCode") == 0
+                        and host.get("signal") is None and isinstance(host.get("protocol"), dict)
+                        and host["protocol"].get("valid") is True
+                        and host["protocol"].get("turnEndReason") == {"kind": "completed"},
+                        "Completed budget execution conflicts with runtime completion facts")
             validate_file_map(snapshot.get("files"), "Environment snapshot files")
             view["environmentSnapshot"] = snapshot
         require(evidence["configuration"] == case["configRef"], "Actual configuration differs from case configRef")

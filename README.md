@@ -22,6 +22,8 @@ npm.cmd run demo:workflow -- --generate-only
 
 ## 当前功能
 
+- [任务内受控工具预算](docs/tool-call-budget.md)：case v2的stateful环境可声明`budget.maxToolCalls`，第N+1个合法新桥接请求在执行前拒绝，并取消未提交操作、记录独立预算停止原因；只覆盖自有受控工具，当前为合成与真实IPC验收范围。
+
 - [基线回归比较浏览](docs/baseline-regression.md#比较浏览)：查看两个实验的保存门禁结论、可比覆盖、退化 / 改善 / 缺项及不可比原因，分别打开双方原评测、证据和轨迹。CI五文件包缺少原归档时保留结论并提示证据不可用，浏览不调用模型或重评。
 
 - [可迁移只读归档包](docs/archive-bundles.md)：打包实验 / 续跑链与选定报告、预览和对照的必要文件，保留原字节及指纹；搬迁后可核验、重新生成报告并浏览原事件。

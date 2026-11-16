@@ -85,7 +85,7 @@ export async function runCase(directory) {
   const stop = (kind) => {
     if (!child || report.childClosed || report.intervention !== null) return;
     report.intervention = kind;
-    if (child.connected) child.send(kind === "cancel" && report.sessionId
+    if (child.connected) child.send(["cancel", "tool_budget"].includes(kind) && report.sessionId
       ? { type: "cancel", sessionId: report.sessionId } : { type: "shutdown" });
     stopTimer = setTimeout(() => {
       report.forceStopped = true;
@@ -101,7 +101,7 @@ export async function runCase(directory) {
         child.send(command);
         return;
       }
-      if (["cancel", "timeout", "shutdown"].includes(command.type)) stop(command.type);
+      if (["cancel", "tool_budget", "timeout", "shutdown"].includes(command.type)) stop(command.type);
     } catch { stop("invalid-control"); }
   });
   commands.on("close", disconnected);

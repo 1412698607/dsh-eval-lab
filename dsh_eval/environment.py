@@ -29,6 +29,9 @@ class StatefulEnvironment:
         self.pending = {}
         self.attempts = {}
         self.cancelled = False
+        self.budget_exhausted = False
+        self._admitted_tool_calls = 0
+        self._rejected_tool_calls = 0
 
     def bind(self, session_id):
         require(nonempty(session_id), "Missing bridge session")
@@ -69,8 +72,28 @@ class StatefulEnvironment:
         if error is not None:
             path = request["arguments"]["path"] if error_path is None else error_path
             response["text"] = f"{error}: {path}"
+            if error == "TOOL_CALL_LIMIT_EXCEEDED":
+                response["errorCode"] = error
         self.responses[request["requestId"]] = (deepcopy(request), deepcopy(response))
         return response
+
+    def _admit(self, request):
+        if "maxToolCalls" not in self.budget:
+            return None
+        if self._admitted_tool_calls >= self.budget["maxToolCalls"]:
+            self._rejected_tool_calls += 1
+            self.budget_exhausted = True
+            self.cancel_all()
+            return self._respond(request, "TOOL_CALL_LIMIT_EXCEEDED")
+        self._admitted_tool_calls += 1
+        return None
+
+    def budget_state(self):
+        if "maxToolCalls" not in self.budget:
+            return None
+        return {"toolCallBudgetFormatVersion": 1, "limit": self.budget["maxToolCalls"],
+                "admitted": self._admitted_tool_calls, "rejected": self._rejected_tool_calls,
+                "exhausted": self.budget_exhausted}
 
     def submit(self, request, now):
         """Schedule virtual work without sleeping on the task supervision thread."""
@@ -79,6 +102,9 @@ class StatefulEnvironment:
         if request_id in self.responses:
             return [deepcopy(self.responses[request_id][1])]
         if request_id not in self.pending:
+            rejected = self._admit(request)
+            if rejected is not None:
+                return [rejected]
             tool = "eval_" + request["operation"]
             index = self.attempts.get(tool, 0)
             self.attempts[tool] = index + 1
@@ -96,7 +122,7 @@ class StatefulEnvironment:
                 responses.append(self._respond(request, "TOOL_TIMEOUT"))
             elif now >= ready:
                 del self.pending[request_id]
-                responses.append(self.handle(request))
+                responses.append(self._execute(request))
         return responses
 
     def wait_seconds(self, now):
@@ -120,10 +146,14 @@ class StatefulEnvironment:
         self.pending.clear()
 
     def snapshot(self, case, run_id, completed):
-        return {"environmentSnapshotFormatVersion": 1, "caseRunId": self.case_run_id,
+        snapshot = {"environmentSnapshotFormatVersion": 1, "caseRunId": self.case_run_id,
                 "sessionId": self.session_id, "runId": run_id, "environmentSha256": snapshot_digest(case["environment"]),
                 "toolBudget": {key: value for key, value in case["budget"].items() if key != "timeoutSeconds"},
-                "complete": bool(completed and not self.pending and not self.cancelled), "files": dict(self.files)}
+                "complete": bool(completed and not self.pending and not self.cancelled and not self.budget_exhausted),
+                "files": dict(self.files)}
+        if self.budget_state() is not None:
+            snapshot["toolCallBudget"] = self.budget_state()
+        return snapshot
 
     def _directory_collision(self, path):
         return any(str(parent) in self.files for parent in PurePosixPath(path).parents) or any(
@@ -134,6 +164,13 @@ class StatefulEnvironment:
         self._validate(request)
         if request["requestId"] in self.responses:
             return deepcopy(self.responses[request["requestId"]][1])
+        require(request["requestId"] not in self.pending, "Pending bridge request must complete through poll")
+        rejected = self._admit(request)
+        if rejected is not None:
+            return rejected
+        return self._execute(request)
+
+    def _execute(self, request):
         path = request["arguments"]["path"]
         error = None
         text = ""

@@ -104,6 +104,7 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
     input_error = None
     forced = False
     user_interrupted = False
+    adapter_closed = False
 
     def read_events():
         try:
@@ -125,7 +126,11 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                 if message is None or writer_stopping.is_set():
                     break
                 if message["type"] == "tool-response" and intervention is not None:
-                    continue
+                    # The authoritative refusal must precede the budget control
+                    # frame; ordinary in-flight results remain suppressed.
+                    if not (intervention == "tool_budget"
+                            and message.get("errorCode") == "TOOL_CALL_LIMIT_EXCEEDED"):
+                        continue
                 process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
                 process.stdin.flush()
         except (OSError, UnicodeError) as error:
@@ -148,7 +153,7 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
 
     def stop(kind):
         nonlocal intervention, intervention_time
-        if intervention is not None or process.poll() is not None:
+        if intervention is not None or (process.poll() is not None and kind != "tool_budget"):
             return
         intervention, intervention_time = kind, time.monotonic()
         if environment is not None:
@@ -156,10 +161,16 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
         outgoing.put({"type": kind})
 
     def pump_tools():
+        nonlocal protocol_error
         now = time.monotonic()
         if intervention is None and now - started >= timeout_seconds:
             stop("timeout")
         if environment is not None and intervention is None:
+            if adapter_closed or process.poll() is not None:
+                if environment.pending:
+                    protocol_error = "Adapter exited or closed with pending tool requests"
+                environment.cancel_all()
+                return
             for response in environment.poll(now):
                 outgoing.put(response)
 
@@ -207,9 +218,15 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                     if environment is not None and event["type"] == "selection":
                         environment.bind(event.get("sessionId"))
                     if event["type"] == "tool-request":
+                        if intervention == "tool_budget":
+                            continue  # Already queued requests cannot restart stopped work.
                         require(environment is not None and intervention is None, "Tool request outside active environment")
+                        require(not adapter_closed and process.poll() is None,
+                                "Tool request after adapter exit or closure")
                         for response in environment.submit(event, time.monotonic()):
                             outgoing.put(response)
+                        if environment.budget_exhausted:
+                            stop("tool_budget")
                     if event["type"] == "tool-cancel":
                         require(environment is not None, "Tool cancellation outside stateful environment")
                         environment.cancel(event)
@@ -220,6 +237,9 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
                 if event.get("type") == "streaming" and cancel_after_stream:
                     stop("cancel")
                 if event.get("type") == "closed" and environment is not None:
+                    adapter_closed = True
+                    if environment.pending and intervention is None:
+                        protocol_error = "Adapter exited or closed with pending tool requests"
                     environment.cancel_all()
                 pump_tools()
             except KeyboardInterrupt:
@@ -228,6 +248,8 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
         process.wait(timeout=5)
     finally:
         if environment is not None:
+            if environment.pending and intervention is None and process.poll() is not None:
+                protocol_error = "Adapter exited or closed with pending tool requests"
             environment.cancel_all()
         # Preserve an already-issued timeout/cancel even if the OS refuses cleanup.
         report.update(intervention=intervention, forceStopAttempted=forced,
@@ -244,6 +266,8 @@ def supervise(process, timeout_seconds, cancel_after_stream=False, event_log=Non
         if writer.is_alive() or reader.is_alive():
             protocol_error = "Adapter pipe workers did not stop after process cleanup"
         report.update(protocolError=protocol_error, stdinWriterStopped=not writer.is_alive())
+        if environment is not None and environment.budget_state() is not None:
+            report.update(toolCallBudget=environment.budget_state(), stdoutReaderStopped=not reader.is_alive())
     report["adapterExitCode"] = process.returncode
     return report
 
@@ -252,7 +276,9 @@ def classify_execution(host, supervisor):
     execution = {"status": "runtime_error", "exitCode": host.get("exitCode"), "signal": host.get("signal")}
     intervention = supervisor.get("intervention") or host.get("intervention")
     reason = host.get("protocol", {}).get("turnEndReason") if isinstance(host.get("protocol"), dict) else None
-    if intervention == "timeout":
+    if intervention == "tool_budget":
+        execution.update(status="budget_exceeded", reason="Controlled tool call admission limit reached")
+    elif intervention == "timeout":
         execution.update(status="timed_out", reason="Task wall-time deadline reached; cleanup grace is separate")
     elif intervention == "cancel":
         execution.update(status="cancelled" if reason == {"kind": "aborted", "reason": {"kind": "user"}} else "unknown",
@@ -343,7 +369,8 @@ def _run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=F
     except (OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as error:
         error_info = {"type": type(error).__name__, "message": str(error)}
         user_interrupted = isinstance(error, KeyboardInterrupt)
-        status = ("timed_out" if supervisor.get("intervention") == "timeout" else
+        status = ("budget_exceeded" if supervisor.get("intervention") == "tool_budget" else
+                  "timed_out" if supervisor.get("intervention") == "timeout" else
                   "unknown" if supervisor.get("intervention") == "cancel" else
                   "cancelled" if isinstance(error, KeyboardInterrupt) else "runtime_error")
         execution = {"status": status,
@@ -378,6 +405,8 @@ def _run_case(case_path, runs_root=None, modules_dir=None, cancel_after_stream=F
         environment.cancel_all()
         evidence["environmentSnapshotSha256"] = snapshot_digest(snapshot)
         evidence["budgetEnforcement"]["toolTimeouts"] = True
+        if "maxToolCalls" in case["budget"]:
+            evidence["budgetEnforcement"]["maxToolCalls"] = True
     save_json(directory / "runtime.json", {"runtimeFormatVersion": 1, "caseRunId": case_run_id, "stage": stage,
                                           "host": host, "supervisor": supervisor, "error": error_info,
                                           "preparation": preparation, "adapterProcessStarted": adapter_started,

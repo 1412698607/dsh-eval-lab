@@ -72,6 +72,7 @@ with Path("runs/exact-rename-rules.json").open("x", encoding="utf-8") as output:
 | recorder | 可选对象，仅允许 maxEventBytes / maxPendingBytes 两个独立正安全整数，范围 1～9007199254740991；不属于模型路由配置，详见下节 |
 | budget.timeoutSeconds | 正整数，声明预算；离线评测不会实施它，不支持 token / 步骤上限 |
 | budget.toolTimeoutMs / toolTimeoutsMs | 版本 2 stateful 可选：默认工具期限及按启用工具覆盖，单位毫秒；1～3600000 整数，默认 5000；由 runner 实施 |
+| budget.maxToolCalls | 版本 2 stateful 可选：0～9007199254740991的非负整数；Python接纳的合法新桥接请求共用上限，重送不重复扣减，第N+1次拒绝并停止，详见[任务内工具预算](tool-call-budget.md) |
 | assertions | 非空数组，每条有唯一 id 和已支持的 type。版本 1 全部为必需项，版本 2 允许显式诊断项 |
 
 六种断言（environment_files 仅适用于版本 2 stateful）：
@@ -179,7 +180,7 @@ eval_delete 的 arguments 为 `{path}`；eval_edit 为 `{path,oldText,newText}`�
 - 只有执行 completed、录制 complete、身份 / 输入 / 任务 / 路由复核通过后才计算。开放、缺失、损坏或中断证据不能被当作“零次”通过；actual 保持未生成。没有匹配调用的完整任务则保存 actual=0。
 - 结果 actual 为匹配调用数；evidence 为全部匹配调用的数组，每项有 callId / callSeq，有关联返回时另有 resultSeq。零匹配返回空数组。越界或禁用调用的断言为 failed；不足 min 也是明确失败。最终答案通过不会覆盖行为失败；若另一条必需断言证据不足，总体仍沿用 unevaluable 优先规则，保留各条结论。
 
-这些是离线回归断言，只描述录制到的调用；不拦截实际工具，不是任务内步骤硬预算，也不证明底层副作用已经发生。当前只支持按工具名和参数精确筛选调用行为。
+这些是离线回归断言，只描述录制到的调用；不拦截实际工具，不是任务内步骤硬预算，也不证明底层副作用已经发生。当前只支持按工具名和参数精确筛选调用行为。143另提供[budget.maxToolCalls](tool-call-budget.md)：只限制版本2 stateful环境实际接纳的受控桥接请求，Host参数校验未进入桥接的录制调用不占用它；超限执行状态budget_exceeded，整体unevaluable / 断言not_run。新可选字段与状态需要升级读取器，旧用例不补写默认预算。
 
 版本 1 / 2 用例及结果编号保持不变，旧用例无需迁移，旧读取器遇到未知断言类型会拒绝。历史实验继续按冻结用例复验，不补写新约束；新增断言属于新的完整输入并进入既有计划指纹。当前固定十用例及历史真实样本未改变。浏览卡片显示期望筛选 / 范围、保存次数和调用定位，缺失 actual 不补零。
 
@@ -248,7 +249,7 @@ caseRunId 必须为 UUID，且与录制器 runId 不同；同一执行复验保�
 
 版本 1 的 source 为 synthetic / live，是证据生产者的来源声明。configuration 格式同 configRef；正常任务必须与用例期望相等，pluginVersion 还要匹配录制 run.json。版本 1 不独立证明 provider / model / profile 与预算实施；M3.2 版本 2 由适配器实际采集并补查请求头。仅填写 live 本身仍不能证明发生过真实模型调用。
 
-budgetEnforcement.timeoutSeconds 为布尔值，合成演示固定 false。execution.status 为 completed / cancelled / timed_out / runtime_error / unknown，可选 reason、exitCode、signal。结束 / 退出证据与 completed 冲突时归为 unknown；cancelled 要求实际 aborted/user，缺少或冲突时也归 unknown。超时、启动 / 路由 / 桥接错误是适配器提供的进程事实，离线模块不执行或推测干预。
+budgetEnforcement.timeoutSeconds为布尔值，早期离线合成样例为false，通过runner执行的合成任务则按实际监督填值。当前execution.status为completed / cancelled / timed_out / budget_exceeded / runtime_error / unknown，可选reason、exitCode、signal。结束 / 退出证据与completed冲突时归为unknown；cancelled要求实际aborted/user，缺少或冲突时也归unknown。budget_exceeded来自受控工具次数预算停止，任务仍unevaluable、断言not_run；配置预算时对应budgetEnforcement.maxToolCalls布尔字段和摘要绑定收据见[工具预算证据](tool-call-budget.md#证据字段与离线复验)。超时、预算停止、启动 / 路由 / 桥接错误是运行层提供的事实，离线模块不执行或推测干预。
 
 ## M3.2 新增：evidenceFormatVersion 2
 
