@@ -1,5 +1,9 @@
 # dsh-eval-lab 开发进度
 
+[119 实验规则影响预览](changes/2026-11-09-119-experiment-assertion-preview.md) 支持对一份已完成实验按入口替换断言并离线重评。对 117 的四份归档改用必需的精确 `done` 后，四项全可评，仅 timeout-retry 第一轮的加粗回复由通过变为失败。
+
+[118 交付验收](changes/2026-11-09-118-comparison-browser-delivery-ci.md) 核实 113–117 的共同提交 `030ef26`。精确 SHA 的 Windows 无模型 push CI 首次运行的 13 个步骤全部成功。
+
 [117 新规则真实矩阵](changes/2026-11-04-117-live-confirmation-matrix.md) 两用例各两轮完成，四任务均 passed，32 条必需项通过；精确回复诊断三通过一失败，其中一次实际回复 `**done**`。独立报告四项 verified / matched / live 且结论不变。
 
 [116 新规则四任务输入](changes/2026-11-04-116-rename-confirmation-matrix.md) 新增目标占用与超时重试两用例，确认词为必需、精确回复为诊断，合成矩阵及无模型工具组件检查通过。
@@ -163,9 +167,9 @@
 | 插件版本 | `0.1.2`；M6.1 新 run.json 版本 2 / 清单版本 1，JSONL / status 仍为版本 1 |
 | 当前开发分支 | `20261102/feat/stateful-delete-edit` |
 | 最新真实任务资料 | 117 新冻结规则四任务完成，必需项全部通过，一项精确格式诊断失败；109 原严格任务失败保留 |
-| 最新已验收实现 / 推送快照 | `28490d1e2ec8f34291840f7afb1df9c6c3bd09ba` 含 107–112 的 34 份公开文件 |
-| 当前本地实现范围 | 114–116 接入对照浏览、诊断汇总及新规则输入，117 完成四任务真实验收；尚未提交 |
-| 实现基线 CI | 28490d1 的 push run 41849793500 / job 126642722310 / attempt 1，运行、作业和全部 13 步骤成功，见 113 |
+| 最新已验收实现 / 推送快照 | `030ef26dab79074fc1552e232b43fa8056704946` 含 113–117 的 27 份公开文件 |
+| 当前本地实现范围 | 119 新增普通实验规则影响预览及四样本离线验收，尚未提交 |
+| 实现基线 CI | 030ef26 的 push run 42505316504 / job 128806567873 / attempt 1，运行、作业和 13 个步骤均成功，见 118 |
 | 067 已提交实现范围 | 已由 4145995 提交推送；已观测 token 调度停止、缺失覆盖及所有续跑入口透传；原本地验证见 067，当前复查与独立 CI 见 068 |
 | 069 已提交实现范围 | 已由 c7b627a 提交推送，共用五种 Windows 输出布局检查；普通入口先于新身份 / 输出、续跑先于领取，独立 CI 见 070；短根真实验收见 071 |
 | 048 起始基线 | `815a944` 包含 047 双配置无模型准备，已提交推送；父提交 1ebd294，M6 历史验收保留 |
@@ -189,7 +193,7 @@
 | 开发语言 | JavaScript 宿主接入和生命周期及浏览交互；Python 已实现离线断言、状态化环境、真实单用例 / 批次、重复统计、离线报告及只读浏览服务 |
 | 实测环境 | Node.js `v24.14.0`、npm `11.9.0`、pnpm `11.25.0`、Python `3.12.0`、Windows |
 | 真实组件基线 | DSH SessionStore `0.2.0-rc.2`，Cordis `4.0.4` |
-| 最新复核日期 | 2026 年 11 月 4 日，Asia/Shanghai。113 同步 107–112 的提交和 CI |
+| 最新复核日期 | 2026 年 11 月 9 日，Asia/Shanghai。118 同步 113–117 的提交和 CI |
 | 真实模型基线 | CLI `0.2.0-rc.2`；071、065 及更早范围保留；072 新增 DeepSeek Flash / 百炼 Qwen3.7-Plus 的十用例 / 两轮四十任务，39 通过 / 1 失败，各用例两对 matched / live |
 
 ## 功能状态
@@ -241,7 +245,7 @@
 | 新双配置完整八任务比较 | 新身份 / continue，DeepSeek 四通过、Qwen 三通过一失败；两用例各两对，八项 verified / matched / live，历史 050 不改写或续跑 | [记录 065](changes/2026-10-29-065-live-two-config-comparison.md)、[比较说明](guarded-comparison.md) |
 | 配置比较报告与不确定性边界 | 普通实验版本 1、首轮续跑版本 2、连续续跑版本 3 的离线 JSON / Markdown；重新核对输入 / 身份 / 路由 / 来源，同用例 / 轮次配对，续跑分开历史 / 新增用量；多配置回归为合成样本 | `dsh_eval/report.py`、[配置报告](configuration-reports.md)、记录 019 / 056 / 059 |
 | 固定真实评测集 | 原单配置十用例首次验收及 028 修复保留；072 另在新输入上执行完整十用例 / 两配置 / 两轮四十项，39 passed / 1 failed，全部 verified / matched / live | [固定评测集](core-evaluation.md)、[072](changes/2026-11-01-072-full-core-two-config-comparison.md) |
-| 结果浏览与持续集成 | 本地只读浏览及续跑报告、最终状态卡片已实现。28490d1 的 Windows 无模型 CI 全部步骤成功 | [结果浏览](result-browser.md)、[交付验收 113](changes/2026-11-04-113-evaluation-rules-delivery-ci.md) |
+| 结果浏览与持续集成 | 本地只读浏览、续跑报告、对照报告及诊断汇总已实现。030ef26 的 Windows 无模型 CI 全部步骤成功 | [结果浏览](result-browser.md)、[交付验收 118](changes/2026-11-09-118-comparison-browser-delivery-ci.md) |
 
 ## 最新资料交付复核（073，2026 年 11 月 1 日）
 
